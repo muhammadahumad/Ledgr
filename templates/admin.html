@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Admin — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Admin Panel</div>
+    <div class="page-sub">LEDGR system overview</div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="stat-grid" style="grid-template-columns:repeat(6,1fr)">
+    <div class="stat-card"><div class="stat-label">Users</div><div class="stat-value">{{ stats.total_users }}</div></div>
+    <div class="stat-card"><div class="stat-label">Businesses</div><div class="stat-value">{{ stats.total_businesses }}</div></div>
+    <div class="stat-card"><div class="stat-label">Documents</div><div class="stat-value">{{ stats.total_docs }}</div></div>
+    <div class="stat-card"><div class="stat-label">Free</div><div class="stat-value">{{ stats.free_users }}</div></div>
+    <div class="stat-card"><div class="stat-label">Pro</div><div class="stat-value">{{ stats.pro_users }}</div></div>
+    <div class="stat-card"><div class="stat-label">Business</div><div class="stat-value">{{ stats.business_users }}</div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">All users</div>
+    <table class="table">
+      <thead><tr><th>Name</th><th>Email</th><th>Business</th><th>Plan</th><th>Uploads</th><th>Joined</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td style="color:#f1f5f9;font-weight:500">{{ u.name }}</td>
+          <td style="color:#64748b;font-size:12px">{{ u.email }}</td>
+          <td style="color:#64748b;font-size:12px">{{ u.business.name if u.business else '—' }}</td>
+          <td>
+            <select class="select-input" style="font-size:12px;padding:3px 6px;width:90px" onchange="upgradePlan({{ u.id }}, this.value)">
+              <option value="free" {% if u.plan == 'free' %}selected{% endif %}>Free</option>
+              <option value="pro" {% if u.plan == 'pro' %}selected{% endif %}>Pro</option>
+              <option value="business" {% if u.plan == 'business' %}selected{% endif %}>Business</option>
+            </select>
+          </td>
+          <td style="color:#64748b">{{ u.uploads_this_month or 0 }}</td>
+          <td style="color:#64748b;font-size:12px">{{ u.created_at.strftime('%d %b %Y') }}</td>
+          <td><button class="btn btn-sm" onclick="upgradePlan({{ u.id }}, document.querySelectorAll('select')[{{ loop.index0 }}].value)">Save</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function upgradePlan(userId, plan){
+  fetch('/admin/api/upgrade',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({user_id:userId, plan:plan})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){alert('Plan updated to '+plan);}
+    else{alert('Error: '+res.error);}
+  });
+}
+</script>
+{% endblock %}
