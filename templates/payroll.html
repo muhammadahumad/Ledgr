@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Payroll — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Payroll & HR</div>
+    <div class="page-sub">{{ employees|length }} active employees · Monthly payroll: {{ business.base_currency }} {{ "%.2f"|format(total_payroll) }}</div>
+  </div>
+  <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ Add Employee</button>
+</div>
+
+<div class="content">
+  <div class="card">
+    <div class="card-title">Employees</div>
+    {% if employees %}
+    <table class="table">
+      <thead><tr><th>Name</th><th>Position</th><th>Nationality</th><th>Monthly salary</th><th>Joined</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for e in employees %}
+        <tr>
+          <td style="color:#f1f5f9;font-weight:500">{{ e.full_name }}</td>
+          <td style="color:#94a3b8">{{ e.position or '—' }}</td>
+          <td style="color:#94a3b8">{{ e.nationality or '—' }}</td>
+          <td style="font-weight:500;color:#10b981">{{ e.currency }} {{ "%.2f"|format(e.monthly_salary) }}</td>
+          <td style="color:#64748b;font-size:12px">{{ e.joined_date.strftime('%d %b %Y') if e.joined_date else '—' }}</td>
+          <td><span class="badge badge-green">Active</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px 0;color:#475569">
+      <div style="font-size:32px;margin-bottom:12px">$</div>
+      <div style="font-weight:500;margin-bottom:6px">No employees yet</div>
+      <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'" style="margin-top:16px">Add first employee</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div id="add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;z-index:200">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px;width:100%;max-width:480px">
+    <div style="font-size:16px;font-weight:600;margin-bottom:20px">Add employee</div>
+    <div class="field-row">
+      <div><div class="field-label">Full name *</div><input class="field-input" id="e-name" placeholder="Ahmed Hassan"></div>
+      <div><div class="field-label">Position</div><input class="field-input" id="e-pos" placeholder="Site Manager"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Nationality</div><input class="field-input" id="e-nat" placeholder="Maldivian"></div>
+      <div><div class="field-label">Monthly salary *</div><input class="field-input" type="number" id="e-sal" step="0.01" placeholder="0.00"></div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Join date</div>
+      <input class="field-input" type="date" id="e-date">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary" onclick="addEmployee()">Add employee</button>
+      <button class="btn" onclick="document.getElementById('add-modal').style.display='none'">Cancel</button>
+    </div>
+    <div id="add-msg" style="margin-top:10px;font-size:13px;color:#10b981"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function addEmployee(){
+  var name=document.getElementById('e-name').value.trim();
+  var sal=parseFloat(document.getElementById('e-sal').value)||0;
+  if(!name||!sal){alert('Name and salary required');return;}
+  fetch('/api/employee/add',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      full_name:name,position:document.getElementById('e-pos').value,
+      nationality:document.getElementById('e-nat').value,
+      monthly_salary:sal,joined_date:document.getElementById('e-date').value
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){location.reload();}
+    else{document.getElementById('add-msg').textContent='Error: '+res.error;document.getElementById('add-msg').style.color='#f87171';}
+  });
+}
+</script>
+{% endblock %}
