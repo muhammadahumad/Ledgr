@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}LEDGR{% endblock %}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#f1f5f9;background:#0f172a;min-height:100vh}
+a{color:#10b981;text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* Sidebar */
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:220px;background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;z-index:100}
+.sidebar-brand{padding:20px 20px 16px;border-bottom:1px solid #334155}
+.brand-name{font-size:22px;font-weight:700;letter-spacing:-.02em;color:#f1f5f9}
+.brand-name span{color:#10b981}
+.brand-sub{font-size:11px;color:#64748b;margin-top:2px}
+.nav-section{padding:16px 12px 8px;font-size:10px;color:#475569;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#94a3b8;font-size:13px;font-weight:500;cursor:pointer;text-decoration:none;margin:1px 4px;transition:all .15s}
+.nav-item:hover{background:#334155;color:#f1f5f9;text-decoration:none}
+.nav-item.active{background:#10b981;color:#fff}
+.nav-item .icon{width:16px;text-align:center;flex-shrink:0}
+.sidebar-footer{margin-top:auto;padding:12px;border-top:1px solid #334155}
+.user-badge{display:flex;align-items:center;gap:10px;padding:8px;border-radius:8px;background:#0f172a}
+.user-avatar{width:32px;height:32px;border-radius:50%;background:#10b981;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;color:#fff;flex-shrink:0}
+.user-name{font-size:12px;font-weight:500;color:#f1f5f9}
+.user-plan{font-size:10px;color:#64748b}
+
+/* Main */
+.main{margin-left:220px;min-height:100vh;background:#0f172a}
+.topbar{padding:16px 28px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;background:#0f172a;position:sticky;top:0;z-index:50}
+.page-title{font-size:18px;font-weight:600;color:#f1f5f9}
+.page-sub{font-size:12px;color:#64748b;margin-top:2px}
+.content{padding:24px 28px}
+
+/* Cards */
+.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px 24px;margin-bottom:16px}
+.card-title{font-size:13px;font-weight:500;color:#94a3b8;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px}
+.stat-label{font-size:11px;color:#64748b;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+.stat-value{font-size:26px;font-weight:600;color:#f1f5f9}
+.stat-currency{font-size:12px;color:#64748b;margin-top:2px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid #334155;background:#1e293b;color:#f1f5f9;transition:all .15s;text-decoration:none;font-family:inherit}
+.btn:hover{background:#334155;text-decoration:none}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:#10b981;color:#fff;border-color:#10b981}
+.btn-primary:hover{background:#059669;border-color:#059669}
+.btn-danger{background:#dc2626;color:#fff;border-color:#dc2626}
+.btn-sm{padding:5px 12px;font-size:12px}
+
+/* Forms */
+.field-label{font-size:11px;color:#64748b;margin-bottom:4px;font-weight:500;text-transform:uppercase;letter-spacing:.04em}
+.field-input{width:100%;padding:8px 10px;border:1px solid #334155;border-radius:6px;font-size:13px;color:#f1f5f9;background:#0f172a;font-family:inherit}
+.field-input:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15)}
+.field-group{margin-bottom:14px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.select-input{width:100%;padding:8px 10px;border:1px solid #334155;border-radius:6px;font-size:13px;color:#f1f5f9;background:#0f172a}
+
+/* Badges */
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.badge-green{background:rgba(16,185,129,.15);color:#10b981}
+.badge-blue{background:rgba(59,130,246,.15);color:#60a5fa}
+.badge-amber{background:rgba(245,158,11,.15);color:#fbbf24}
+.badge-red{background:rgba(220,38,38,.15);color:#f87171}
+.badge-gray{background:#334155;color:#94a3b8}
+
+/* Alerts */
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px}
+.alert-success{background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)}
+.alert-error{background:rgba(220,38,38,.1);color:#f87171;border:1px solid rgba(220,38,38,.2)}
+.alert-warn{background:rgba(245,158,11,.1);color:#fbbf24;border:1px solid rgba(245,158,11,.2)}
+.alert-info{background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid rgba(59,130,246,.2)}
+
+/* Tables */
+.table{width:100%;border-collapse:collapse;font-size:13px}
+.table th{text-align:left;color:#64748b;font-weight:500;padding:8px 10px;border-bottom:1px solid #334155;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.table td{padding:10px 10px;border-bottom:1px solid #1e293b;color:#cbd5e1}
+.table tr:last-child td{border-bottom:none}
+.table tr:hover td{background:#1e293b}
+
+/* Upload zone */
+.upload-zone{border:2px dashed #334155;border-radius:12px;padding:40px 24px;text-align:center;cursor:pointer;transition:all .15s;background:#1e293b}
+.upload-zone:hover,.upload-zone.drag{border-color:#10b981;background:rgba(16,185,129,.05)}
+
+/* Spinner */
+.spinner{width:16px;height:16px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Status bars */
+.status-bar{display:flex;align-items:center;gap:10px;padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px}
+.status-processing{background:rgba(59,130,246,.1);color:#60a5fa;border:1px solid rgba(59,130,246,.2)}
+.status-success{background:rgba(16,185,129,.1);color:#10b981;border:1px solid rgba(16,185,129,.2)}
+.status-error{background:rgba(220,38,38,.1);color:#f87171;border:1px solid rgba(220,38,38,.2)}
+
+@media(max-width:768px){
+  .sidebar{display:none}
+  .main{margin-left:0}
+  .stat-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+{% if session.user_id %}
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-name">L<span>EDGR</span></div>
+    <div class="brand-sub">AI Business OS</div>
+  </div>
+
+  <div class="nav-section">Core</div>
+  <a href="/dashboard" class="nav-item {% if request.path == '/dashboard' %}active{% endif %}">
+    <span class="icon">⬡</span> Dashboard
+  </a>
+  <a href="/upload" class="nav-item {% if request.path == '/upload' %}active{% endif %}">
+    <span class="icon">↑</span> Upload Document
+  </a>
+  <a href="/ledger" class="nav-item {% if request.path == '/ledger' %}active{% endif %}">
+    <span class="icon">≡</span> Ledger
+  </a>
+
+  <div class="nav-section">Modules</div>
+  <a href="/inventory" class="nav-item {% if request.path == '/inventory' %}active{% endif %}">
+    <span class="icon">▦</span> Inventory
+  </a>
+  <a href="/payroll" class="nav-item {% if request.path == '/payroll' %}active{% endif %}">
+    <span class="icon">$</span> Payroll
+  </a>
+
+  <div class="nav-section">Account</div>
+  <a href="/settings" class="nav-item {% if request.path == '/settings' %}active{% endif %}">
+    <span class="icon">⚙</span> Settings
+  </a>
+  <a href="/logout" class="nav-item">
+    <span class="icon">→</span> Sign out
+  </a>
+
+  <div class="sidebar-footer">
+    <div class="user-badge">
+      <div class="user-avatar">{{ session.get('user_name', 'U')[0] }}</div>
+      <div>
+        <div class="user-name">{{ session.get('user_name', '') }}</div>
+        <div class="user-plan">{{ session.get('plan', 'Free') }} plan</div>
+      </div>
+    </div>
+  </div>
+</nav>
+{% endif %}
+
+<div class="{% if session.user_id %}main{% endif %}">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div style="padding:12px 28px 0">
+        {% for category, message in messages %}
+          <div class="alert alert-{{ 'success' if category == 'success' else 'error' if category == 'error' else 'info' }}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+</div>
+
+<script>
+function fmt(n){return n!=null?parseFloat(n).toFixed(2):'0.00';}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
