@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}Upload — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Upload Document</div>
+    <div class="page-sub">Bill · Receipt · Invoice · Payroll Slip · Bank Statement</div>
+  </div>
+  <div style="font-size:12px;color:#64748b">
+    {{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }} uploads remaining this month
+  </div>
+</div>
+
+<div class="content" style="max-width:760px">
+
+  <div id="upload-section">
+    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('doc-file').click()" ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropFile(event)">
+      <div style="font-size:40px;margin-bottom:12px">↑</div>
+      <p style="font-size:16px;font-weight:500;color:#f1f5f9;margin-bottom:6px">Drop any financial document here</p>
+      <p style="font-size:12px;color:#64748b;margin-bottom:16px">Bills · Receipts · Invoices · Payroll slips · Bank statements<br>JPG, PNG, PDF — phone photos work perfectly</p>
+      <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('doc-file').click()">Choose file</button>
+    </div>
+    <input type="file" id="doc-file" accept="image/*,application/pdf" style="display:none" onchange="handleFile(this)">
+
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">What LEDGR extracts automatically</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;color:#94a3b8">
+        <div>✓ Vendor name & tax ID ({{ tax.authority }} format)</div>
+        <div>✓ Invoice number & dates</div>
+        <div>✓ {{ tax.tax_name }} amount ({{ (tax.tax_rate*100)|int }}% rate)</div>
+        <div>✓ Line items & totals</div>
+        <div>✓ Currency detection ({{ tax.currency }})</div>
+        <div>✓ Auto-posts to your Ledger</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="processing-section" style="display:none">
+    <div id="img-preview-wrap" style="margin-bottom:12px"></div>
+    <div class="status-bar status-processing" id="proc-status">
+      <div class="spinner"></div>
+      <span id="proc-text">LEDGR AI is reading your document...</span>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      <div id="s1" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+        <div style="width:20px;height:20px;border-radius:50%;border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:10px">1</div>Reading document
+      </div>
+      <div style="flex:1;height:1px;background:#334155;margin-top:10px"></div>
+      <div id="s2" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+        <div style="width:20px;height:20px;border-radius:50%;border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:10px">2</div>Extracting data
+      </div>
+      <div style="flex:1;height:1px;background:#334155;margin-top:10px"></div>
+      <div id="s3" style="display:flex;align-items:center;gap:6px;font-size:12px;color:#475569">
+        <div style="width:20px;height:20px;border-radius:50%;border:1px solid currentColor;display:flex;align-items:center;justify-content:center;font-size:10px">3</div>Posting to Ledger
+      </div>
+    </div>
+  </div>
+
+  <div id="result-section" style="display:none">
+    <div class="status-bar status-success" id="result-status">
+      <span id="result-msg">Document processed!</span>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Extracted data <span class="badge badge-green" id="conf-badge">HIGH CONFIDENCE</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px">
+        <div><div class="field-label">Vendor</div><div id="r-vendor" style="color:#f1f5f9;font-weight:500"></div></div>
+        <div><div class="field-label">Tax ID</div><div id="r-taxid" style="color:#10b981;font-family:monospace"></div></div>
+        <div><div class="field-label">Invoice number</div><div id="r-invno" style="color:#f1f5f9"></div></div>
+        <div><div class="field-label">Invoice date</div><div id="r-date" style="color:#f1f5f9"></div></div>
+        <div><div class="field-label">Document type</div><div id="r-type"></div></div>
+        <div><div class="field-label">Category</div><div id="r-cat" style="color:#f1f5f9"></div></div>
+      </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #334155;display:flex;justify-content:flex-end;gap:24px;font-size:13px">
+        <div style="text-align:right"><div style="color:#64748b">Subtotal</div><div id="r-sub" style="color:#f1f5f9"></div></div>
+        <div style="text-align:right"><div style="color:#64748b">{{ tax.tax_name }}</div><div id="r-tax" style="color:#fbbf24"></div></div>
+        <div style="text-align:right"><div style="color:#64748b;font-weight:500">Total</div><div id="r-total" style="color:#10b981;font-size:18px;font-weight:600"></div></div>
+      </div>
+    </div>
+
+    <div id="line-items-card" class="card" style="display:none">
+      <div class="card-title">Line items</div>
+      <table class="table">
+        <thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th style="text-align:right">Total</th></tr></thead>
+        <tbody id="line-items-body"></tbody>
+      </table>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <button class="btn btn-primary" onclick="uploadAnother()">Upload another</button>
+      <a href="/ledger" class="btn">View in Ledger</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function ev(e,on){e.preventDefault();document.getElementById('drop-zone').classList.toggle('drag',on);}
+function dropFile(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('drag');if(e.dataTransfer.files.length)processFile(e.dataTransfer.files[0]);}
+function handleFile(input){if(input.files.length)processFile(input.files[0]);}
+
+function processFile(file){
+  document.getElementById('upload-section').style.display='none';
+  document.getElementById('processing-section').style.display='block';
+
+  if(file.type.startsWith('image/')){
+    var r=new FileReader();
+    r.onload=function(e){document.getElementById('img-preview-wrap').innerHTML='<img src="'+e.target.result+'" style="width:100%;max-height:200px;object-fit:contain;border-radius:8px;border:1px solid #334155;margin-bottom:12px">';};
+    r.readAsDataURL(file);
+  }
+
+  setStep(1);
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var b64=e.target.result.split(',')[1];
+    setStep(2);
+    fetch('/api/upload',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({file:b64,media_type:file.type||'image/jpeg'})
+    }).then(r=>r.json()).then(res=>{
+      setStep(3);
+      setTimeout(()=>showResult(res),400);
+    }).catch(err=>{
+      document.getElementById('proc-status').className='status-bar status-error';
+      document.getElementById('proc-text').textContent='Error: '+err.message;
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function setStep(n){
+  var msgs=['','Reading your document...','Extracting data with LEDGR AI...','Posting to your Ledger...'];
+  document.getElementById('proc-text').textContent=msgs[n]||'Processing...';
+  ['s1','s2','s3'].forEach(function(id,i){
+    var el=document.getElementById(id);
+    if(i+1<n){el.style.color='#10b981';}
+    else if(i+1===n){el.style.color='#60a5fa';}
+    else{el.style.color='#475569';}
+  });
+}
+
+function showResult(res){
+  document.getElementById('processing-section').style.display='none';
+  document.getElementById('result-section').style.display='block';
+
+  if(!res.ok){
+    var bar=document.getElementById('result-status');
+    bar.className='status-bar status-error';
+    document.getElementById('result-msg').textContent='Error: '+res.error;
+    if(res.upgrade){
+      bar.innerHTML+=' <a href="/settings" style="color:#f87171;font-weight:500">Upgrade plan</a>';
+    }
+    return;
+  }
+
+  var d=res.extracted;
+  document.getElementById('result-msg').textContent=res.message;
+  document.getElementById('r-vendor').textContent=d.vendor_name||'—';
+  document.getElementById('r-taxid').textContent=d.vendor_tax_id||'Not found on document';
+  document.getElementById('r-invno').textContent=d.invoice_number||'—';
+  document.getElementById('r-date').textContent=d.invoice_date||'—';
+  document.getElementById('r-type').innerHTML='<span class="badge badge-gray">'+d.doc_type+'</span>';
+  document.getElementById('r-cat').textContent=d.category||'Other';
+  document.getElementById('r-sub').textContent=(d.currency||'MVR')+' '+fmt(d.subtotal);
+  document.getElementById('r-tax').textContent=(d.currency||'MVR')+' '+fmt(d.tax_amount);
+  document.getElementById('r-total').textContent=(d.currency||'MVR')+' '+fmt(d.total_amount);
+
+  var conf=document.getElementById('conf-badge');
+  if(d.confidence==='low'){conf.className='badge badge-amber';conf.textContent='LOW CONFIDENCE';}
+  else{conf.className='badge badge-green';conf.textContent='HIGH CONFIDENCE';}
+
+  if(d.line_items&&d.line_items.length){
+    document.getElementById('line-items-card').style.display='block';
+    var tbody=document.getElementById('line-items-body');tbody.innerHTML='';
+    d.line_items.forEach(function(item){
+      var tr=document.createElement('tr');
+      tr.innerHTML='<td>'+esc(item.description)+'</td><td>'+(item.quantity||1)+'</td><td>'+fmt(item.unit_price)+'</td><td style="text-align:right">'+fmt(item.total)+'</td>';
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+function uploadAnother(){
+  document.getElementById('upload-section').style.display='block';
+  document.getElementById('processing-section').style.display='none';
+  document.getElementById('result-section').style.display='none';
+  document.getElementById('doc-file').value='';
+  document.getElementById('img-preview-wrap').innerHTML='';
+  document.getElementById('line-items-card').style.display='none';
+  document.getElementById('line-items-body').innerHTML='';
+}
+</script>
+{% endblock %}
