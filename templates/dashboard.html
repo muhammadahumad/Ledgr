@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Dashboard</div>
+    <div class="page-sub">{{ business.name }} · {{ tax.name }} · {{ tax.currency }}</div>
+  </div>
+  <a href="/upload" class="btn btn-primary">+ Upload Document</a>
+</div>
+
+<div class="content">
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total expenses</div>
+      <div class="stat-value">{{ "%.0f"|format(total_expense) }}</div>
+      <div class="stat-currency">{{ tax.currency }} this month</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total revenue</div>
+      <div class="stat-value">{{ "%.0f"|format(total_revenue) }}</div>
+      <div class="stat-currency">{{ tax.currency }} this month</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Documents</div>
+      <div class="stat-value">{{ total_docs }}</div>
+      <div class="stat-currency">total processed</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uploads left</div>
+      <div class="stat-value">{{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }}</div>
+      <div class="stat-currency">{{ plan.name }} plan</div>
+    </div>
+  </div>
+
+  {% if pending_docs > 0 %}
+  <div class="alert alert-warn" style="display:flex;align-items:center;justify-content:space-between">
+    <span>{{ pending_docs }} documents pending review</span>
+    <a href="/ledger" class="btn btn-sm">Review now</a>
+  </div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
+    <div class="card">
+      <div class="card-title">
+        Recent documents
+        <a href="/upload" class="btn btn-sm btn-primary">Upload new</a>
+      </div>
+      {% if recent_docs %}
+      <table class="table">
+        <thead><tr><th>Vendor</th><th>Type</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for doc in recent_docs %}
+          <tr>
+            <td style="color:#f1f5f9;font-weight:500">{{ doc.vendor_name or '—' }}</td>
+            <td><span class="badge badge-gray">{{ doc.doc_type }}</span></td>
+            <td>{{ doc.invoice_date.strftime('%d %b') if doc.invoice_date else '—' }}</td>
+            <td>{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
+            <td>
+              {% if doc.status == 'PROCESSED' %}
+                <span class="badge badge-green">Posted</span>
+              {% elif doc.status == 'FLAGGED' %}
+                <span class="badge badge-red">Flagged</span>
+              {% else %}
+                <span class="badge badge-amber">Pending</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="text-align:center;padding:32px 0;color:#475569">
+        <div style="font-size:32px;margin-bottom:12px">↑</div>
+        <div style="font-weight:500;margin-bottom:6px">No documents yet</div>
+        <div style="font-size:12px">Upload your first bill or receipt to get started</div>
+        <a href="/upload" class="btn btn-primary" style="margin-top:16px">Upload first document</a>
+      </div>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-title">Tax compliance</div>
+        <div style="font-size:12px;color:#64748b;line-height:1.8">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span>Authority</span><span style="color:#10b981;font-weight:500">{{ tax.authority }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span>Tax type</span><span style="color:#f1f5f9">{{ tax.tax_name }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span>Rate</span><span style="color:#f1f5f9">{{ (tax.tax_rate * 100)|int }}%</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span>Currency</span><span style="color:#f1f5f9">{{ tax.currency }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Quick actions</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <a href="/upload" class="btn" style="justify-content:center">↑ Upload document</a>
+          <a href="/ledger" class="btn" style="justify-content:center">≡ View ledger</a>
+          <a href="/inventory" class="btn" style="justify-content:center">▦ Inventory</a>
+          <a href="/payroll" class="btn" style="justify-content:center">$ Payroll</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
