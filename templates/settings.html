@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Settings — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Settings</div>
+    <div class="page-sub">Business profile and account settings</div>
+  </div>
+</div>
+
+<div class="content" style="max-width:700px">
+  <div class="card">
+    <div class="card-title">Business profile</div>
+    <div class="field-row">
+      <div><div class="field-label">Business name</div><p style="color:#f1f5f9;padding:6px 0">{{ business.name }}</p></div>
+      <div><div class="field-label">Region</div><p style="color:#10b981;padding:6px 0">{{ tax.name }}</p></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Base currency</div><p style="color:#f1f5f9;padding:6px 0">{{ business.base_currency }}</p></div>
+      <div><div class="field-label">Tax authority</div><p style="color:#f1f5f9;padding:6px 0">{{ tax.authority }}</p></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Tax type</div><p style="color:#f1f5f9;padding:6px 0">{{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</p></div>
+      <div><div class="field-label">Tax ID</div><p style="color:#fbbf24;font-family:monospace;padding:6px 0">{{ business.tax_id or 'Not set' }}</p></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Account</div>
+    <div class="field-row">
+      <div><div class="field-label">Name</div><p style="color:#f1f5f9;padding:6px 0">{{ user.name }}</p></div>
+      <div><div class="field-label">Email</div><p style="color:#f1f5f9;padding:6px 0">{{ user.email }}</p></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Plan</div>
+        <p style="padding:6px 0">
+          <span class="badge {% if user.plan == 'business' %}badge-green{% elif user.plan == 'pro' %}badge-blue{% else %}badge-gray{% endif %}">
+            {{ user.plan|upper }}
+          </span>
+        </p>
+      </div>
+      <div><div class="field-label">Uploads this month</div><p style="color:#f1f5f9;padding:6px 0">{{ user.uploads_this_month or 0 }}</p></div>
+    </div>
+    <p style="font-size:12px;color:#64748b">Member since {{ user.created_at.strftime('%d %B %Y') }}</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Upgrade plan</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      {% for plan_key, plan_info in [('free', {'name':'Free','price':0,'uploads':10}), ('pro', {'name':'Pro','price':15,'uploads':500}), ('business', {'name':'Business','price':35,'uploads':'∞'})] %}
+      <div style="border:1px solid {% if user.plan == plan_key %}#10b981{% else %}#334155{% endif %};border-radius:8px;padding:16px;text-align:center">
+        <div style="font-weight:600;margin-bottom:4px">{{ plan_info.name }}</div>
+        <div style="font-size:20px;font-weight:700;color:#10b981;margin-bottom:4px">${{ plan_info.price }}</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:12px">{{ plan_info.uploads }} uploads/mo</div>
+        {% if user.plan == plan_key %}
+        <span class="badge badge-green">Current plan</span>
+        {% else %}
+        <button class="btn btn-sm btn-primary" style="width:100%" onclick="requestUpgrade('{{ plan_key }}')">Upgrade</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p style="font-size:12px;color:#64748b;margin-top:12px">Payment via bank transfer · Contact muahumadhu@gmail.com</p>
+    <div id="upgrade-msg" style="display:none;margin-top:10px" class="alert alert-success"></div>
+  </div>
+
+  {% if user.email == 'muahumadhu@gmail.com' %}
+  <div class="card" style="border-color:#10b981">
+    <div class="card-title">Admin panel <span class="badge badge-green">Owner</span></div>
+    <a href="/admin" class="btn btn-primary">Open admin panel</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function requestUpgrade(plan){
+  fetch('/api/request-upgrade',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({plan:plan})
+  }).then(r=>r.json()).then(res=>{
+    var msg=document.getElementById('upgrade-msg');
+    msg.style.display='block';
+    msg.textContent=res.message||'Upgrade request sent!';
+  });
+}
+</script>
+{% endblock %}
