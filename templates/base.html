@@ -127,6 +127,9 @@ a:hover{text-decoration:underline}
   <a href="/pos" class="nav-item {% if request.path == '/pos' %}active{% endif %}">
     <span class="icon">⚡</span> Point of Sale
   </a>
+  <a href="/customers" class="nav-item {% if request.path == '/customers' %}active{% endif %}">
+    <span class="icon">👤</span> Customers
+  </a>
 
   <div class="nav-section">Accounting</div>
   <a href="/accounts" class="nav-item {% if request.path == '/accounts' %}active{% endif %}">
@@ -145,6 +148,11 @@ a:hover{text-decoration:underline}
   </a>
   <a href="/payroll" class="nav-item {% if request.path == '/payroll' %}active{% endif %}">
     <span class="icon">$</span> Payroll
+  </a>
+
+  <div class="nav-section">AI</div>
+  <a href="/ai" class="nav-item {% if request.path == '/ai' %}active{% endif %}" style="{% if request.path == '/ai' %}{% else %}background:linear-gradient(90deg,rgba(16,185,129,.1),transparent){% endif %}">
+    <span class="icon">⬡</span> AI Accountant
   </a>
 
   <div class="nav-section">Account</div>

@@ -80,8 +80,26 @@
         </div>
         <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px">
           <input type="checkbox" id="toggle-pos" {% if business.has_pos %}checked{% endif %} onchange="toggleModule('has_pos', this.checked)" style="opacity:0;width:0;height:0">
-          <span style="position:absolute;cursor:pointer;inset:0;background:{% if business.has_pos %}#10b981{% else %}#334155{% endif %};border-radius:34px;transition:.3s" id="toggle-pos-span"></span>
-          <span style="position:absolute;content:'';height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;transform:{% if business.has_pos %}translateX(20px){% else %}translateX(0){% endif %}"></span>
+          <span style="position:absolute;cursor:pointer;inset:0;background:{% if business.has_pos %}#10b981{% else %}#334155{% endif %};border-radius:34px;transition:.3s"></span>
+          <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;transform:{% if business.has_pos %}translateX(20px){% else %}translateX(0){% endif %}"></span>
+        </label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:#0f172a;border-radius:8px;border:1px solid {% if business.is_tax_registered %}rgba(16,185,129,.3){% else %}#1e293b{% endif %}">
+        <div>
+          <div style="font-weight:500;color:#f1f5f9">Tax Registration ({{ tax.tax_name }}/{{ tax.authority }})</div>
+          <div style="font-size:12px;color:#64748b">Enable when your business is registered with {{ tax.authority }}. Activates tax calculations on POS and reports.</div>
+          {% if business.is_tax_registered %}
+          <div style="margin-top:8px">
+            <div class="field-label">{{ tax.authority }} Registration Number</div>
+            <input class="field-input" id="tax-reg-num" value="{{ business.tax_registration_number or '' }}" placeholder="{{ tax.tin_format }}" style="max-width:240px" onblur="saveTaxNumber()">
+          </div>
+          {% endif %}
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px">
+          <input type="checkbox" id="toggle-tax" {% if business.is_tax_registered %}checked{% endif %} onchange="toggleModule('is_tax_registered', this.checked)" style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:{% if business.is_tax_registered %}#10b981{% else %}#334155{% endif %};border-radius:34px;transition:.3s"></span>
+          <span style="position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;transform:{% if business.is_tax_registered %}translateX(20px){% else %}translateX(0){% endif %}"></span>
         </label>
       </div>
     </div>
@@ -133,6 +151,24 @@ function toggleModule(key, value){
       setTimeout(()=>msg.style.display='none',2000);
     }
   });
+}
+
+function saveTaxNumber(){
+  var num=document.getElementById('tax-reg-num');
+  if(num){
+    fetch('/api/business/settings',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({tax_registration_number:num.value})
+    }).then(r=>r.json()).then(res=>{
+      if(res.ok){
+        var msg=document.getElementById('module-msg');
+        msg.style.display='block';
+        msg.textContent='Tax registration number saved!';
+        setTimeout(()=>msg.style.display='none',2000);
+      }
+    });
+  }
 }
 
 function requestUpgrade(plan){

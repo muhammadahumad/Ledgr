@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Customers — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Customers</div>
+    <div class="page-sub">{{ total_customers }} customers · {{ vip_count }} VIP · {{ business.base_currency }} {{ "%.2f"|format(total_outstanding) }} outstanding</div>
+  </div>
+  <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ Add Customer</button>
+</div>
+
+<div class="content">
+  <div class="card">
+    <div class="card-title">
+      Customer Database
+      <input class="field-input" id="search-input" placeholder="Search by name or phone..." style="width:240px;font-size:12px;padding:5px 10px" oninput="filterCustomers(this.value)">
+    </div>
+    {% if customers %}
+    <table class="table" id="customers-table">
+      <thead><tr><th>Name</th><th>Phone</th><th>Visits</th><th>Total Spent</th><th>Outstanding</th><th>Last Visit</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for c in customers %}
+        <tr class="customer-row" data-name="{{ c.name|lower }}" data-phone="{{ c.phone or '' }}">
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:32px;height:32px;border-radius:50%;background:{% if c.is_vip %}#10b981{% else %}#334155{% endif %};display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;flex-shrink:0">
+                {{ c.name[0].upper() }}
+              </div>
+              <div>
+                <div style="color:#f1f5f9;font-weight:500">{{ c.name }}</div>
+                {% if c.email %}<div style="font-size:11px;color:#64748b">{{ c.email }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td style="color:#94a3b8;font-family:monospace">{{ c.phone or '—' }}</td>
+          <td style="color:#f1f5f9">{{ c.visit_count or 0 }}</td>
+          <td style="font-weight:500;color:#10b981">{{ business.base_currency }} {{ "%.2f"|format(c.total_spent) }}</td>
+          <td style="color:{% if c.outstanding_balance > 0 %}#f87171{% else %}#64748b{% endif %};font-weight:{% if c.outstanding_balance > 0 %}600{% else %}400{% endif %}">
+            {% if c.outstanding_balance > 0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}
+          </td>
+          <td style="color:#64748b;font-size:12px">{{ c.last_visit.strftime('%d %b %Y') if c.last_visit else 'Never' }}</td>
+          <td>
+            {% if c.is_vip %}<span class="badge badge-green">VIP</span>
+            {% elif c.outstanding_balance > 0 %}<span class="badge badge-red">Has Tab</span>
+            {% else %}<span class="badge badge-gray">Regular</span>{% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm" onclick="viewCustomer({{ c.id }})">View</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px 0;color:#475569">
+      <div style="font-size:32px;margin-bottom:12px">👤</div>
+      <div style="font-weight:500;margin-bottom:6px">No customers yet</div>
+      <div style="font-size:12px;margin-bottom:16px">Add customers to track their purchase history and manage credit/tabs</div>
+      <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">Add first customer</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div id="add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);align-items:center;justify-content:center;z-index:200">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px;width:100%;max-width:480px">
+    <div style="font-size:16px;font-weight:600;margin-bottom:20px;color:#f1f5f9">Add Customer</div>
+    <div class="field-row">
+      <div><div class="field-label">Full Name *</div><input class="field-input" id="c-name" placeholder="Ahmed Hassan"></div>
+      <div><div class="field-label">Phone</div><input class="field-input" id="c-phone" placeholder="+960 7XX XXXX"></div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Email</div>
+      <input class="field-input" id="c-email" placeholder="customer@email.com">
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Credit Limit</div><input class="field-input" type="number" id="c-credit" placeholder="0.00" step="0.01"></div>
+      <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#94a3b8">
+          <input type="checkbox" id="c-vip" style="accent-color:#10b981;width:16px;height:16px">
+          Mark as VIP
+        </label>
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Notes</div>
+      <input class="field-input" id="c-notes" placeholder="Allergies, preferences, special notes...">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary" onclick="addCustomer()">Add customer</button>
+      <button class="btn" onclick="document.getElementById('add-modal').style.display='none'">Cancel</button>
+    </div>
+    <div id="add-msg" style="margin-top:10px;font-size:13px"></div>
+  </div>
+</div>
+
+<!-- Customer Detail Modal -->
+<div id="detail-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);align-items:center;justify-content:center;z-index:200">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px;width:100%;max-width:540px;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <div id="d-name" style="font-size:18px;font-weight:600;color:#f1f5f9"></div>
+      <button class="btn btn-sm" onclick="document.getElementById('detail-modal').style.display='none'">Close</button>
+    </div>
+    <div id="detail-content"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterCustomers(q){
+  q=q.toLowerCase();
+  document.querySelectorAll('.customer-row').forEach(function(row){
+    var name=row.dataset.name||'';
+    var phone=row.dataset.phone||'';
+    row.style.display=(name.includes(q)||phone.includes(q))?'':'none';
+  });
+}
+
+function addCustomer(){
+  var name=document.getElementById('c-name').value.trim();
+  if(!name){alert('Name is required');return;}
+  fetch('/api/customer/add',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name:name,
+      phone:document.getElementById('c-phone').value,
+      email:document.getElementById('c-email').value,
+      notes:document.getElementById('c-notes').value,
+      is_vip:document.getElementById('c-vip').checked,
+      credit_limit:parseFloat(document.getElementById('c-credit').value)||0
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){location.reload();}
+    else{
+      var msg=document.getElementById('add-msg');
+      msg.textContent='Error: '+res.error;
+      msg.style.color='#f87171';
+    }
+  });
+}
+
+function viewCustomer(id){
+  fetch('/api/customer/'+id)
+  .then(r=>r.json()).then(res=>{
+    if(!res.ok)return;
+    document.getElementById('d-name').textContent=res.name+(res.is_vip?' ⭐':'');
+    var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;font-size:13px">';
+    html+='<div><div class="field-label">Phone</div><div style="color:#f1f5f9">'+( res.phone||'—')+'</div></div>';
+    html+='<div><div class="field-label">Email</div><div style="color:#f1f5f9">'+(res.email||'—')+'</div></div>';
+    html+='<div><div class="field-label">Total Spent</div><div style="color:#10b981;font-weight:600;font-size:16px">'+res.currency+' '+fmt(res.total_spent)+'</div></div>';
+    html+='<div><div class="field-label">Visits</div><div style="color:#f1f5f9;font-size:16px;font-weight:600">'+res.visit_count+'</div></div>';
+    html+='<div><div class="field-label">Outstanding Balance</div><div style="color:'+(res.outstanding_balance>0?'#f87171':'#64748b')+';font-weight:'+(res.outstanding_balance>0?600:400)+'">'+res.currency+' '+fmt(res.outstanding_balance)+'</div></div>';
+    html+='<div><div class="field-label">Last Visit</div><div style="color:#f1f5f9">'+(res.last_visit||'Never')+'</div></div>';
+    html+='</div>';
+    if(res.notes)html+='<div style="padding:10px;background:#0f172a;border-radius:8px;font-size:12px;color:#94a3b8;margin-bottom:14px">📝 '+esc(res.notes)+'</div>';
+    if(res.recent_sales&&res.recent_sales.length){
+      html+='<div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Recent Purchases</div>';
+      res.recent_sales.forEach(function(s){
+        html+='<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155;font-size:12px">';
+        html+='<div><div style="color:#f1f5f9">'+(s.note||'Sale')+'</div><div style="color:#64748b">'+s.date+' · '+s.method+'</div></div>';
+        html+='<div style="color:#10b981;font-weight:500">'+res.currency+' '+fmt(s.amount)+'</div></div>';
+      });
+    }
+    document.getElementById('detail-content').innerHTML=html;
+    document.getElementById('detail-modal').style.display='flex';
+  });
+}
+</script>
+{% endblock %}
