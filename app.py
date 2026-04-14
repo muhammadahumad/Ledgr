@@ -1020,7 +1020,7 @@ def pos():
     ).all()
     today_total = sum(float(s.amount) for s in today_sales)
     products = Product.query.filter_by(
-        business_id=business.id, is_active=True if hasattr(Product,'is_active') else True
+        business_id=business.id
     ).order_by(Product.name).all() if business.has_inventory else []
     return render_template('pos.html', user=user, business=business,
                            today_sales=today_sales, today_total=today_total,
