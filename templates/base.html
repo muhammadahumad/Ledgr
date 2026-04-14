@@ -29,7 +29,7 @@ a:hover{text-decoration:underline}
 
 /* Main */
 .main{margin-left:220px;min-height:100vh;background:#0f172a}
-.topbar{padding:16px 28px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;background:#0f172a;position:sticky;top:0;z-index:50}
+.topbar{padding:16px 28px 16px 28px;border-bottom:1px solid #1e293b;display:flex;align-items:center;justify-content:space-between;background:#0f172a;position:sticky;top:0;z-index:50}
 .page-title{font-size:18px;font-weight:600;color:#f1f5f9}
 .page-sub{font-size:12px;color:#64748b;margin-top:2px}
 .content{padding:24px 28px}
@@ -97,9 +97,18 @@ a:hover{text-decoration:underline}
 .status-error{background:rgba(220,38,38,.1);color:#f87171;border:1px solid rgba(220,38,38,.2)}
 
 @media(max-width:768px){
-  .sidebar{display:none}
+  .sidebar{transform:translateX(-100%);transition:transform .25s;z-index:200}
+  .sidebar.open{transform:translateX(0)}
   .main{margin-left:0}
   .stat-grid{grid-template-columns:1fr 1fr}
+  .topbar{padding:12px 16px}
+  .content{padding:16px}
+  .overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:199}
+  .overlay.show{display:block}
+}
+@media(min-width:769px){
+  .hamburger{display:none}
+  .overlay{display:none!important}
 }
 </style>
 </head>
@@ -175,6 +184,14 @@ a:hover{text-decoration:underline}
 </nav>
 {% endif %}
 
+{% if session.user_id %}
+<div class="overlay" id="overlay" onclick="closeSidebar()"></div>
+<button class="hamburger" onclick="toggleSidebar()" style="position:fixed;top:14px;left:14px;z-index:300;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 10px;cursor:pointer;display:flex;flex-direction:column;gap:4px">
+  <span style="display:block;width:18px;height:2px;background:#f1f5f9"></span>
+  <span style="display:block;width:18px;height:2px;background:#f1f5f9"></span>
+  <span style="display:block;width:18px;height:2px;background:#f1f5f9"></span>
+</button>
+{% endif %}
 <div class="{% if session.user_id %}main{% endif %}">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -196,5 +213,23 @@ function fmt(n){return n!=null?parseFloat(n).toFixed(2):'0.00';}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 </script>
 {% block scripts %}{% endblock %}
+<script>
+function toggleSidebar(){
+  var s=document.querySelector('.sidebar');
+  var o=document.getElementById('overlay');
+  if(s){s.classList.toggle('open');}
+  if(o){o.classList.toggle('show');}
+}
+function closeSidebar(){
+  var s=document.querySelector('.sidebar');
+  var o=document.getElementById('overlay');
+  if(s)s.classList.remove('open');
+  if(o)o.classList.remove('show');
+}
+// Close sidebar when nav item clicked on mobile
+document.querySelectorAll('.nav-item').forEach(function(el){
+  el.addEventListener('click',closeSidebar);
+});
+</script>
 </body>
 </html>
