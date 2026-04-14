@@ -85,6 +85,8 @@ class Business(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     def tax_rules(self): return TAX_RULES.get(self.region, TAX_RULES['MV'])
     def btype(self): return BUSINESS_TYPES.get(self.business_type, BUSINESS_TYPES['sole_proprietor'])
+    def btype_name(self): return self.btype()['name']
+    def btype_accounting(self): return self.btype()['accounting']
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -151,6 +153,8 @@ class Document(db.Model):
     raw_ai_data = db.Column(db.Text)
     status = db.Column(db.String(20), default='PENDING')
     ledger_posted = db.Column(db.Boolean, default=False)
+    file_data = db.Column(db.Text)  # base64 stored soft copy
+    file_type = db.Column(db.String(30))  # image/jpeg, application/pdf
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='documents')
     business = db.relationship('Business', backref='documents')
@@ -308,6 +312,62 @@ class Invoice(db.Model):
     customer = db.relationship('Customer', backref='invoices')
     business = db.relationship('Business', backref='invoices')
 
+
+
+class Quotation(db.Model):
+    """Estimates & Quotations — pre-sale documents"""
+    __tablename__ = 'quotations'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    quote_number = db.Column(db.String(50))
+    quote_date = db.Column(db.Date, default=date.today)
+    valid_until = db.Column(db.Date)
+    currency = db.Column(db.String(3), default='MVR')
+    subtotal = db.Column(db.Numeric(12,2), default=0)
+    tax_amount = db.Column(db.Numeric(12,2), default=0)
+    total_amount = db.Column(db.Numeric(12,2), default=0)
+    status = db.Column(db.String(20), default='DRAFT')  # DRAFT, SENT, ACCEPTED, REJECTED, CONVERTED
+    notes = db.Column(db.Text)
+    items = db.Column(db.Text, default='[]')
+    converted_invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    customer = db.relationship('Customer', backref='quotations')
+    business = db.relationship('Business', backref='quotations')
+
+
+class BankAccount(db.Model):
+    __tablename__ = 'bank_accounts'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    bank_name = db.Column(db.String(100))
+    account_name = db.Column(db.String(100))
+    account_number = db.Column(db.String(50))
+    currency = db.Column(db.String(3), default='MVR')
+    opening_balance = db.Column(db.Numeric(12,2), default=0)
+    current_balance = db.Column(db.Numeric(12,2), default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='bank_accounts')
+
+
+class BankTransaction(db.Model):
+    __tablename__ = 'bank_transactions'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    bank_account_id = db.Column(db.Integer, db.ForeignKey('bank_accounts.id'), nullable=True)
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=True)
+    txn_date = db.Column(db.Date)
+    description = db.Column(db.String(255))
+    reference = db.Column(db.String(100))
+    debit = db.Column(db.Numeric(12,2), default=0)
+    credit = db.Column(db.Numeric(12,2), default=0)
+    balance = db.Column(db.Numeric(12,2), default=0)
+    category = db.Column(db.String(100))
+    is_reconciled = db.Column(db.Boolean, default=False)
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
 with app.app_context():
     try:
         db.create_all()
@@ -400,7 +460,7 @@ category: Office Supplies Utilities Travel Meals Professional Services Inventory
     content = ({'type':'document','source':{'type':'base64','media_type':'application/pdf','data':file_b64}}
                if media_type=='application/pdf' else
                {'type':'image','source':{'type':'base64','media_type':media_type,'data':file_b64}})
-    body = json.dumps({'model':'claude-sonnet-4-20250514','max_tokens':2048,
+    body = json.dumps({'model':'claude-sonnet-4-6','max_tokens':2048,
                        'messages':[{'role':'user','content':[content,{'type':'text','text':prompt}]}]}).encode()
     req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
                                  headers={'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'})
@@ -500,7 +560,8 @@ def dashboard():
                            total_expense=total_expense, total_revenue=total_revenue,
                            total_docs=total_docs, total_customers=total_customers,
                            recent_docs=recent_docs, low_stock=low_stock, threshold=threshold,
-                           today_pos=today_pos, user_businesses=user_businesses, plan=user.get_plan())
+                           today_pos=today_pos, user_businesses=user_businesses, plan=user.get_plan(),
+                           btype_name=business.btype()['name'])
 
 @app.route('/upload')
 @login_required
@@ -765,7 +826,7 @@ YOUR ROLE: Answer financial questions in simple friendly language. Flag issues p
     messages.append({'role':'user','content':message})
     db.session.add(AIConversation(business_id=business.id, user_id=user.id, role='user', message=message))
     try:
-        body = json.dumps({'model':'claude-sonnet-4-20250514','max_tokens':1024,'system':system,'messages':messages}).encode()
+        body = json.dumps({'model':'claude-sonnet-4-6','max_tokens':1024,'system':system,'messages':messages}).encode()
         req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
                                      headers={'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'})
         with urllib.request.urlopen(req, timeout=60) as resp:
@@ -1074,3 +1135,293 @@ def api_request_upgrade():
 if __name__ == '__main__':
     with app.app_context(): db.create_all()
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT',5000)))
+
+
+# ── Document Archive ──────────────────────────────────────────────────────────
+
+@app.route("/documents")
+@login_required
+def documents():
+    user = current_user(); business = current_business()
+    doc_type = request.args.get("type","")
+    query = Document.query.filter_by(business_id=business.id)
+    if doc_type: query = query.filter_by(doc_type=doc_type)
+    docs = query.order_by(Document.created_at.desc()).all()
+    return render_template("documents.html", user=user, business=business,
+                           docs=docs, tax=business.tax_rules(), doc_type=doc_type)
+
+
+@app.route("/documents/<int:doc_id>")
+@login_required
+def document_detail(doc_id):
+    user = current_user(); business = current_business()
+    doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
+    if not doc: return redirect(url_for("documents"))
+    return render_template("document_detail.html", user=user, business=business,
+                           doc=doc, tax=business.tax_rules())
+
+
+@app.route("/api/document/<int:doc_id>/update", methods=["POST"])
+@login_required
+def api_document_update(doc_id):
+    business = current_business()
+    doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
+    if not doc: return jsonify({"ok":False,"error":"Document not found"})
+    data = request.get_json()
+    for field in ["vendor_name","vendor_tax_id","invoice_number","currency"]:
+        if field in data: setattr(doc, field, data[field])
+    for field in ["subtotal","tax_amount","total_amount"]:
+        if field in data: setattr(doc, field, float(data[field] or 0))
+    try:
+        if data.get("invoice_date"): doc.invoice_date = datetime.strptime(data["invoice_date"],"%Y-%m-%d").date()
+        if data.get("due_date"): doc.due_date = datetime.strptime(data["due_date"],"%Y-%m-%d").date()
+    except: pass
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Document updated"})
+
+
+@app.route("/api/document/manual", methods=["POST"])
+@login_required
+def api_document_manual():
+    user = current_user(); business = current_business()
+    data = request.get_json()
+    inv_date = due_date = None
+    try:
+        if data.get("invoice_date"): inv_date = datetime.strptime(data["invoice_date"],"%Y-%m-%d").date()
+        if data.get("due_date"): due_date = datetime.strptime(data["due_date"],"%Y-%m-%d").date()
+    except: pass
+    total = float(data.get("total_amount",0))
+    tax_amt = float(data.get("tax_amount",0))
+    doc = Document(business_id=business.id, user_id=user.id,
+                   doc_type=data.get("doc_type","BILL"), vendor_name=data.get("vendor_name",""),
+                   vendor_tax_id=data.get("vendor_tax_id"), invoice_number=data.get("invoice_number",""),
+                   invoice_date=inv_date, due_date=due_date,
+                   currency=data.get("currency",business.base_currency),
+                   subtotal=float(data.get("subtotal",0)), tax_amount=tax_amt, total_amount=total,
+                   raw_ai_data="{}", status="PROCESSED")
+    db.session.add(doc)
+    db.session.flush()
+    cat_map = {"Office Supplies":"5400","Utilities":"5300","Travel":"5700","Meals":"5800",
+               "Professional Services":"5600","Inventory Purchase":"1200","Payroll":"5100",
+               "Tax Payment":"6200","Other":"6900"}
+    expense_code = cat_map.get(data.get("category","Other"),"6900")
+    try:
+        lines = [{"account_code":expense_code,"debit":total-tax_amt,"credit":0,"description":data.get("vendor_name","")},
+                 {"account_code":"2000","debit":0,"credit":total,"description":data.get("vendor_name","")}]
+        if tax_amt > 0: lines.insert(1,{"account_code":"2210","debit":tax_amt,"credit":0,"description":"Tax"})
+        post_journal(business.id, user.id, data.get("doc_type","BILL") + " — " + data.get("vendor_name",""),
+                    data.get("invoice_number","DOC-"+str(doc.id)), "PURCHASE", lines, doc.id)
+    except Exception as e: print("Manual doc journal error: " + str(e))
+    db.session.add(LedgerEntry(business_id=business.id, document_id=doc.id, entry_type="EXPENSE",
+                               amount=total, tax_amount=tax_amt, currency=data.get("currency",business.base_currency),
+                               description=data.get("doc_type","BILL") + " — " + data.get("vendor_name",""),
+                               category=data.get("category","Other")))
+    doc.ledger_posted = True
+    db.session.commit()
+    return jsonify({"ok":True,"document_id":doc.id,"message":"Document saved"})
+
+
+# ── Quotations ────────────────────────────────────────────────────────────────
+
+@app.route("/quotations")
+@login_required
+def quotations():
+    user = current_user(); business = current_business()
+    quotes = Quotation.query.filter_by(business_id=business.id).order_by(Quotation.created_at.desc()).all()
+    customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
+    return render_template("quotations.html", user=user, business=business,
+                           quotations=quotes, customers=customers_list, tax=business.tax_rules())
+
+
+@app.route("/api/quotation/create", methods=["POST"])
+@login_required
+def api_quotation_create():
+    user = current_user(); business = current_business()
+    data = request.get_json()
+    items = data.get("items",[])
+    subtotal = sum(float(i.get("total",0)) for i in items)
+    tax_rate = business.tax_rules()["tax_rate"] if business.is_tax_registered else 0
+    tax_amt = round(subtotal * tax_rate, 2)
+    total = subtotal + tax_amt
+    count = Quotation.query.filter_by(business_id=business.id).count() + 1
+    q_num = "QUO-" + str(datetime.utcnow().year) + "-" + str(count).zfill(4)
+    valid_until = None
+    try:
+        if data.get("valid_until"): valid_until = datetime.strptime(data["valid_until"],"%Y-%m-%d").date()
+    except: pass
+    quote = Quotation(business_id=business.id, customer_id=data.get("customer_id") or None,
+                      quote_number=q_num, subtotal=subtotal, tax_amount=tax_amt,
+                      total_amount=total, currency=business.base_currency,
+                      notes=data.get("notes",""), items=json.dumps(items),
+                      valid_until=valid_until, status="SENT")
+    db.session.add(quote)
+    db.session.commit()
+    customer_name = ""
+    if data.get("customer_id"):
+        c = Customer.query.get(data.get("customer_id"))
+        if c: customer_name = c.name
+    lines_text = "\n".join(["- " + i.get("desc","") + " x" + str(i.get("qty",1)) + " = " + business.base_currency + " " + str(float(i.get("total",0))) for i in items])
+    receipt = "*Quotation " + q_num + "*\n" + "━"*20 + "\n" + business.name + "\nDate: " + datetime.utcnow().strftime("%d %b %Y") + "\n" + (("Customer: " + customer_name + "\n") if customer_name else "") + "━"*20 + "\n" + lines_text + "\n" + "━"*20 + "\nSubtotal: " + business.base_currency + " " + str(subtotal) + "\n" + (("Tax: " + business.base_currency + " " + str(tax_amt) + "\n") if tax_amt>0 else "") + "*TOTAL: " + business.base_currency + " " + str(total) + "*\n" + "━"*20 + "\nThis is a quotation — not a tax invoice.\nPowered by LEDGR"
+    wa_url = "https://wa.me/?text=" + urllib.parse.quote(receipt)
+    return jsonify({"ok":True,"quote_id":quote.id,"quote_number":q_num,"total":total,"wa_url":wa_url})
+
+
+@app.route("/api/quotation/<int:qid>/convert", methods=["POST"])
+@login_required
+def api_quotation_convert(qid):
+    user = current_user(); business = current_business()
+    quote = Quotation.query.filter_by(id=qid, business_id=business.id).first()
+    if not quote: return jsonify({"ok":False,"error":"Quotation not found"})
+    if quote.status == "CONVERTED": return jsonify({"ok":False,"error":"Already converted"})
+    count = Invoice.query.filter_by(business_id=business.id).count() + 1
+    inv_num = "INV-" + str(datetime.utcnow().year) + "-" + str(count).zfill(4)
+    inv = Invoice(business_id=business.id, customer_id=quote.customer_id,
+                  invoice_number=inv_num, subtotal=quote.subtotal, tax_amount=quote.tax_amount,
+                  total_amount=quote.total_amount, currency=quote.currency,
+                  notes=quote.notes, items=quote.items, status="SENT")
+    db.session.add(inv)
+    db.session.flush()
+    quote.status = "CONVERTED"
+    quote.converted_invoice_id = inv.id
+    if quote.customer_id:
+        try:
+            total_val = float(quote.total_amount)
+            sub_val = float(quote.subtotal)
+            tax_val = float(quote.tax_amount)
+            lines = [{"account_code":"1100","debit":total_val,"credit":0},
+                     {"account_code":"4000","debit":0,"credit":sub_val}]
+            if tax_val > 0: lines.append({"account_code":"2210","debit":0,"credit":tax_val})
+            post_journal(business.id, user.id, "Invoice " + inv_num + " (from " + quote.quote_number + ")",
+                        inv_num, "INVOICE", lines)
+            c = Customer.query.get(quote.customer_id)
+            if c: c.outstanding_balance = float(c.outstanding_balance or 0) + float(quote.total_amount)
+        except Exception as e: print("Quote convert error: " + str(e))
+    db.session.commit()
+    return jsonify({"ok":True,"invoice_id":inv.id,"invoice_number":inv_num})
+
+
+@app.route("/api/quotation/<int:qid>/status", methods=["POST"])
+@login_required
+def api_quotation_status(qid):
+    business = current_business()
+    quote = Quotation.query.filter_by(id=qid, business_id=business.id).first()
+    if not quote: return jsonify({"ok":False,"error":"Not found"})
+    data = request.get_json()
+    quote.status = data.get("status", quote.status)
+    db.session.commit()
+    return jsonify({"ok":True})
+
+
+# ── Bank Statements ───────────────────────────────────────────────────────────
+
+@app.route("/bank")
+@login_required
+def bank():
+    user = current_user(); business = current_business()
+    bank_accounts = BankAccount.query.filter_by(business_id=business.id, is_active=True).all()
+    recent_txns = BankTransaction.query.filter_by(business_id=business.id).order_by(
+        BankTransaction.txn_date.desc()).limit(50).all()
+    return render_template("bank.html", user=user, business=business, tax=business.tax_rules(),
+                           bank_accounts=bank_accounts, recent_txns=recent_txns)
+
+
+@app.route("/api/bank/add-account", methods=["POST"])
+@login_required
+def api_bank_add_account():
+    business = current_business()
+    data = request.get_json()
+    acct = BankAccount(business_id=business.id, bank_name=data.get("bank_name",""),
+                       account_name=data.get("account_name",""), account_number=data.get("account_number",""),
+                       currency=data.get("currency",business.base_currency),
+                       opening_balance=float(data.get("opening_balance",0)),
+                       current_balance=float(data.get("opening_balance",0)))
+    db.session.add(acct)
+    db.session.commit()
+    return jsonify({"ok":True,"account_id":acct.id})
+
+
+@app.route("/api/bank/upload-statement", methods=["POST"])
+@login_required
+def api_bank_upload_statement():
+    user = current_user(); business = current_business()
+    if not ANTHROPIC_KEY: return jsonify({"ok":False,"error":"AI not configured"})
+    data = request.get_json()
+    file_b64 = data.get("file","")
+    media_type = data.get("media_type","image/jpeg")
+    bank_account_id = data.get("bank_account_id")
+    tax = business.tax_rules()
+    currency = tax["currency"]
+    region_name = tax["name"]
+    prompt = (
+        "You are LEDGR AI analysing a bank statement for a " + region_name + " business. "
+        "Extract ALL transactions. Return ONLY valid JSON: "
+        "{\"account_name\":\"\",\"account_number\":\"\",\"bank_name\":\"\",\"statement_period\":\"\","
+        "\"opening_balance\":0.00,\"closing_balance\":0.00,\"currency\":\"" + currency + "\","
+        "\"transactions\":[{\"date\":\"YYYY-MM-DD\",\"description\":\"\",\"reference\":\"\","
+        "\"debit\":0.00,\"credit\":0.00,\"balance\":0.00,\"category\":\"Other\"}]} "
+        "debit=money out, credit=money in. "
+        "category: Sales Revenue, Salary Payment, Rent, Utilities, Supplier Payment, Tax Payment, Bank Charges, Transfer, Other"
+    )
+    content = ({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":file_b64}}
+               if media_type=="application/pdf" else
+               {"type":"image","source":{"type":"base64","media_type":media_type,"data":file_b64}})
+    try:
+        body = json.dumps({"model":"claude-sonnet-4-6","max_tokens":4096,
+                           "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]}).encode()
+        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body,
+                                     headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read())
+            text = result["content"][0]["text"]
+            m = re.search(r"\{[\s\S]*\}", text)
+            if not m: return jsonify({"ok":False,"error":"Could not parse bank statement"})
+            extracted = json.loads(m.group())
+        return jsonify({"ok":True,"extracted":extracted,"bank_account_id":bank_account_id,
+                        "message":str(len(extracted.get("transactions",[]))) + " transactions extracted"})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/bank/post-transactions", methods=["POST"])
+@login_required
+def api_bank_post_transactions():
+    user = current_user(); business = current_business()
+    data = request.get_json()
+    transactions = data.get("transactions",[])
+    bank_account_id = data.get("bank_account_id")
+    posted = 0
+    cat_to_account = {"Sales Revenue":"4000","Salary Payment":"5100","Rent":"5200",
+                      "Utilities":"5300","Supplier Payment":"2000","Tax Payment":"6200",
+                      "Bank Charges":"5900","Transfer":"1010","Other":"6900"}
+    for txn in transactions:
+        if not txn.get("include", True): continue
+        try:
+            debit = float(txn.get("debit",0))
+            credit = float(txn.get("credit",0))
+            cat_code = cat_to_account.get(txn.get("category","Other"),"6900")
+            try: txn_date = datetime.strptime(txn["date"],"%Y-%m-%d").date()
+            except: txn_date = date.today()
+            if debit > 0:
+                lines = [{"account_code":cat_code,"debit":debit,"credit":0},{"account_code":"1010","debit":0,"credit":debit}]
+                et = "BANK_DEBIT"
+                le_type = "EXPENSE"
+                amount = debit
+            else:
+                lines = [{"account_code":"1010","debit":credit,"credit":0},{"account_code":cat_code,"debit":0,"credit":credit}]
+                et = "BANK_CREDIT"
+                le_type = "REVENUE"
+                amount = credit
+            je = post_journal(business.id, user.id, txn.get("description","Bank txn"), txn.get("reference",""), et, lines)
+            db.session.add(BankTransaction(business_id=business.id, bank_account_id=bank_account_id,
+                                           txn_date=txn_date, description=txn.get("description",""),
+                                           reference=txn.get("reference",""), debit=debit, credit=credit,
+                                           balance=float(txn.get("balance",0)), category=txn.get("category","Other"),
+                                           journal_entry_id=je.id, is_reconciled=True))
+            db.session.add(LedgerEntry(business_id=business.id, entry_type=le_type, amount=amount,
+                                       currency=business.base_currency, description=txn.get("description",""),
+                                       category=txn.get("category","Other")))
+            posted += 1
+        except Exception as e: print("Bank txn error: " + str(e))
+    db.session.commit()
+    return jsonify({"ok":True,"posted":posted,"message":str(posted) + " transactions posted"})
+
