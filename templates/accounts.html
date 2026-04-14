@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Chart of Accounts — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Chart of Accounts</div>
+    <div class="page-sub">Double-entry accounting structure · {{ tax.authority }} compliant</div>
+  </div>
+</div>
+
+<div class="content">
+  {% for acct_type in ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'] %}
+  {% if grouped.get(acct_type) %}
+  <div class="card">
+    <div class="card-title">
+      {{ acct_type }}S
+      <span class="badge {% if acct_type == 'ASSET' %}badge-green{% elif acct_type == 'LIABILITY' %}badge-red{% elif acct_type == 'EQUITY' %}badge-blue{% elif acct_type == 'REVENUE' %}badge-green{% else %}badge-amber{% endif %}">
+        {{ grouped[acct_type]|length }} accounts
+      </span>
+    </div>
+    <table class="table">
+      <thead><tr><th>Code</th><th>Account Name</th><th>Type</th><th style="text-align:right">Balance</th></tr></thead>
+      <tbody>
+        {% for acct in grouped[acct_type] %}
+        <tr>
+          <td style="font-family:monospace;color:#10b981;font-size:12px">{{ acct.code }}</td>
+          <td style="color:#f1f5f9">{{ acct.name }}</td>
+          <td><span class="badge badge-gray" style="font-size:10px">{{ acct.account_type }}</span></td>
+          <td style="text-align:right;font-weight:500;color:{% if acct_type in ('ASSET','EXPENSE') %}#f1f5f9{% else %}#10b981{% endif %}">
+            {{ business.base_currency }} {{ "%.2f"|format(acct.balance(business.id)) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endblock %}

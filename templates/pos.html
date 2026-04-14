@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}POS — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Point of Sale</div>
+    <div class="page-sub">Record a sale in under 3 seconds</div>
+  </div>
+  <div style="text-align:right">
+    <div style="font-size:22px;font-weight:700;color:#10b981" id="today-total">{{ tax.currency }} {{ "%.2f"|format(today_total) }}</div>
+    <div style="font-size:11px;color:#64748b">Today's sales ({{ today_sales|length }} transactions)</div>
+  </div>
+</div>
+
+<div class="content">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+    <!-- Quick Sale Panel -->
+    <div>
+      <div class="card" style="border-color:#10b981">
+        <div class="card-title" style="font-size:16px;color:#10b981">Quick Sale</div>
+
+        <!-- Amount display -->
+        <div style="background:#0f172a;border-radius:12px;padding:20px;text-align:center;margin-bottom:16px">
+          <div style="font-size:11px;color:#64748b;margin-bottom:4px">{{ tax.currency }}</div>
+          <div id="display" style="font-size:48px;font-weight:700;color:#f1f5f9;letter-spacing:-.02em;min-height:60px">0</div>
+          <div id="tax-display" style="font-size:12px;color:#64748b;margin-top:4px">Tax: {{ tax.currency }} 0.00</div>
+        </div>
+
+        <!-- Number pad -->
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+          {% for n in ['1','2','3','4','5','6','7','8','9','.',  '0','⌫'] %}
+          <button class="numpad-btn" onclick="numpad('{{ n }}')" style="padding:16px;font-size:20px;font-weight:600;background:#334155;border:none;border-radius:8px;color:#f1f5f9;cursor:pointer;transition:background .1s" onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">{{ n }}</button>
+          {% endfor %}
+        </div>
+
+        <!-- Payment method -->
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button id="btn-cash" class="btn btn-primary" style="flex:1;justify-content:center" onclick="setPayment('Cash')">Cash</button>
+          <button id="btn-card" class="btn" style="flex:1;justify-content:center" onclick="setPayment('Card')">Card</button>
+          <button id="btn-transfer" class="btn" style="flex:1;justify-content:center" onclick="setPayment('Transfer')">Transfer</button>
+        </div>
+
+        <!-- Note -->
+        <div class="field-group">
+          <input class="field-input" id="sale-note" placeholder="Note (optional) — haircut, takeaway #12..." maxlength="80">
+        </div>
+
+        <!-- Category -->
+        <div class="field-group">
+          <select class="select-input" id="sale-category">
+            <option value="Sale">General Sale</option>
+            <option value="Food & Beverage">Food & Beverage</option>
+            <option value="Service">Service</option>
+            <option value="Delivery">Delivery</option>
+            <option value="Retail">Retail</option>
+          </select>
+        </div>
+
+        <!-- Record button -->
+        <button id="record-btn" onclick="recordSale()" style="width:100%;padding:16px;font-size:16px;font-weight:600;background:#10b981;border:none;border-radius:10px;color:#fff;cursor:pointer;transition:background .15s" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10b981'">
+          Record Sale ✓
+        </button>
+
+        <div id="sale-msg" style="margin-top:10px;font-size:13px;text-align:center;display:none"></div>
+      </div>
+    </div>
+
+    <!-- Today's Sales -->
+    <div>
+      <div class="card">
+        <div class="card-title">Today's Transactions <span id="count-badge" class="badge badge-green">{{ today_sales|length }}</span></div>
+
+        <div id="sales-list" style="max-height:480px;overflow-y:auto">
+          {% if today_sales %}
+            {% for s in today_sales|reverse %}
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e293b">
+              <div>
+                <div style="font-size:13px;color:#f1f5f9;font-weight:500">{{ s.note or s.category or 'Sale' }}</div>
+                <div style="font-size:11px;color:#64748b">{{ s.timestamp.strftime('%H:%M') }} · {{ s.payment_method }}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-weight:600;color:#10b981">{{ s.currency }} {{ "%.2f"|format(s.amount) }}</div>
+                {% if s.tax_amount > 0 %}
+                <div style="font-size:11px;color:#fbbf24">Tax: {{ "%.2f"|format(s.tax_amount) }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+          <div style="text-align:center;padding:32px 0;color:#475569">
+            <div style="font-size:24px;margin-bottom:8px">$</div>
+            <div>No sales yet today</div>
+          </div>
+          {% endif %}
+        </div>
+
+        <div style="border-top:1px solid #334155;margin-top:12px;padding-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:#64748b">Cash sales</span>
+            <span id="cash-total" style="color:#f1f5f9">{{ tax.currency }} {{ "%.2f"|format(today_sales|selectattr('payment_method','eq','Cash')|sum(attribute='amount')) }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+            <span style="color:#64748b">Card sales</span>
+            <span id="card-total" style="color:#f1f5f9">{{ tax.currency }} {{ "%.2f"|format(today_sales|selectattr('payment_method','eq','Card')|sum(attribute='amount')) }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:600;margin-top:8px;padding-top:8px;border-top:1px solid #334155">
+            <span style="color:#f1f5f9">Total</span>
+            <span style="color:#10b981" id="grand-total">{{ tax.currency }} {{ "%.2f"|format(today_total) }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var current = '0';
+var payment = 'Cash';
+var taxRate = {{ tax.tax_rate }};
+var currency = '{{ tax.currency }}';
+
+function numpad(key){
+  if(key==='⌫'){
+    current=current.length>1?current.slice(0,-1):'0';
+  } else if(key==='.'){
+    if(!current.includes('.'))current+='.';
+  } else {
+    if(current==='0'&&key!=='.') current=key;
+    else current+=key;
+  }
+  updateDisplay();
+}
+
+function updateDisplay(){
+  document.getElementById('display').textContent=current;
+  var amt=parseFloat(current)||0;
+  var tax=amt-(amt/(1+taxRate));
+  document.getElementById('tax-display').textContent='Tax: '+currency+' '+tax.toFixed(2);
+}
+
+function setPayment(method){
+  payment=method;
+  ['cash','card','transfer'].forEach(function(m){
+    var btn=document.getElementById('btn-'+m);
+    btn.className=method.toLowerCase()===m?'btn btn-primary':'btn';
+  });
+}
+
+function recordSale(){
+  var amt=parseFloat(current)||0;
+  if(amt<=0){alert('Please enter an amount');return;}
+  var btn=document.getElementById('record-btn');
+  btn.disabled=true;btn.textContent='Recording...';
+
+  fetch('/api/pos/sale',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      amount:amt,
+      payment_method:payment,
+      note:document.getElementById('sale-note').value,
+      category:document.getElementById('sale-category').value,
+      tax_inclusive:true
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){
+      var msg=document.getElementById('sale-msg');
+      msg.style.display='block';
+      msg.style.color='#10b981';
+      msg.textContent='✓ '+currency+' '+res.amount.toFixed(2)+' recorded ('+payment+')';
+
+      if(res.threshold_warning&&res.threshold_warning.warning){
+        msg.textContent+=' ⚠ Approaching tax threshold!';
+      }
+
+      // Reset
+      current='0';updateDisplay();
+      document.getElementById('sale-note').value='';
+      btn.disabled=false;btn.textContent='Record Sale ✓';
+
+      // Reload after 1.5s
+      setTimeout(()=>location.reload(),1500);
+    } else {
+      alert('Error: '+res.error);
+      btn.disabled=false;btn.textContent='Record Sale ✓';
+    }
+  });
+}
+
+// Keyboard support
+document.addEventListener('keydown',function(e){
+  if(e.key>='0'&&e.key<='9')numpad(e.key);
+  else if(e.key==='.')numpad('.');
+  else if(e.key==='Backspace')numpad('⌫');
+  else if(e.key==='Enter')recordSale();
+});
+</script>
+{% endblock %}

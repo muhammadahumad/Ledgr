@@ -86,9 +86,25 @@
       </table>
     </div>
 
+    <!-- Inventory Confirmation Panel -->
+    <div id="inventory-confirm" style="display:none;margin-top:16px">
+      <div class="card" style="border-color:#10b981">
+        <div class="card-title" style="color:#10b981">
+          ▦ Stock items detected — add to inventory?
+          <span style="font-size:12px;color:#64748b;font-weight:normal">Inventory tracking is ON for your business</span>
+        </div>
+        <div id="inventory-items-list" style="margin-bottom:14px"></div>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-primary" onclick="confirmInventory()">✓ Update Stock</button>
+          <button class="btn" onclick="document.getElementById('inventory-confirm').style.display='none'">Skip</button>
+        </div>
+      </div>
+    </div>
+
     <div style="display:flex;gap:10px;margin-top:4px">
       <button class="btn btn-primary" onclick="uploadAnother()">Upload another</button>
       <a href="/ledger" class="btn">View in Ledger</a>
+      <a href="/inventory" class="btn">View Inventory</a>
     </div>
   </div>
 </div>
@@ -174,13 +190,68 @@ function showResult(res){
   if(d.line_items&&d.line_items.length){
     document.getElementById('line-items-card').style.display='block';
     var tbody=document.getElementById('line-items-body');tbody.innerHTML='';
-    d.line_items.forEach(function(item){
+    currentLineItems = d.line_items;
+    d.line_items.forEach(function(item,idx){
       var tr=document.createElement('tr');
       tr.innerHTML='<td>'+esc(item.description)+'</td><td>'+(item.quantity||1)+'</td><td>'+fmt(item.unit_price)+'</td><td style="text-align:right">'+fmt(item.total)+'</td>';
       tbody.appendChild(tr);
     });
+
+    // Show inventory confirmation if enabled
+    if(inventoryEnabled&&d.line_items.length>0){
+      showInventoryConfirm(d.line_items, res.document_id);
+    }
   }
 }
+
+var inventoryEnabled = {{ 'true' if business.has_inventory else 'false' }};
+var currentDocId = null;
+
+function showInventoryConfirm(items, docId){
+  currentDocId = docId;
+  var panel = document.getElementById('inventory-confirm');
+  var list = document.getElementById('inventory-items-list');
+  panel.style.display='block';
+  list.innerHTML='';
+  items.forEach(function(item,idx){
+    var div=document.createElement('div');
+    div.style.cssText='display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #334155';
+    div.innerHTML='<input type="checkbox" id="inv-'+idx+'" checked style="accent-color:#10b981;width:16px;height:16px">'
+      +'<div style="flex:1"><div style="font-size:13px;color:#f1f5f9">'+esc(item.description)+'</div>'
+      +'<div style="font-size:11px;color:#64748b">Qty: '+(item.quantity||1)+' · Cost: '+fmt(item.unit_price)+'</div></div>';
+    list.appendChild(div);
+  });
+}
+
+function confirmInventory(){
+  var items=[];
+  var checkboxes=document.querySelectorAll('[id^="inv-"]');
+  var lineItems=currentLineItems;
+  checkboxes.forEach(function(cb,idx){
+    if(lineItems&&lineItems[idx]){
+      items.push({
+        description:lineItems[idx].description,
+        quantity:lineItems[idx].quantity||1,
+        unit_price:lineItems[idx].unit_price||0,
+        include:cb.checked
+      });
+    }
+  });
+
+  fetch('/api/inventory/from-upload',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({items:items,document_id:currentDocId})
+  }).then(r=>r.json()).then(res=>{
+    document.getElementById('inventory-confirm').style.display='none';
+    if(res.ok){
+      var bar=document.getElementById('result-status');
+      bar.innerHTML+=' <span style="color:#10b981;margin-left:8px">· '+res.updated+' inventory items updated</span>';
+    }
+  });
+}
+
+var currentLineItems = null;
 
 function uploadAnother(){
   document.getElementById('upload-section').style.display='block';

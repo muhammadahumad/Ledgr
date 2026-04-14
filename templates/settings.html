@@ -45,6 +45,50 @@
   </div>
 
   <div class="card">
+    <div class="card-title">Business Modules</div>
+    <p style="font-size:12px;color:#64748b;margin-bottom:16px">Enable only the modules your business needs. Disabled modules stay hidden from your navigation.</p>
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:#0f172a;border-radius:8px">
+        <div>
+          <div style="font-weight:500;color:#f1f5f9">Inventory Tracking</div>
+          <div style="font-size:12px;color:#64748b">Auto-update stock from uploaded supplier invoices. Best for: grocery shops, cafes, construction, retail.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px">
+          <input type="checkbox" id="toggle-inventory" {% if business.has_inventory %}checked{% endif %} onchange="toggleModule('has_inventory', this.checked)" style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:{% if business.has_inventory %}#10b981{% else %}#334155{% endif %};border-radius:34px;transition:.3s" id="toggle-inventory-span"></span>
+          <span style="position:absolute;content:'';height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;transform:{% if business.has_inventory %}translateX(20px){% else %}translateX(0){% endif %}"></span>
+        </label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:#0f172a;border-radius:8px">
+        <div>
+          <div style="font-weight:500;color:#f1f5f9">Payroll & HR</div>
+          <div style="font-size:12px;color:#64748b">Track employees, salaries, visa and work permit expiry. For businesses with staff.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px">
+          <input type="checkbox" id="toggle-payroll" {% if business.has_payroll %}checked{% endif %} onchange="toggleModule('has_payroll', this.checked)" style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:{% if business.has_payroll %}#10b981{% else %}#334155{% endif %};border-radius:34px;transition:.3s" id="toggle-payroll-span"></span>
+          <span style="position:absolute;content:'';height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;transform:{% if business.has_payroll %}translateX(20px){% else %}translateX(0){% endif %}"></span>
+        </label>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:#0f172a;border-radius:8px">
+        <div>
+          <div style="font-weight:500;color:#f1f5f9">Point of Sale (POS)</div>
+          <div style="font-size:12px;color:#64748b">Record sales in 3 seconds. For barber shops, takeaways, cafes, any cash business.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:24px;flex-shrink:0;margin-left:16px">
+          <input type="checkbox" id="toggle-pos" {% if business.has_pos %}checked{% endif %} onchange="toggleModule('has_pos', this.checked)" style="opacity:0;width:0;height:0">
+          <span style="position:absolute;cursor:pointer;inset:0;background:{% if business.has_pos %}#10b981{% else %}#334155{% endif %};border-radius:34px;transition:.3s" id="toggle-pos-span"></span>
+          <span style="position:absolute;content:'';height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s;transform:{% if business.has_pos %}translateX(20px){% else %}translateX(0){% endif %}"></span>
+        </label>
+      </div>
+    </div>
+    <div id="module-msg" style="margin-top:10px;font-size:12px;color:#10b981;display:none">Settings saved!</div>
+  </div>
+
+  <div class="card">
     <div class="card-title">Upgrade plan</div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
       {% for plan_key, plan_info in [('free', {'name':'Free','price':0,'uploads':10}), ('pro', {'name':'Pro','price':15,'uploads':500}), ('business', {'name':'Business','price':35,'uploads':'∞'})] %}
@@ -75,6 +119,22 @@
 
 {% block scripts %}
 <script>
+function toggleModule(key, value){
+  var data={};data[key]=value;
+  fetch('/api/business/settings',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(data)
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){
+      var msg=document.getElementById('module-msg');
+      msg.style.display='block';
+      msg.textContent='Settings saved!';
+      setTimeout(()=>msg.style.display='none',2000);
+    }
+  });
+}
+
 function requestUpgrade(plan){
   fetch('/api/request-upgrade',{
     method:'POST',

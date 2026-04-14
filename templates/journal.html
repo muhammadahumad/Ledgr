@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Journal — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Journal Entries</div>
+    <div class="page-sub">Double-entry bookkeeping — every transaction balanced</div>
+  </div>
+</div>
+
+<div class="content">
+  <div class="card">
+    {% if entries %}
+    {% for entry in entries %}
+    <div style="border-bottom:1px solid #334155;padding:12px 0;{% if not loop.last %}margin-bottom:4px{% endif %}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div>
+          <span class="badge badge-gray" style="margin-right:8px;font-size:10px">{{ entry.entry_type }}</span>
+          <span style="color:#f1f5f9;font-weight:500">{{ entry.description }}</span>
+        </div>
+        <div style="font-size:12px;color:#64748b">{{ entry.date.strftime('%d %b %Y %H:%M') }} · Ref: {{ entry.reference or '—' }}</div>
+      </div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;color:#475569;padding:4px 8px;background:#0f172a;border-radius:4px 0 0 4px">Account</th>
+          <th style="text-align:left;color:#475569;padding:4px 8px;background:#0f172a">Description</th>
+          <th style="text-align:right;color:#475569;padding:4px 8px;background:#0f172a">Debit</th>
+          <th style="text-align:right;color:#475569;padding:4px 8px;background:#0f172a;border-radius:0 4px 4px 0">Credit</th>
+        </tr></thead>
+        <tbody>
+          {% for line in entry.lines %}
+          <tr>
+            <td style="padding:4px 8px;color:#10b981;font-family:monospace">
+              {{ line.account.code if line.account else '?' }} — {{ line.account.name if line.account else 'Unknown' }}
+            </td>
+            <td style="padding:4px 8px;color:#94a3b8">{{ line.description or '—' }}</td>
+            <td style="padding:4px 8px;text-align:right;color:#60a5fa">
+              {% if line.debit > 0 %}{{ "%.2f"|format(line.debit) }}{% endif %}
+            </td>
+            <td style="padding:4px 8px;text-align:right;color:#f87171">
+              {% if line.credit > 0 %}{{ "%.2f"|format(line.credit) }}{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="text-align:center;padding:40px 0;color:#475569">
+      <div style="font-size:32px;margin-bottom:12px">≡</div>
+      <div>No journal entries yet — upload documents or record POS sales</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

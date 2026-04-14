@@ -123,6 +123,22 @@ a:hover{text-decoration:underline}
     <span class="icon">≡</span> Ledger
   </a>
 
+  <div class="nav-section">POS & Sales</div>
+  <a href="/pos" class="nav-item {% if request.path == '/pos' %}active{% endif %}">
+    <span class="icon">⚡</span> Point of Sale
+  </a>
+
+  <div class="nav-section">Accounting</div>
+  <a href="/accounts" class="nav-item {% if request.path == '/accounts' %}active{% endif %}">
+    <span class="icon">≣</span> Chart of Accounts
+  </a>
+  <a href="/journal" class="nav-item {% if request.path == '/journal' %}active{% endif %}">
+    <span class="icon">✎</span> Journal
+  </a>
+  <a href="/reports" class="nav-item {% if request.path == '/reports' %}active{% endif %}">
+    <span class="icon">↗</span> Reports
+  </a>
+
   <div class="nav-section">Modules</div>
   <a href="/inventory" class="nav-item {% if request.path == '/inventory' %}active{% endif %}">
     <span class="icon">▦</span> Inventory
