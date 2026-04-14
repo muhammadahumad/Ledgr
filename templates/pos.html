@@ -2,386 +2,207 @@
 {% block title %}POS — LEDGR{% endblock %}
 {% block content %}
 <div class="topbar">
-  <div>
-    <div class="page-title">Point of Sale</div>
-    <div class="page-sub">{{ business.name }} · {{ tax.currency }}</div>
-  </div>
+  <div><div class="page-title">Point of Sale</div><div class="page-sub">{{ business.name }} · {{ tax.currency }}</div></div>
   <div style="text-align:right">
-    <div style="font-size:22px;font-weight:700;color:#10b981">{{ tax.currency }} {{ "%.2f"|format(today_total) }}</div>
-    <div style="font-size:11px;color:#64748b">Today · {{ today_sales|length }} sales</div>
+    <div style="font-size:20px;font-weight:600;color:var(--mint);font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format(today_total) }}</div>
+    <div style="font-size:11px;color:var(--text3)">Today · {{ today_sales|length }} sales</div>
   </div>
 </div>
 
 <div class="content">
-  <div style="display:grid;grid-template-columns:1fr 380px;gap:16px">
+<div style="display:grid;grid-template-columns:1fr 360px;gap:14px;align-items:start">
 
-    <!-- LEFT: Product grid + quick add -->
-    <div>
-      <!-- Customer Search -->
-      <div class="card" style="padding:14px 16px;margin-bottom:12px">
-        <div style="display:flex;gap:10px;align-items:center">
-          <div style="flex:1;position:relative">
-            <input class="field-input" id="customer-search" placeholder="🔍 Search customer by name or phone..." oninput="searchCustomer(this.value)" autocomplete="off" style="padding-left:12px">
-            <div id="customer-results" style="display:none;position:absolute;top:100%;left:0;right:0;background:#1e293b;border:1px solid #334155;border-radius:8px;z-index:100;max-height:180px;overflow-y:auto;margin-top:4px;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
-          </div>
-          <div id="selected-customer" style="display:none;padding:8px 12px;background:#0f172a;border-radius:8px;white-space:nowrap;border:1px solid #10b981">
-            <span id="sel-name" style="color:#10b981;font-weight:500;font-size:13px"></span>
-            <button onclick="clearCustomer()" style="background:none;border:none;color:#64748b;cursor:pointer;margin-left:6px;font-size:16px;line-height:1">×</button>
-          </div>
-          <button onclick="document.getElementById('new-customer-modal').style.display='flex'" class="btn btn-sm" style="white-space:nowrap">+ New Customer</button>
+  <!-- LEFT: Customer + Cart + Products -->
+  <div>
+    <!-- Customer row -->
+    <div class="card" style="padding:12px 16px;margin-bottom:10px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="flex:1;position:relative">
+          <input class="field-input" id="customer-search" placeholder="🔍 Customer name or phone..." oninput="searchCust(this.value)" autocomplete="off">
+          <div id="cust-results" style="display:none;position:absolute;top:100%;left:0;right:0;margin-top:3px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;z-index:50;max-height:180px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.4)"></div>
         </div>
-      </div>
-
-      <!-- Cart items -->
-      <div class="card" style="padding:14px 16px;margin-bottom:12px;min-height:80px">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-          <div style="font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em">Current Sale</div>
-          <button onclick="clearCart()" style="background:none;border:none;color:#475569;cursor:pointer;font-size:12px">Clear</button>
+        <div id="sel-cust" style="display:none;padding:6px 10px;background:var(--mint-dim);border:1px solid rgba(16,185,129,.25);border-radius:7px;white-space:nowrap;font-size:12px">
+          <span id="sel-cust-name" style="color:var(--mint);font-weight:500"></span>
+          <button onclick="clearCust()" style="background:none;border:none;color:var(--text3);cursor:pointer;margin-left:6px;font-size:15px;line-height:1;vertical-align:middle">×</button>
         </div>
-        <div id="cart-items" style="min-height:40px">
-          <div id="cart-empty" style="color:#475569;font-size:13px;text-align:center;padding:12px 0">Tap a product or enter amount below</div>
-        </div>
-        <div id="cart-totals" style="display:none;border-top:1px solid #334155;padding-top:10px;margin-top:10px">
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span style="color:#64748b">Subtotal</span><span id="t-sub" style="color:#f1f5f9"></span>
-          </div>
-          {% if business.is_tax_registered %}
-          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-            <span style="color:#64748b">{{ tax.tax_name }} ({{ (tax.tax_rate*100)|int }}%)</span><span id="t-tax" style="color:#fbbf24"></span>
-          </div>
-          {% endif %}
-          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:6px">
-            <span style="color:#f1f5f9">Total</span><span id="t-total" style="color:#10b981"></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Product grid -->
-      <div style="margin-bottom:12px">
-        <div style="font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Quick Add</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
-          <!-- Variable price button always first -->
-          <button onclick="addVariable()" style="padding:16px 10px;background:#334155;border:2px dashed #475569;border-radius:10px;color:#f1f5f9;cursor:pointer;font-size:13px;font-weight:600;transition:all .15s;text-align:center" onmouseover="this.style.borderColor='#10b981';this.style.color='#10b981'" onmouseout="this.style.borderColor='#475569';this.style.color='#f1f5f9'">
-            ＋<br><span style="font-size:11px;font-weight:400">Custom Amount</span>
-          </button>
-          {% if products %}
-            {% for p in products %}
-            <button onclick="addProduct({{ p.id }},'{{ p.name|replace("'","\\'")|e }}',{{ p.unit_price }})" style="padding:14px 10px;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;text-align:center;{% if p.stock_level <= 0 %}opacity:.4{% endif %}" onmouseover="this.style.borderColor='#10b981'" onmouseout="this.style.borderColor='#334155'">
-              <div>{{ p.name[:18] }}</div>
-              <div style="color:#10b981;font-weight:700;margin-top:4px">{{ tax.currency }} {{ "%.2f"|format(p.unit_price) }}</div>
-              <div style="font-size:10px;color:#64748b;margin-top:2px">Stock: {{ p.stock_level }}</div>
-            </button>
-            {% endfor %}
-          {% else %}
-          <div style="color:#475569;font-size:12px;padding:12px;grid-column:span 2">Enable Inventory in Settings to add product shortcuts</div>
-          {% endif %}
-        </div>
+        <button class="btn btn-sm" onclick="openModal('new-cust-modal')">+ New</button>
       </div>
     </div>
 
-    <!-- RIGHT: Numpad + payment -->
-    <div>
-      <div class="card" style="border-color:#10b981;position:sticky;top:70px">
-        <!-- Amount display -->
-        <div style="background:#0f172a;border-radius:10px;padding:16px;text-align:center;margin-bottom:14px">
-          <div style="font-size:11px;color:#64748b">{{ tax.currency }}</div>
-          <div id="display" style="font-size:42px;font-weight:700;color:#f1f5f9;min-height:52px;letter-spacing:-.02em">0</div>
-          {% if business.is_tax_registered %}
-          <div id="tax-display" style="font-size:12px;color:#fbbf24;margin-top:2px">{{ tax.tax_name }}: {{ tax.currency }} 0.00</div>
-          {% endif %}
-        </div>
+    <!-- Cart -->
+    <div class="card" style="margin-bottom:10px;min-height:80px">
+      <div class="card-title">Current Sale <button onclick="clearCart()" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">Clear</button></div>
+      <div id="cart-empty" style="color:var(--text3);font-size:12px;text-align:center;padding:14px 0">Tap a product or use numpad below</div>
+      <div id="cart-items"></div>
+      <div id="cart-totals" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-top:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--text3)">Subtotal</span><span id="t-sub" style="font-family:var(--mono)"></span></div>
+        {% if business.is_tax_registered %}<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px"><span style="color:var(--text3)">{{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</span><span id="t-tax" style="color:var(--amber);font-family:var(--mono)"></span></div>{% endif %}
+        <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700;margin-top:6px"><span>Total</span><span id="t-total" style="color:var(--mint);font-family:var(--mono)"></span></div>
+      </div>
+    </div>
 
-        <!-- Numpad -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">
-          {% for n in ['1','2','3','4','5','6','7','8','9','.','0','⌫'] %}
-          <button onclick="numpad('{{ n }}')" style="padding:14px;font-size:18px;font-weight:600;background:#334155;border:none;border-radius:8px;color:#f1f5f9;cursor:pointer;transition:background .1s" onmouseover="this.style.background='#475569'" onmouseout="this.style.background='#334155'">{{ n }}</button>
-          {% endfor %}
-        </div>
-
-        <!-- Note -->
-        <div style="margin-bottom:10px">
-          <input class="field-input" id="sale-note" placeholder="Note — Haircut, Takeaway #5..." maxlength="80">
-        </div>
-
-        <!-- Payment method -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
-          <button id="btn-cash" class="btn btn-primary btn-sm" style="justify-content:center" onclick="setPayment('Cash')">💵 Cash</button>
-          <button id="btn-card" class="btn btn-sm" style="justify-content:center" onclick="setPayment('Card')">💳 Card</button>
-          <button id="btn-transfer" class="btn btn-sm" style="justify-content:center" onclick="setPayment('Transfer')">📲 Transfer</button>
-          <button id="btn-credit" class="btn btn-sm" style="justify-content:center" onclick="setPayment('Credit')">📒 Tab</button>
-        </div>
-
-        <!-- Record + WhatsApp -->
-        <button id="record-btn" onclick="recordSale()" style="width:100%;padding:14px;font-size:15px;font-weight:700;background:#10b981;border:none;border-radius:10px;color:#fff;cursor:pointer;margin-bottom:8px;transition:background .15s" onmouseover="this.style.background='#059669'" onmouseout="this.style.background='#10b981'">
-          ✓ Record Sale
+    <!-- Product grid -->
+    <div class="card">
+      <div class="card-title">Quick Products</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px">
+        <button onclick="addCustom()" style="padding:14px 8px;background:var(--bg);border:2px dashed var(--border2);border-radius:9px;color:var(--text);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;text-align:center;font-family:var(--font)" onmouseover="this.style.borderColor='var(--mint)';this.style.color='var(--mint)'" onmouseout="this.style.borderColor='var(--border2)';this.style.color='var(--text)'">
+          ＋<br><span style="font-size:10px;font-weight:400;color:var(--text3)">Custom</span>
         </button>
-        <button id="wa-btn" onclick="shareWhatsApp()" style="width:100%;padding:10px;font-size:13px;font-weight:600;background:#25D366;border:none;border-radius:10px;color:#fff;cursor:pointer;display:none;transition:opacity .15s">
-          📤 Share Receipt on WhatsApp
+        {% if products %}{% for p in products %}
+        <button onclick="addProd({{ p.id }},'{{ p.name|replace("'","\\'") }}',{{ p.unit_price }})" style="padding:12px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;text-align:center;font-family:var(--font);{% if p.stock_level<=0 %}opacity:.4;{% endif %}" onmouseover="this.style.borderColor='var(--mint)'" onmouseout="this.style.borderColor='var(--border)'">
+          <div style="margin-bottom:3px">{{ p.name[:16] }}</div>
+          <div style="color:var(--mint);font-family:var(--mono);font-size:11px">{{ tax.currency }} {{ "%.2f"|format(p.unit_price) }}</div>
+          <div style="font-size:10px;color:var(--text3)">Qty: {{ p.stock_level }}</div>
         </button>
+        {% endfor %}{% else %}
+        <div style="color:var(--text3);font-size:11px;padding:10px;grid-column:span 2">Enable Inventory in Settings to show product buttons</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
 
-        <div id="sale-msg" style="margin-top:8px;font-size:12px;text-align:center;display:none"></div>
+  <!-- RIGHT: Numpad + payment + confirm -->
+  <div style="position:sticky;top:70px">
+    <div class="card" style="border-color:rgba(16,185,129,.25)">
+      <!-- Display -->
+      <div style="background:var(--bg);border-radius:9px;padding:16px;text-align:center;margin-bottom:12px;border:1px solid var(--border)">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:2px;font-family:var(--mono)">{{ tax.currency }}</div>
+        <div id="display" style="font-size:40px;font-weight:600;color:var(--text);font-family:var(--mono);min-height:50px;letter-spacing:-.02em">0</div>
+        {% if business.is_tax_registered %}<div id="tax-display" style="font-size:11px;color:var(--amber);margin-top:2px">{{ tax.tax_name }}: {{ tax.currency }} 0.00</div>{% endif %}
       </div>
 
-      <!-- Today's summary -->
-      <div class="card" style="margin-top:12px">
-        <div class="card-title">Today <span class="badge badge-green">{{ today_sales|length }}</span></div>
-        <div style="max-height:200px;overflow-y:auto">
-          {% for s in today_sales|reverse %}
-          <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #0f172a;font-size:12px">
-            <div>
-              <div style="color:#f1f5f9">{% if s.customer %}<span style="color:#10b981">{{ s.customer.name }}</span> — {% endif %}{{ s.note or 'Sale' }}</div>
-              <div style="color:#475569">{{ s.timestamp.strftime('%H:%M') }} · {{ s.payment_method }}</div>
-            </div>
-            <div style="color:#10b981;font-weight:600">{{ s.currency }} {{ "%.2f"|format(s.amount) }}</div>
+      <!-- Numpad -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:10px">
+        {% for n in ['1','2','3','4','5','6','7','8','9','.','0','⌫'] %}
+        <button onclick="numpad('{{ n }}')" style="padding:13px;font-size:16px;font-weight:600;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);cursor:pointer;font-family:var(--mono);transition:background .1s" onmouseover="this.style.background='var(--border)'" onmouseout="this.style.background='var(--surface2)'">{{ n }}</button>
+        {% endfor %}
+      </div>
+
+      <!-- Note -->
+      <div style="margin-bottom:8px">
+        <input class="field-input" id="sale-note" placeholder="Note — Haircut, Takeaway #5, Table 3..." maxlength="120">
+      </div>
+
+      <!-- Payment -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px">
+        <button id="btn-Cash" class="btn btn-primary btn-sm" style="justify-content:center" onclick="setPay('Cash')">💵 Cash</button>
+        <button id="btn-Card" class="btn btn-sm" style="justify-content:center" onclick="setPay('Card')">💳 Card</button>
+        <button id="btn-Transfer" class="btn btn-sm" style="justify-content:center" onclick="setPay('Transfer')">📲 Transfer</button>
+        <button id="btn-Credit" class="btn btn-sm" style="justify-content:center" onclick="setPay('Credit')">📒 Tab</button>
+      </div>
+
+      <!-- Record -->
+      <button id="record-btn" onclick="recordSale()" class="btn btn-primary btn-lg" style="width:100%;margin-bottom:6px">✓ Record Sale</button>
+
+      <!-- WhatsApp receipt -->
+      <button id="wa-btn" style="display:none;width:100%;padding:10px;font-size:12px;font-weight:600;background:#25D366;border:none;border-radius:8px;color:#fff;cursor:pointer;margin-bottom:6px" onclick="sendWhatsApp()">📤 Share Receipt on WhatsApp</button>
+
+      <!-- Next sale -->
+      <button id="next-btn" style="display:none;width:100%;padding:8px;font-size:12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text2);cursor:pointer" onclick="location.reload()">→ Next Sale</button>
+
+      <div id="sale-msg" style="display:none;margin-top:8px;font-size:12px;text-align:center;color:var(--mint)"></div>
+    </div>
+
+    <!-- Today summary -->
+    <div class="card" style="margin-top:10px">
+      <div class="card-title">Today <span class="badge badge-green">{{ today_sales|length }}</span></div>
+      <div style="max-height:220px;overflow-y:auto">
+        {% for s in today_sales %}
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">
+          <div>
+            <div style="color:var(--text)">{% if s.customer %}<span style="color:var(--mint)">{{ s.customer.name }}</span> — {% endif %}{{ s.note or 'Sale' }}</div>
+            <div style="color:var(--text3)">{{ s.timestamp.strftime('%H:%M') }} · {{ s.payment_method }}</div>
           </div>
-          {% endfor %}
+          <div style="color:{% if s.is_credit %}var(--amber){% else %}var(--mint){% endif %};font-family:var(--mono);font-weight:500">{{ s.currency }} {{ "%.2f"|format(s.amount) }}</div>
         </div>
+        {% endfor %}
       </div>
     </div>
   </div>
 </div>
+</div>
 
-<!-- New Customer Quick Modal -->
-<div id="new-customer-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);align-items:center;justify-content:center;z-index:200">
-  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:24px;width:100%;max-width:400px">
-    <div style="font-size:15px;font-weight:600;margin-bottom:16px">Quick Add Customer</div>
-    <div class="field-group"><div class="field-label">Name *</div><input class="field-input" id="nc-name" placeholder="Ahmed Hassan"></div>
-    <div class="field-group"><div class="field-label">Phone</div><input class="field-input" id="nc-phone" placeholder="+960 7XX XXXX"></div>
-    <div style="display:flex;gap:10px;margin-top:8px">
-      <button class="btn btn-primary" onclick="quickAddCustomer()">Add & Select</button>
-      <button class="btn" onclick="document.getElementById('new-customer-modal').style.display='none'">Cancel</button>
+<!-- New Customer Modal -->
+<div id="new-cust-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">Quick Add Customer <button class="modal-close" onclick="closeModal('new-cust-modal')">×</button></div>
+    <div class="field-group"><div class="field-label">Full Name *</div><input class="field-input" id="nc-name" placeholder="Ahmed Hassan"></div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="nc-phone" placeholder="+960 7XX XXXX"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="nc-email" placeholder="optional"></div>
     </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="quickAddCust()">Add & Select</button>
+      <button class="btn" onclick="closeModal('new-cust-modal')">Cancel</button>
+    </div>
+    <div id="nc-msg" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-var current='0';
-var payment='Cash';
-var taxRate={{ tax.tax_rate }};
-var taxRegistered={{ 'true' if business.is_tax_registered else 'false' }};
-var currency='{{ tax.currency }}';
-var selectedCustomerId=null;
-var selectedCustomerName='';
-var cart=[];
-var lastSaleData=null;
-var searchTimeout=null;
+var current='0', payment='Cash', custId=null, custName='', cart=[], lastReceipt=null;
+var TAX_RATE={{ tax.tax_rate }}, TAX_REG={{ 'true' if business.is_tax_registered else 'false' }}, CUR='{{ tax.currency }}';
 
-function numpad(key){
-  if(key==='⌫'){current=current.length>1?current.slice(0,-1):'0';}
-  else if(key==='.'){if(!current.includes('.'))current+=key;}
-  else{if(current==='0')current=key;else current+=key;}
+function numpad(k){
+  if(k==='⌫'){current=current.length>1?current.slice(0,-1):'0';}
+  else if(k==='.'){if(!current.includes('.'))current+=k;}
+  else{if(current==='0')current=k;else current+=k;}
   updateDisplay();
 }
-
 function updateDisplay(){
   document.getElementById('display').textContent=current;
-  if(taxRegistered){
-    var amt=parseFloat(current)||0;
-    var tax=amt-(amt/(1+taxRate));
-    var el=document.getElementById('tax-display');
-    if(el)el.textContent='{{ tax.tax_name }}: '+currency+' '+tax.toFixed(2);
-  }
+  if(TAX_REG){var a=parseFloat(current)||0,t=a-(a/(1+TAX_RATE));var el=document.getElementById('tax-display');if(el)el.textContent='{{ tax.tax_name }}: '+CUR+' '+t.toFixed(2);}
 }
-
-function addVariable(){
-  var amt=parseFloat(current)||0;
-  if(amt>0){
-    var note=document.getElementById('sale-note').value||'Custom item';
-    addToCart({name:note,price:amt,id:'var'});
-    current='0';updateDisplay();
-  } else {
-    document.getElementById('display').style.color='#f87171';
-    setTimeout(()=>document.getElementById('display').style.color='#f1f5f9',600);
-  }
+function setPay(m){
+  payment=m;
+  ['Cash','Card','Transfer','Credit'].forEach(p=>{var b=document.getElementById('btn-'+p);if(b)b.className=p===m?'btn btn-primary btn-sm':'btn btn-sm';});
+  if(m==='Credit'&&!custId){document.getElementById('customer-search').focus();document.getElementById('customer-search').placeholder='Select a customer for tab...';}
 }
-
-function addProduct(id,name,price){
-  addToCart({name:name,price:price,id:'prod-'+id});
-}
-
-function addToCart(item){
-  var existing=cart.find(c=>c.id===item.id&&item.id!=='var');
-  if(existing){existing.qty=(existing.qty||1)+1;}
-  else{cart.push({...item,qty:1});}
-  renderCart();
-}
-
+function addCustom(){var a=parseFloat(current)||0;if(a>0){addToCart({id:'custom-'+Date.now(),name:document.getElementById('sale-note').value||'Custom',price:a,qty:1});current='0';updateDisplay();}}
+function addProd(id,name,price){addToCart({id:'p'+id,name:name,price:price,qty:1});}
+function addToCart(item){var e=cart.find(c=>c.id===item.id);if(e)e.qty++;else cart.push({...item,qty:1});renderCart();}
+function removeFromCart(i){cart.splice(i,1);renderCart();}
+function clearCart(){cart=[];current='0';updateDisplay();renderCart();}
 function renderCart(){
-  var el=document.getElementById('cart-items');
-  var empty=document.getElementById('cart-empty');
-  var totals=document.getElementById('cart-totals');
+  var el=document.getElementById('cart-items'),empty=document.getElementById('cart-empty'),totals=document.getElementById('cart-totals');
   if(!cart.length){el.innerHTML='';empty.style.display='block';totals.style.display='none';return;}
-  empty.style.display='none';totals.style.display='block';
-  el.innerHTML='';
-  var subtotal=0;
-  cart.forEach(function(item,idx){
-    var lineTotal=item.price*(item.qty||1);
-    subtotal+=lineTotal;
-    var div=document.createElement('div');
-    div.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0f172a;font-size:13px';
-    div.innerHTML='<div><span style="color:#f1f5f9">'+esc(item.name)+'</span>'+(item.qty>1?'<span style="color:#64748b;margin-left:6px">×'+item.qty+'</span>':'')+'</div>'
-      +'<div style="display:flex;align-items:center;gap:10px"><span style="color:#10b981;font-weight:600">'+currency+' '+lineTotal.toFixed(2)+'</span>'
-      +'<button onclick="removeFromCart('+idx+')" style="background:none;border:none;color:#475569;cursor:pointer;font-size:16px">×</button></div>';
-    el.appendChild(div);
-  });
-  var tax=taxRegistered?subtotal-(subtotal/(1+taxRate)):0;
-  var total=subtotal;
-  document.getElementById('t-sub').textContent=currency+' '+subtotal.toFixed(2);
-  var taxEl=document.getElementById('t-tax');
-  if(taxEl)taxEl.textContent=currency+' '+tax.toFixed(2);
-  document.getElementById('t-total').textContent=currency+' '+total.toFixed(2);
-  // Also update numpad display with cart total
-  current=total.toFixed(2);
-  document.getElementById('display').textContent=current;
+  empty.style.display='none';totals.style.display='block';el.innerHTML='';
+  var sub=0;
+  cart.forEach((item,i)=>{var lt=item.price*item.qty;sub+=lt;var d=document.createElement('div');d.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px';d.innerHTML='<div><span style="color:var(--text)">'+esc(item.name)+'</span>'+(item.qty>1?'<span style="color:var(--text3);margin-left:5px">×'+item.qty+'</span>':'')+'</div><div style="display:flex;align-items:center;gap:8px"><span style="color:var(--mint);font-family:var(--mono)">'+CUR+' '+lt.toFixed(2)+'</span><button onclick="removeFromCart('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;line-height:1">×</button></div>';el.appendChild(d);});
+  var tax=TAX_REG?sub-(sub/(1+TAX_RATE)):0,total=sub;
+  document.getElementById('t-sub').textContent=CUR+' '+sub.toFixed(2);
+  var tt=document.getElementById('t-tax');if(tt)tt.textContent=CUR+' '+tax.toFixed(2);
+  document.getElementById('t-total').textContent=CUR+' '+total.toFixed(2);
+  current=total.toFixed(2);document.getElementById('display').textContent=current;
 }
-
-function removeFromCart(idx){
-  cart.splice(idx,1);
-  renderCart();
-}
-
-function clearCart(){
-  cart=[];current='0';updateDisplay();renderCart();
-}
-
-function setPayment(method){
-  payment=method;
-  ['cash','card','transfer','credit'].forEach(function(m){
-    var btn=document.getElementById('btn-'+m);
-    if(btn)btn.className=method.toLowerCase()===m?'btn btn-primary btn-sm':'btn btn-sm';
-  });
-  if(method==='Credit'&&!selectedCustomerId){
-    document.getElementById('customer-search').focus();
-  }
-}
-
-function searchCustomer(q){
-  clearTimeout(searchTimeout);
-  var res=document.getElementById('customer-results');
-  if(q.length<2){res.style.display='none';return;}
-  searchTimeout=setTimeout(function(){
-    fetch('/api/customer/search?q='+encodeURIComponent(q))
-    .then(r=>r.json()).then(results=>{
-      if(!results.length){res.style.display='none';return;}
-      res.innerHTML='';
-      results.forEach(function(c){
-        var item=document.createElement('div');
-        item.style.cssText='padding:10px 14px;cursor:pointer;border-bottom:1px solid #334155';
-        item.innerHTML='<div style="color:#f1f5f9;font-weight:500">'+esc(c.name)+(c.is_vip?' ⭐':'')+'</div>'
-          +'<div style="font-size:11px;color:#64748b">'+(c.phone||'')+(c.outstanding_balance>0?' · Tab: '+currency+' '+fmt(c.outstanding_balance):'')+'</div>';
-        item.onmouseover=function(){this.style.background='#334155';}
-        item.onmouseout=function(){this.style.background='';}
-        item.onclick=function(){selectCustomer(c);}
-        res.appendChild(item);
-      });
-      res.style.display='block';
-    });
-  },250);
-}
-
-function selectCustomer(c){
-  selectedCustomerId=c.id;
-  selectedCustomerName=c.name;
-  document.getElementById('customer-search').value='';
-  document.getElementById('customer-results').style.display='none';
-  var sel=document.getElementById('selected-customer');
-  sel.style.display='flex';
-  document.getElementById('sel-name').textContent=c.name+(c.is_vip?' ⭐':'');
-}
-
-function clearCustomer(){
-  selectedCustomerId=null;selectedCustomerName='';
-  document.getElementById('selected-customer').style.display='none';
-  document.getElementById('customer-search').value='';
-}
-
-function quickAddCustomer(){
-  var name=document.getElementById('nc-name').value.trim();
-  if(!name){alert('Name required');return;}
-  fetch('/api/customer/add',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({name:name,phone:document.getElementById('nc-phone').value})
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok){
-      selectCustomer({id:res.customer_id,name:res.name,is_vip:false,outstanding_balance:0});
-      document.getElementById('new-customer-modal').style.display='none';
-      document.getElementById('nc-name').value='';
-      document.getElementById('nc-phone').value='';
-    } else { alert(res.error); }
-  });
-}
-
+var _st=null;
+function searchCust(q){clearTimeout(_st);var r=document.getElementById('cust-results');if(q.length<2){r.style.display='none';return;}_st=setTimeout(()=>{fetch('/api/customer/search?q='+encodeURIComponent(q)).then(r=>r.json()).then(res=>{if(!res.length){document.getElementById('cust-results').style.display='none';return;}var div=document.getElementById('cust-results');div.innerHTML='';res.forEach(c=>{var i=document.createElement('div');i.style.cssText='padding:9px 12px;cursor:pointer;border-bottom:1px solid var(--border);font-size:12px';i.innerHTML='<div style="color:var(--text);font-weight:500">'+esc(c.name)+(c.is_vip?' ⭐':'')+'</div><div style="color:var(--text3);font-size:11px">'+(c.phone||'')+(c.outstanding_balance>0?' · Tab: '+CUR+' '+fmt(c.outstanding_balance):'')+'</div>';i.onmouseover=function(){this.style.background='var(--surface2)';}; i.onmouseout=function(){this.style.background='';};i.onclick=()=>selectCust(c);div.appendChild(i);});div.style.display='block';});},250);}
+function selectCust(c){custId=c.id;custName=c.name;document.getElementById('customer-search').value='';document.getElementById('cust-results').style.display='none';var s=document.getElementById('sel-cust');s.style.display='flex';document.getElementById('sel-cust-name').textContent=c.name+(c.is_vip?' ⭐':'');}
+function clearCust(){custId=null;custName='';document.getElementById('sel-cust').style.display='none';document.getElementById('customer-search').value='';}
+function quickAddCust(){var name=document.getElementById('nc-name').value.trim();if(!name){document.getElementById('nc-msg').textContent='Name required';document.getElementById('nc-msg').style.display='block';return;}fetch('/api/customer/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,phone:document.getElementById('nc-phone').value,email:document.getElementById('nc-email').value})}).then(r=>r.json()).then(res=>{if(res.ok){selectCust({id:res.customer_id,name:res.name,is_vip:false,outstanding_balance:0});closeModal('new-cust-modal');document.getElementById('nc-name').value='';document.getElementById('nc-phone').value='';document.getElementById('nc-email').value='';}else{document.getElementById('nc-msg').textContent=res.error;document.getElementById('nc-msg').style.display='block';}});}
 function recordSale(){
   var amt=parseFloat(current)||0;
   if(amt<=0){alert('Please enter an amount');return;}
-  if(payment==='Credit'&&!selectedCustomerId){alert('Please select a customer for tab/credit');return;}
-
-  var btn=document.getElementById('record-btn');
-  btn.disabled=true;btn.textContent='Recording...';
-
-  var note=document.getElementById('sale-note').value||
-    (cart.length?cart.map(c=>c.name+(c.qty>1?' ×'+c.qty:'')).join(', '):'Sale');
-
-  fetch('/api/pos/sale/v2',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      amount:amt,payment_method:payment,
-      note:note,category:'Sale',
-      customer_id:selectedCustomerId,tax_inclusive:true
-    })
-  }).then(r=>r.json()).then(res=>{
+  if(payment==='Credit'&&!custId){alert('Please select a customer for tab/credit sales');return;}
+  var btn=document.getElementById('record-btn');btn.disabled=true;btn.textContent='Recording...';
+  var note=document.getElementById('sale-note').value||(cart.length?cart.map(c=>c.name+(c.qty>1?' ×'+c.qty:'')).join(', '):'');
+  fetch('/api/pos/sale',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({amount:amt,payment_method:payment,note:note,category:'Sale',customer_id:custId,tax_inclusive:true})}).then(r=>r.json()).then(res=>{
     if(res.ok){
-      lastSaleData={amount:res.amount,tax_amount:res.tax_amount,
-        note:note,payment_method:payment,customer_name:selectedCustomerName};
-
-      var msg=document.getElementById('sale-msg');
-      msg.style.display='block';msg.style.color='#10b981';
-      msg.textContent='✓ '+currency+' '+res.amount.toFixed(2)+' recorded — '+payment;
-
-      // Auto share WhatsApp receipt
-      fetch('/api/pos/receipt',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({
-          amount:res.amount,tax_amount:res.tax_amount,
-          note:note,payment_method:payment,
-          customer_name:selectedCustomerName
-        })
-      }).then(r=>r.json()).then(receipt=>{
-        if(receipt.ok){
-          // Show WA button with link ready
-          var waBtn=document.getElementById('wa-btn');
-          waBtn.style.display='block';
-          waBtn.onclick=function(){ window.open(receipt.wa_url,'_blank'); };
-        }
-      });
-
-      cart=[];current='0';updateDisplay();renderCart();
-      document.getElementById('sale-note').value='';
-      clearCustomer();
+      lastReceipt={amount:res.amount,tax_amount:res.tax_amount,note:note,payment_method:payment,customer_name:custName};
+      document.getElementById('sale-msg').style.display='block';
+      document.getElementById('sale-msg').textContent='✓ '+CUR+' '+res.amount.toFixed(2)+' recorded'+(res.tax_amount>0?' · Tax: '+res.tax_amount.toFixed(2):'');
+      if(res.threshold_warning&&res.threshold_warning.warning)document.getElementById('sale-msg').textContent+=' ⚠ Approaching threshold!';
+      // Prepare WhatsApp receipt
+      fetch('/api/pos/receipt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(lastReceipt)}).then(r=>r.json()).then(rc=>{if(rc.ok){window._waUrl=rc.wa_url;document.getElementById('wa-btn').style.display='block';}});
+      document.getElementById('next-btn').style.display='block';
       btn.disabled=false;btn.textContent='✓ Record Sale';
-
-      // Reload after 8s to give time to share
-      setTimeout(()=>location.reload(),8000);
-    } else {
-      alert('Error: '+res.error);
-      btn.disabled=false;btn.textContent='✓ Record Sale';
-    }
+      cart=[];current='0';updateDisplay();renderCart();document.getElementById('sale-note').value='';clearCust();
+    }else{alert('Error: '+res.error);btn.disabled=false;btn.textContent='✓ Record Sale';}
   });
 }
-
-function shareWhatsApp(){
-  // handled inline after sale recording
-}
-
-// Keyboard support
-document.addEventListener('keydown',function(e){
-  if(e.target.tagName==='INPUT')return;
-  if(e.key>='0'&&e.key<='9')numpad(e.key);
-  else if(e.key==='.')numpad('.');
-  else if(e.key==='Backspace')numpad('⌫');
-  else if(e.key==='Enter')recordSale();
-});
+function sendWhatsApp(){if(window._waUrl)window.open(window._waUrl,'_blank');}
+document.addEventListener('keydown',function(e){if(e.target.tagName==='INPUT')return;if(e.key>='0'&&e.key<='9')numpad(e.key);else if(e.key==='.')numpad('.');else if(e.key==='Backspace')numpad('⌫');else if(e.key==='Enter')recordSale();});
 </script>
 {% endblock %}

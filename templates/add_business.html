@@ -1,117 +1,58 @@
 <!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Add Business — LEDGR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#f1f5f9;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-.box{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:36px;width:100%;max-width:520px}
-.brand{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:4px}
+body{font-family:'IBM Plex Sans',sans-serif;background:#0a0e17;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.box{background:#111827;border:1px solid #1f2d45;border-radius:16px;padding:36px;width:100%;max-width:540px}
+.brand{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;letter-spacing:.08em;margin-bottom:4px}
 .brand span{color:#10b981}
-.subtitle{font-size:13px;color:#64748b;margin-bottom:28px}
-.field-group{margin-bottom:16px}
-.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
-.field-label{font-size:11px;color:#64748b;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
-.field-input{width:100%;padding:9px 12px;border:1px solid #334155;border-radius:8px;font-size:14px;color:#f1f5f9;background:#0f172a;font-family:inherit}
-.field-input:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15)}
-.btn{width:100%;padding:10px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:none;background:#10b981;color:#fff;font-family:inherit;transition:background .15s;margin-top:4px}
+.sub{font-size:12px;color:#4a6080;margin-bottom:24px}
+.fl{margin-bottom:12px}
+label{display:block;font-size:10px;color:#4a6080;font-weight:500;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+input,select{width:100%;padding:8px 10px;border:1px solid #1f2d45;border-radius:7px;font-size:12px;color:#e2e8f0;background:#0a0e17;font-family:'IBM Plex Sans',sans-serif;transition:border-color .15s}
+input:focus,select:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.12)}
+.type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.tc{border:1px solid #1f2d45;border-radius:8px;padding:10px 8px;cursor:pointer;transition:all .15s;text-align:center;user-select:none}
+.tc:hover,.tc.sel{border-color:#10b981;background:rgba(16,185,129,.08)}
+.tc input{display:none}
+.tn{font-weight:500;font-size:12px;color:#e2e8f0;margin-bottom:2px}
+.ts{font-size:10px;color:#4a6080}
+.tb{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:500;background:rgba(16,185,129,.15);color:#10b981;margin-top:3px}
+.tb.full{background:rgba(59,130,246,.15);color:#60a5fa}
+.btn{width:100%;padding:10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#10b981;color:#fff;font-family:'IBM Plex Sans',sans-serif;margin-top:4px;transition:background .15s}
 .btn:hover{background:#059669}
-.btn-secondary{background:#334155;margin-top:8px}
-.btn-secondary:hover{background:#475569}
-.link-row{text-align:center;margin-top:16px;font-size:13px;color:#64748b}
-.link-row a{color:#10b981}
-.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:rgba(220,38,38,.1);color:#f87171;border:1px solid rgba(220,38,38,.2)}
-.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
-.type-card{border:1px solid #334155;border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;text-align:center}
-.type-card:hover{border-color:#10b981;background:rgba(16,185,129,.05)}
-.type-card.selected{border-color:#10b981;background:rgba(16,185,129,.1)}
-.type-card input{display:none}
-.type-name{font-weight:500;font-size:13px;color:#f1f5f9;margin-bottom:2px}
-.type-desc{font-size:11px;color:#64748b}
-.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:500;background:rgba(16,185,129,.15);color:#10b981;margin-top:4px}
-</style>
-</head>
+.btn2{background:#1a2235;color:#8899aa;border:1px solid #1f2d45;margin-top:6px}
+.btn2:hover{background:#253348;color:#e2e8f0}
+.link{text-align:center;margin-top:14px;font-size:12px;color:#4a6080}
+.link a{color:#10b981}
+.err{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;background:rgba(239,68,68,.08);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+.sec{font-size:10px;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px}
+</style></head>
 <body>
 <div class="box">
   <div class="brand">L<span>EDGR</span></div>
-  <p class="subtitle">Add a new business workspace</p>
-
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-      <div class="alert">{{ message }}</div>
-    {% endfor %}
-  {% endwith %}
-
+  <p class="sub">Add a new business workspace</p>
+  {% with messages=get_flashed_messages(with_categories=true) %}{% for _,msg in messages %}<div class="err">{{ msg }}</div>{% endfor %}{% endwith %}
   <form method="POST">
-    <div class="field-group">
-      <div class="field-label">Business name *</div>
-      <input class="field-input" type="text" name="business_name" placeholder="Maldives Cafe, Ahmed & Sons..." required>
-    </div>
-
-    <div class="field-label" style="margin-bottom:8px">Business type *</div>
+    <div class="fl"><label>Business name *</label><input type="text" name="business_name" placeholder="Cafe Sunrise, Ahmed & Sons..." required></div>
+    <div class="sec">Business type</div>
     <div class="type-grid">
-      <label class="type-card selected" onclick="selectType(this,'sole_proprietor')">
-        <input type="radio" name="business_type" value="sole_proprietor" checked>
-        <div class="type-name">Sole Proprietor</div>
-        <div class="type-desc">Individual owner</div>
-        <span class="badge">Simplified</span>
-      </label>
-      <label class="type-card" onclick="selectType(this,'partnership')">
-        <input type="radio" name="business_type" value="partnership">
-        <div class="type-name">Partnership</div>
-        <div class="type-desc">2+ owners</div>
-        <span class="badge">Standard</span>
-      </label>
-      <label class="type-card" onclick="selectType(this,'limited_company')">
-        <input type="radio" name="business_type" value="limited_company">
-        <div class="type-name">Limited Company</div>
-        <div class="type-desc">Pvt Ltd / LLC</div>
-        <span class="badge" style="background:rgba(59,130,246,.15);color:#60a5fa">Full CoA</span>
-      </label>
-      <label class="type-card" onclick="selectType(this,'llc')">
-        <input type="radio" name="business_type" value="llc">
-        <div class="type-name">LLC</div>
-        <div class="type-desc">Limited liability</div>
-        <span class="badge" style="background:rgba(59,130,246,.15);color:#60a5fa">Full CoA</span>
-      </label>
-      <label class="type-card" onclick="selectType(this,'cooperative')">
-        <input type="radio" name="business_type" value="cooperative">
-        <div class="type-name">Cooperative</div>
-        <div class="type-desc">Member-owned</div>
-        <span class="badge">Standard</span>
-      </label>
-      <label class="type-card" onclick="selectType(this,'other')">
-        <input type="radio" name="business_type" value="other">
-        <div class="type-name">Other</div>
-        <div class="type-desc">NGO, Freelance...</div>
-        <span class="badge">Simplified</span>
-      </label>
+      {% for val,name,desc,level in [('sole_proprietor','Sole Proprietor','Individual','simple'),('partnership','Partnership','2+ owners','standard'),('limited_company','Limited Company','Pvt Ltd','full'),('llc','LLC','Limited liability','full'),('cooperative','Cooperative','Member-owned','standard'),('other','Other','NGO/Freelance','simple')] %}
+      <label class="tc {% if val=='sole_proprietor' %}sel{% endif %}" onclick="sel(this,'{{ val }}')">
+        <input type="radio" name="business_type" value="{{ val }}" {% if val=='sole_proprietor' %}checked{% endif %}>
+        <div class="tn">{{ name }}</div><div class="ts">{{ desc }}</div>
+        <span class="tb {% if level=='full' %}full{% endif %}">{{ level }}</span>
+      </label>{% endfor %}
     </div>
-
-    <div class="field-group">
-      <div class="field-label">Market region *</div>
-      <select class="field-input" name="region">
-        {% for code, info in regions.items() %}
-        <option value="{{ code }}" {% if code == 'MV' %}selected{% endif %}>
-          {{ info.name }} — {{ info.currency }} · {{ info.tax_name }} {{ (info.tax_rate * 100)|int }}%
-        </option>
-        {% endfor %}
-      </select>
+    <div class="fl"><label>Market region *</label>
+      <select name="region">{% for code,info in regions.items() %}<option value="{{ code }}" {% if code=='MV' %}selected{% endif %}>{{ info.name }} — {{ info.currency }} · {{ info.tax_name }} {{ (info.tax_rate*100)|int }}%</option>{% endfor %}</select>
     </div>
-
-    <button type="submit" class="btn">Create Business Workspace</button>
-    <a href="/dashboard"><button type="button" class="btn btn-secondary">Cancel</button></a>
+    <button type="submit" class="btn">Create Business Workspace →</button>
+    <a href="/dashboard"><button type="button" class="btn btn2">← Back to Dashboard</button></a>
   </form>
 </div>
-
-<script>
-function selectType(el, val){
-  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'));
-  el.classList.add('selected');
-  el.querySelector('input').checked=true;
-}
-</script>
-</body>
-</html>
+<script>function sel(el,v){document.querySelectorAll('.tc').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');el.querySelector('input').checked=true;}</script>
+</body></html>

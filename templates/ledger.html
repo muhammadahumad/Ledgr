@@ -1,74 +1,25 @@
-{% extends "base.html" %}
-{% block title %}Ledger — LEDGR{% endblock %}
-{% block content %}
-<div class="topbar">
-  <div>
-    <div class="page-title">Universal Ledger</div>
-    <div class="page-sub">Every financial entry — auto-posted from documents</div>
-  </div>
-  <a href="/upload" class="btn btn-primary">+ Upload Document</a>
-</div>
-
+{% extends "base.html" %}{% block title %}Ledger — LEDGR{% endblock %}{% block content %}
+<div class="topbar"><div><div class="page-title">Universal Ledger</div><div class="page-sub">Every financial entry — auto-posted from documents and POS</div></div><a href="/upload" class="btn btn-primary">↑ Upload</a></div>
 <div class="content">
   <div class="stat-grid" style="grid-template-columns:repeat(3,1fr)">
-    <div class="stat-card">
-      <div class="stat-label">Total expenses</div>
-      <div class="stat-value">{{ "%.2f"|format(total_expense) }}</div>
-      <div class="stat-currency">{{ tax.currency }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Total revenue</div>
-      <div class="stat-value">{{ "%.2f"|format(total_revenue) }}</div>
-      <div class="stat-currency">{{ tax.currency }}</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Net position</div>
-      <div class="stat-value" style="color:{% if total_revenue > total_expense %}#10b981{% else %}#f87171{% endif %}">
-        {{ "%.2f"|format(total_revenue - total_expense) }}
-      </div>
-      <div class="stat-currency">{{ tax.currency }}</div>
-    </div>
+    <div class="stat-card"><div class="stat-label">Total Revenue</div><div class="stat-value" style="color:var(--mint)">{{ "%.2f"|format(total_revenue) }}</div><div class="stat-sub">{{ tax.currency }}</div></div>
+    <div class="stat-card"><div class="stat-label">Total Expenses</div><div class="stat-value" style="color:var(--red)">{{ "%.2f"|format(total_expense) }}</div><div class="stat-sub">{{ tax.currency }}</div></div>
+    <div class="stat-card"><div class="stat-label">Net Position</div><div class="stat-value" style="color:{% if total_revenue>total_expense %}var(--mint){% else %}var(--red){% endif %}">{{ "%.2f"|format(total_revenue-total_expense) }}</div><div class="stat-sub">{{ tax.currency }}</div></div>
   </div>
-
   <div class="card">
     <div class="card-title">Ledger entries</div>
     {% if entries %}
-    <table class="table">
-      <thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th><th style="text-align:right">Tax</th><th>Status</th></tr></thead>
-      <tbody>
-        {% for e in entries %}
-        <tr>
-          <td style="color:#64748b;font-size:12px">{{ e.timestamp.strftime('%d %b %Y') }}</td>
-          <td>
-            {% if e.entry_type == 'EXPENSE' %}<span class="badge badge-red">EXPENSE</span>
-            {% elif e.entry_type == 'REVENUE' %}<span class="badge badge-green">REVENUE</span>
-            {% elif e.entry_type == 'PAYROLL' %}<span class="badge badge-blue">PAYROLL</span>
-            {% else %}<span class="badge badge-gray">{{ e.entry_type }}</span>{% endif %}
-          </td>
-          <td style="color:#f1f5f9">{{ e.description or '—' }}</td>
-          <td style="color:#64748b;font-size:12px">{{ e.category or '—' }}</td>
-          <td style="text-align:right;font-weight:500;color:{% if e.entry_type == 'EXPENSE' %}#f87171{% else %}#10b981{% endif %}">
-            {{ e.currency }} {{ "%.2f"|format(e.amount) }}
-          </td>
-          <td style="text-align:right;color:#fbbf24;font-size:12px">
-            {% if e.tax_amount %}{{ "%.2f"|format(e.tax_amount) }}{% else %}—{% endif %}
-          </td>
-          <td>
-            {% if e.is_reconciled %}<span class="badge badge-green">Reconciled</span>
-            {% else %}<span class="badge badge-gray">Pending</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div style="text-align:center;padding:40px 0;color:#475569">
-      <div style="font-size:32px;margin-bottom:12px">≡</div>
-      <div style="font-weight:500;margin-bottom:6px">Ledger is empty</div>
-      <div style="font-size:12px">Upload documents and they will auto-post here</div>
-      <a href="/upload" class="btn btn-primary" style="margin-top:16px">Upload first document</a>
-    </div>
-    {% endif %}
+    <table class="table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th><th style="text-align:right">Tax</th><th>Status</th></tr></thead><tbody>
+    {% for e in entries %}<tr>
+      <td style="color:var(--text3);font-family:var(--mono)">{{ e.timestamp.strftime('%d %b %Y') }}</td>
+      <td><span class="badge badge-{% if e.entry_type=='REVENUE' %}green{% elif e.entry_type=='EXPENSE' %}red{% elif e.entry_type=='PAYROLL' %}blue{% else %}gray{% endif %}">{{ e.entry_type }}</span></td>
+      <td style="color:var(--text)">{{ e.description or '—' }}</td>
+      <td style="color:var(--text3)">{{ e.category or '—' }}</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:500;color:{% if e.entry_type=='REVENUE' %}var(--mint){% else %}var(--red){% endif %}">{{ e.currency }} {{ "%.2f"|format(e.amount) }}</td>
+      <td style="text-align:right;color:var(--amber);font-family:var(--mono)">{% if e.tax_amount %}{{ "%.2f"|format(e.tax_amount) }}{% else %}—{% endif %}</td>
+      <td><span class="badge badge-{% if e.is_reconciled %}green{% else %}gray{% endif %}">{% if e.is_reconciled %}Reconciled{% else %}Pending{% endif %}</span></td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}<div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">≡</div><div style="font-weight:500;color:var(--text2);margin-bottom:6px">Ledger is empty</div><div style="font-size:11px;margin-bottom:14px">Upload documents or record POS sales</div><a href="/upload" class="btn btn-primary">Upload first document</a></div>{% endif %}
   </div>
-</div>
-{% endblock %}
+</div>{% endblock %}

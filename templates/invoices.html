@@ -1,0 +1,58 @@
+{% extends "base.html" %}{% block title %}Invoices — LEDGR{% endblock %}{% block content %}
+<div class="topbar"><div><div class="page-title">Invoices</div><div class="page-sub">Create, send and track invoices</div></div><button class="btn btn-primary" onclick="openModal('create-inv-modal')">+ Create Invoice</button></div>
+<div class="content">
+<div class="card">
+  <div class="card-title">Invoices</div>
+  {% if invoices %}
+  <table class="table"><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>
+  {% for inv in invoices %}<tr>
+    <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
+    <td style="color:var(--text)">{{ inv.customer.name if inv.customer else 'Walk-in' }}</td>
+    <td style="color:var(--text3);font-size:11px">{{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
+    <td style="color:var(--text3);font-size:11px">{{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
+    <td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text)">{{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
+    <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='SENT' %}blue{% else %}gray{% endif %}">{{ inv.status }}</span></td>
+    <td style="display:flex;gap:4px">
+      {% if inv.status != 'PAID' %}<button class="btn btn-sm" onclick="markPaid({{ inv.id }})">Mark Paid</button>{% endif %}
+      <button class="btn btn-sm" onclick="shareWA({{ inv.id }})">📤 WA</button>
+    </td>
+  </tr>{% endfor %}
+  </tbody></table>
+  {% else %}
+  <div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">◻</div><div style="font-weight:500;color:var(--text2);margin-bottom:14px">No invoices yet</div><button class="btn btn-primary" onclick="openModal('create-inv-modal')">Create first invoice</button></div>
+  {% endif %}
+</div>
+</div>
+
+<div id="create-inv-modal" class="modal-overlay">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-title">Create Invoice <button class="modal-close" onclick="closeModal('create-inv-modal')">×</button></div>
+    <div class="field-row">
+      <div><div class="field-label">Customer</div>
+        <select class="select-input" id="inv-cust">
+          <option value="">Walk-in / No customer</option>
+          {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><div class="field-label">Due Date</div><input class="field-input" type="date" id="inv-due"></div>
+    </div>
+    <div class="field-label" style="margin-bottom:6px">Line Items</div>
+    <div id="inv-items"></div>
+    <button class="btn btn-sm" onclick="addInvItem()" style="margin-bottom:12px">+ Add item</button>
+    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="inv-notes" placeholder="Payment terms, delivery details..."></div>
+    <div id="inv-total" style="text-align:right;font-size:15px;font-weight:600;color:var(--mint);margin-bottom:12px;font-family:var(--mono)"></div>
+    <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="createInvoice()">Create & Send</button><button class="btn" onclick="closeModal('create-inv-modal')">Cancel</button></div>
+    <div id="inv-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+var invItems=[];
+function addInvItem(){var i=invItems.length;invItems.push({desc:'',qty:1,price:0,total:0});var div=document.createElement('div');div.id='inv-item-'+i;div.style.cssText='display:grid;grid-template-columns:2fr 80px 100px 100px 30px;gap:6px;margin-bottom:6px;align-items:center';div.innerHTML='<input class="field-input" placeholder="Description" oninput="updateItem('+i+',\'desc\',this.value)" style="font-size:11px"><input class="field-input" type="number" value="1" min="1" oninput="updateItem('+i+',\'qty\',this.value)" style="font-size:11px"><input class="field-input" type="number" step="0.01" placeholder="Price" oninput="updateItem('+i+',\'price\',this.value)" style="font-size:11px"><span id="inv-line-'+i+'" style="font-family:var(--mono);font-size:12px;color:var(--mint);text-align:right">0.00</span><button onclick="removeItem('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>';document.getElementById('inv-items').appendChild(div);updateTotal();}
+function removeItem(i){invItems[i]=null;var el=document.getElementById('inv-item-'+i);if(el)el.remove();updateTotal();}
+function updateItem(i,k,v){if(!invItems[i])return;invItems[i][k]=k==='desc'?v:parseFloat(v)||0;invItems[i].total=invItems[i].qty*invItems[i].price;var el=document.getElementById('inv-line-'+i);if(el)el.textContent=fmt(invItems[i].total);updateTotal();}
+function updateTotal(){var t=invItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('inv-total').textContent='Total: '+t.toFixed(2);}
+function createInvoice(){var items=invItems.filter(Boolean).filter(i=>i.desc);if(!items.length){alert('Add at least one item');return;}fetch('/api/invoice/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('inv-cust').value||null,due_date:document.getElementById('inv-due').value,notes:document.getElementById('inv-notes').value,items:items})}).then(r=>r.json()).then(res=>{if(res.ok){var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--mint)';msg.textContent='✓ Invoice '+res.invoice_number+' created — Total: '+res.total.toFixed(2);window._lastWaUrl=res.wa_url;setTimeout(()=>{if(confirm('Share invoice on WhatsApp?'))window.open(res.wa_url,'_blank');closeModal('create-inv-modal');location.reload();},500);}else{var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}});}
+function markPaid(id){if(confirm('Mark this invoice as paid?'))fetch('/api/invoice/'+id+'/mark-paid',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
+function shareWA(id){alert('WhatsApp sharing: re-create the invoice to get a fresh link, or copy the invoice number and send manually.');}
+</script>{% endblock %}

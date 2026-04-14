@@ -1,99 +1,37 @@
-{% extends "base.html" %}
-{% block title %}Inventory — LEDGR{% endblock %}
-{% block content %}
-<div class="topbar">
-  <div>
-    <div class="page-title">Inventory</div>
-    <div class="page-sub">{{ products|length }} products · {{ low_stock|length }} low stock alerts</div>
-  </div>
-  <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ Add Product</button>
-</div>
-
+{% extends "base.html" %}{% block title %}Inventory — LEDGR{% endblock %}{% block content %}
+<div class="topbar"><div><div class="page-title">Inventory</div><div class="page-sub">{{ products|length }} products · {{ low_stock|length }} low stock alerts</div></div><button class="btn btn-primary" onclick="openModal('add-prod-modal')">+ Add Product</button></div>
 <div class="content">
-  {% if low_stock %}
-  <div class="alert alert-warn">
-    {{ low_stock|length }} product(s) are at or below reorder level: {{ low_stock|map(attribute='name')|join(', ') }}
-  </div>
+{% if low_stock %}<div class="alert alert-warn">{{ low_stock|length }} product(s) at or below reorder level: {{ low_stock|map(attribute='name')|join(', ') }}</div>{% endif %}
+<div class="card">
+  <div class="card-title">Products</div>
+  {% if products %}
+  <table class="table"><thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Stock</th><th>Cost</th><th>Price</th><th>Status</th></tr></thead><tbody>
+  {% for p in products %}<tr>
+    <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ p.sku or '—' }}</td>
+    <td style="color:var(--text);font-weight:500">{{ p.name }}</td>
+    <td style="color:var(--text3)">{{ p.category or '—' }}</td>
+    <td style="font-weight:600;font-family:var(--mono);color:{% if p.stock_level<=0 %}var(--red){% elif p.stock_level<=p.reorder_level %}var(--amber){% else %}var(--mint){% endif %}">{{ p.stock_level }}</td>
+    <td style="font-family:var(--mono)">{{ p.currency }} {{ "%.2f"|format(p.unit_cost) }}</td>
+    <td style="font-family:var(--mono)">{{ p.currency }} {{ "%.2f"|format(p.unit_price) }}</td>
+    <td>{% if p.stock_level<=0 %}<span class="badge badge-red">Out</span>{% elif p.stock_level<=p.reorder_level %}<span class="badge badge-amber">Low</span>{% else %}<span class="badge badge-green">OK</span>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody></table>
+  {% else %}
+  <div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">▦</div><div style="font-weight:500;color:var(--text2);margin-bottom:14px">No products yet</div><button class="btn btn-primary" onclick="openModal('add-prod-modal')">Add first product</button></div>
   {% endif %}
-
-  <div class="card">
-    <div class="card-title">Products</div>
-    {% if products %}
-    <table class="table">
-      <thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Stock</th><th>Cost price</th><th>Sell price</th><th>Status</th></tr></thead>
-      <tbody>
-        {% for p in products %}
-        <tr>
-          <td style="color:#64748b;font-size:12px;font-family:monospace">{{ p.sku or '—' }}</td>
-          <td style="color:#f1f5f9;font-weight:500">{{ p.name }}</td>
-          <td style="color:#64748b">{{ p.category or '—' }}</td>
-          <td style="font-weight:500;color:{% if p.stock_level <= p.reorder_level %}#f87171{% else %}#10b981{% endif %}">{{ p.stock_level }}</td>
-          <td>{{ p.currency }} {{ "%.2f"|format(p.unit_cost) }}</td>
-          <td>{{ p.currency }} {{ "%.2f"|format(p.unit_price) }}</td>
-          <td>
-            {% if p.stock_level <= 0 %}<span class="badge badge-red">Out of stock</span>
-            {% elif p.stock_level <= p.reorder_level %}<span class="badge badge-amber">Low stock</span>
-            {% else %}<span class="badge badge-green">In stock</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <div style="text-align:center;padding:40px 0;color:#475569">
-      <div style="font-size:32px;margin-bottom:12px">▦</div>
-      <div style="font-weight:500;margin-bottom:6px">No products yet</div>
-      <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'" style="margin-top:16px">Add first product</button>
-    </div>
-    {% endif %}
-  </div>
 </div>
-
-<!-- Add Product Modal -->
-<div id="add-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);align-items:center;justify-content:center;z-index:200">
-  <div style="background:#1e293b;border:1px solid #334155;border-radius:16px;padding:28px;width:100%;max-width:480px">
-    <div style="font-size:16px;font-weight:600;margin-bottom:20px">Add product</div>
-    <div class="field-row">
-      <div><div class="field-label">Product name *</div><input class="field-input" id="p-name" placeholder="Steel pipes"></div>
-      <div><div class="field-label">SKU</div><input class="field-input" id="p-sku" placeholder="SKU-001"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Category</div><input class="field-input" id="p-cat" placeholder="Materials"></div>
-      <div><div class="field-label">Stock level</div><input class="field-input" type="number" id="p-stock" value="0"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Cost price</div><input class="field-input" type="number" id="p-cost" step="0.01" value="0"></div>
-      <div><div class="field-label">Sell price</div><input class="field-input" type="number" id="p-price" step="0.01" value="0"></div>
-    </div>
-    <div style="display:flex;gap:10px;margin-top:8px">
-      <button class="btn btn-primary" onclick="addProduct()">Add product</button>
-      <button class="btn" onclick="document.getElementById('add-modal').style.display='none'">Cancel</button>
-    </div>
-    <div id="add-msg" style="margin-top:10px;font-size:13px"></div>
+</div>
+<div id="add-prod-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">Add Product <button class="modal-close" onclick="closeModal('add-prod-modal')">×</button></div>
+    <div class="field-row"><div><div class="field-label">Product Name *</div><input class="field-input" id="p-name" placeholder="Steel Pipe 1/2 inch"></div><div><div class="field-label">SKU</div><input class="field-input" id="p-sku" placeholder="SKU-001"></div></div>
+    <div class="field-row"><div><div class="field-label">Category</div><input class="field-input" id="p-cat" placeholder="Materials"></div><div><div class="field-label">Stock Level</div><input class="field-input" type="number" id="p-stock" value="0"></div></div>
+    <div class="field-row"><div><div class="field-label">Cost Price</div><input class="field-input" type="number" id="p-cost" step="0.01" value="0"></div><div><div class="field-label">Sell Price</div><input class="field-input" type="number" id="p-price" step="0.01" value="0"></div></div>
+    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" onclick="addProd()">Add Product</button><button class="btn" onclick="closeModal('add-prod-modal')">Cancel</button></div>
+    <div id="p-msg" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
   </div>
 </div>
 {% endblock %}
-
-{% block scripts %}
-<script>
-function addProduct(){
-  var name=document.getElementById('p-name').value.trim();
-  if(!name){alert('Product name required');return;}
-  fetch('/api/inventory/update',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      name:name,sku:document.getElementById('p-sku').value,
-      category:document.getElementById('p-cat').value,
-      stock_level:parseInt(document.getElementById('p-stock').value)||0,
-      unit_cost:parseFloat(document.getElementById('p-cost').value)||0,
-      unit_price:parseFloat(document.getElementById('p-price').value)||0,
-      reorder_level:10
-    })
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok){location.reload();}
-    else{document.getElementById('add-msg').textContent='Error: '+res.error;}
-  });
-}
-</script>
-{% endblock %}
+{% block scripts %}<script>
+function addProd(){var name=document.getElementById('p-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/inventory/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,sku:document.getElementById('p-sku').value,category:document.getElementById('p-cat').value,stock_level:parseInt(document.getElementById('p-stock').value)||0,unit_cost:parseFloat(document.getElementById('p-cost').value)||0,unit_price:parseFloat(document.getElementById('p-price').value)||0,reorder_level:10})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{document.getElementById('p-msg').textContent='Error: '+res.error;document.getElementById('p-msg').style.display='block';}});}
+</script>{% endblock %}

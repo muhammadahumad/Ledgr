@@ -3,111 +3,134 @@
 {% block content %}
 <div class="topbar">
   <div>
-    <div class="page-title">Dashboard</div>
-    <div class="page-sub">{{ business.name }} · {{ tax.name }} · {{ tax.currency }}</div>
+    <div class="page-title">{{ business.name }}</div>
+    <div class="page-sub">{{ business.btype().name }} · {{ tax.name }} · {{ tax.currency }}</div>
   </div>
-  <a href="/upload" class="btn btn-primary">+ Upload Document</a>
+  <div style="display:flex;gap:8px">
+    {% if user_businesses|length > 1 %}
+    <div style="position:relative">
+      <button class="btn btn-sm" onclick="document.getElementById('biz-dd').classList.toggle('show')" style="gap:4px">Switch ▾</button>
+      <div id="biz-dd" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;min-width:180px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.4)">
+        {% for ub in user_businesses %}
+        <a href="/business/switch/{{ ub.business_id }}" style="display:block;padding:9px 14px;font-size:12px;color:{% if ub.business_id==business.id %}var(--mint){% else %}var(--text2){% endif %};text-decoration:none" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
+          {{ ub.business.name }}
+          {% if ub.business_id==business.id %} ✓{% endif %}
+        </a>
+        {% endfor %}
+        <a href="/business/add" style="display:block;padding:9px 14px;font-size:12px;color:var(--text3);border-top:1px solid var(--border);text-decoration:none" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">+ Add business</a>
+      </div>
+    </div>
+    {% endif %}
+    <a href="/upload" class="btn btn-primary">↑ Upload Document</a>
+  </div>
 </div>
 
 <div class="content">
-  <div class="stat-grid">
-    <div class="stat-card">
-      <div class="stat-label">Total expenses</div>
-      <div class="stat-value">{{ "%.0f"|format(total_expense) }}</div>
-      <div class="stat-currency">{{ tax.currency }} this month</div>
+  {% if threshold and threshold.warning %}
+  <div class="alert alert-{% if threshold.exceeded %}error{% else %}warn{% endif %}" style="margin-bottom:16px">
+    <div>
+      <strong>{% if threshold.exceeded %}⚠ Tax threshold exceeded{% else %}Tax threshold approaching{% endif %}</strong> —
+      {{ threshold.currency }} {{ "%.0f"|format(threshold.rolling_revenue) }} of {{ "%.0f"|format(threshold.threshold) }} ({{ threshold.percentage }}%).
+      {% if threshold.exceeded %}Register with {{ threshold.authority }} immediately.{% else %}Consider registering with {{ threshold.authority }} soon.{% endif %}
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Total revenue</div>
-      <div class="stat-value">{{ "%.0f"|format(total_revenue) }}</div>
-      <div class="stat-currency">{{ tax.currency }} this month</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Documents</div>
-      <div class="stat-value">{{ total_docs }}</div>
-      <div class="stat-currency">total processed</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Uploads left</div>
-      <div class="stat-value">{{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }}</div>
-      <div class="stat-currency">{{ plan.name }} plan</div>
-    </div>
-  </div>
-
-  {% if pending_docs > 0 %}
-  <div class="alert alert-warn" style="display:flex;align-items:center;justify-content:space-between">
-    <span>{{ pending_docs }} documents pending review</span>
-    <a href="/ledger" class="btn btn-sm">Review now</a>
   </div>
   {% endif %}
 
-  <div style="display:grid;grid-template-columns:2fr 1fr;gap:16px">
-    <div class="card">
-      <div class="card-title">
-        Recent documents
-        <a href="/upload" class="btn btn-sm btn-primary">Upload new</a>
+  <div class="stat-grid">
+    <div class="stat-card">
+      <div class="stat-label">Revenue</div>
+      <div class="stat-value" style="color:var(--mint)">{{ "%.0f"|format(total_revenue) }}</div>
+      <div class="stat-sub">{{ tax.currency }} total</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Expenses</div>
+      <div class="stat-value" style="color:var(--red)">{{ "%.0f"|format(total_expense) }}</div>
+      <div class="stat-sub">{{ tax.currency }} total</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Net Profit</div>
+      <div class="stat-value" style="color:{% if total_revenue > total_expense %}var(--mint){% else %}var(--red){% endif %}">{{ "%.0f"|format(total_revenue - total_expense) }}</div>
+      <div class="stat-sub">{{ tax.currency }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Today POS</div>
+      <div class="stat-value">{{ "%.0f"|format(today_pos) }}</div>
+      <div class="stat-sub">{{ tax.currency }} · <a href="/pos">Open POS</a></div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px">
+    <div>
+      <div class="card">
+        <div class="card-title">Recent documents <a href="/upload" class="btn btn-sm btn-primary">Upload</a></div>
+        {% if recent_docs %}
+        <table class="table">
+          <thead><tr><th>Vendor</th><th>Type</th><th>Date</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for doc in recent_docs %}
+            <tr>
+              <td style="color:var(--text);font-weight:500">{{ doc.vendor_name or '—' }}</td>
+              <td><span class="badge badge-gray">{{ doc.doc_type }}</span></td>
+              <td>{{ doc.invoice_date.strftime('%d %b') if doc.invoice_date else '—' }}</td>
+              <td style="text-align:right;font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
+              <td><span class="badge badge-{% if doc.status=='PROCESSED' %}green{% elif doc.status=='FLAGGED' %}red{% else %}amber{% endif %}">{{ doc.status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div style="text-align:center;padding:32px 0;color:var(--text3)">
+          <div style="font-size:28px;margin-bottom:10px">↑</div>
+          <div style="font-weight:500;margin-bottom:4px;color:var(--text2)">No documents yet</div>
+          <div style="font-size:11px;margin-bottom:14px">Upload your first bill or receipt</div>
+          <a href="/upload" class="btn btn-primary">Upload document</a>
+        </div>
+        {% endif %}
       </div>
-      {% if recent_docs %}
-      <table class="table">
-        <thead><tr><th>Vendor</th><th>Type</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead>
-        <tbody>
-          {% for doc in recent_docs %}
-          <tr>
-            <td style="color:#f1f5f9;font-weight:500">{{ doc.vendor_name or '—' }}</td>
-            <td><span class="badge badge-gray">{{ doc.doc_type }}</span></td>
-            <td>{{ doc.invoice_date.strftime('%d %b') if doc.invoice_date else '—' }}</td>
-            <td>{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
-            <td>
-              {% if doc.status == 'PROCESSED' %}
-                <span class="badge badge-green">Posted</span>
-              {% elif doc.status == 'FLAGGED' %}
-                <span class="badge badge-red">Flagged</span>
-              {% else %}
-                <span class="badge badge-amber">Pending</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% else %}
-      <div style="text-align:center;padding:32px 0;color:#475569">
-        <div style="font-size:32px;margin-bottom:12px">↑</div>
-        <div style="font-weight:500;margin-bottom:6px">No documents yet</div>
-        <div style="font-size:12px">Upload your first bill or receipt to get started</div>
-        <a href="/upload" class="btn btn-primary" style="margin-top:16px">Upload first document</a>
-      </div>
-      {% endif %}
     </div>
 
     <div>
+      {% if low_stock %}
+      <div class="card" style="border-color:var(--amber)">
+        <div class="card-title">Low stock alerts <span class="badge badge-amber">{{ low_stock|length }}</span></div>
+        {% for p in low_stock %}
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+          <span style="color:var(--text)">{{ p.name }}</span>
+          <span style="color:var(--amber);font-family:var(--mono)">{{ p.stock_level }} left</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       <div class="card">
         <div class="card-title">Tax compliance</div>
-        <div style="font-size:12px;color:#64748b;line-height:1.8">
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-            <span>Authority</span><span style="color:#10b981;font-weight:500">{{ tax.authority }}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-            <span>Tax type</span><span style="color:#f1f5f9">{{ tax.tax_name }}</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
-            <span>Rate</span><span style="color:#f1f5f9">{{ (tax.tax_rate * 100)|int }}%</span>
-          </div>
-          <div style="display:flex;justify-content:space-between">
-            <span>Currency</span><span style="color:#f1f5f9">{{ tax.currency }}</span>
-          </div>
+        <div style="font-size:12px;line-height:2">
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Authority</span><span style="color:var(--mint);font-weight:500">{{ tax.authority }}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Tax type</span><span>{{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Currency</span><span>{{ tax.currency }}</span></div>
+          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Registered</span><span class="badge badge-{% if business.is_tax_registered %}green{% else %}gray{% endif %}">{% if business.is_tax_registered %}Yes{% else %}No{% endif %}</span></div>
         </div>
       </div>
 
       <div class="card">
         <div class="card-title">Quick actions</div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <a href="/upload" class="btn" style="justify-content:center">↑ Upload document</a>
-          <a href="/ledger" class="btn" style="justify-content:center">≡ View ledger</a>
-          <a href="/inventory" class="btn" style="justify-content:center">▦ Inventory</a>
-          <a href="/payroll" class="btn" style="justify-content:center">$ Payroll</a>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <a href="/pos" class="btn" style="justify-content:flex-start">⚡ Point of Sale</a>
+          <a href="/customers" class="btn" style="justify-content:flex-start">◎ Customers</a>
+          <a href="/invoices" class="btn" style="justify-content:flex-start">◻ Create Invoice</a>
+          <a href="/reports" class="btn" style="justify-content:flex-start">↗ Financial Reports</a>
+          <a href="/ai" class="btn" style="justify-content:flex-start;background:var(--mint-dim);border-color:rgba(16,185,129,.2);color:var(--mint)">⬡ Ask AI Accountant</a>
         </div>
       </div>
     </div>
   </div>
 </div>
 {% endblock %}
+<script>
+document.addEventListener('click',function(e){
+  var dd=document.getElementById('biz-dd');
+  if(dd&&!e.target.closest('#biz-dd')&&!e.target.closest('[onclick*="biz-dd"]'))dd.classList.remove('show');
+});
+document.querySelector('#biz-dd')&&(document.getElementById('biz-dd').style.display='');
+document.querySelectorAll('#biz-dd').forEach(el=>el.style.removeProperty('display'));
+</script>

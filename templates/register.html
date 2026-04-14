@@ -1,76 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Create account — LEDGR</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create workspace — LEDGR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#f1f5f9;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
-.box{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:40px;width:100%;max-width:460px}
-.brand{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:4px}
+body{font-family:'IBM Plex Sans',sans-serif;background:#0a0e17;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.box{background:#111827;border:1px solid #1f2d45;border-radius:16px;padding:36px;width:100%;max-width:540px}
+.brand{font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:600;letter-spacing:.08em;margin-bottom:4px}
 .brand span{color:#10b981}
-.subtitle{font-size:13px;color:#64748b;margin-bottom:28px}
-.field-group{margin-bottom:14px}
-.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
-.field-label{font-size:11px;color:#64748b;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
-.field-input{width:100%;padding:9px 12px;border:1px solid #334155;border-radius:8px;font-size:14px;color:#f1f5f9;background:#0f172a;font-family:inherit}
-.field-input:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15)}
-.btn{width:100%;padding:10px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:none;background:#10b981;color:#fff;font-family:inherit;margin-top:4px;transition:background .15s}
+.sub{font-size:12px;color:#4a6080;margin-bottom:24px}
+.fl{margin-bottom:12px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+label{display:block;font-size:10px;color:#4a6080;font-weight:500;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+input,select{width:100%;padding:8px 10px;border:1px solid #1f2d45;border-radius:7px;font-size:12px;color:#e2e8f0;background:#0a0e17;font-family:'IBM Plex Sans',sans-serif;transition:border-color .15s}
+input:focus,select:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.12)}
+.type-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px}
+.type-card{border:1px solid #1f2d45;border-radius:8px;padding:10px 8px;cursor:pointer;transition:all .15s;text-align:center;user-select:none}
+.type-card:hover{border-color:#10b981}
+.type-card.selected{border-color:#10b981;background:rgba(16,185,129,.08)}
+.type-card input{display:none}
+.tn{font-weight:500;font-size:12px;color:#e2e8f0;margin-bottom:2px}
+.ts{font-size:10px;color:#4a6080}
+.tb{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:500;background:rgba(16,185,129,.15);color:#10b981;margin-top:3px}
+.tb.full{background:rgba(59,130,246,.15);color:#60a5fa}
+.btn{width:100%;padding:10px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:#10b981;color:#fff;font-family:'IBM Plex Sans',sans-serif;margin-top:4px;transition:background .15s}
 .btn:hover{background:#059669}
-.link-row{text-align:center;margin-top:16px;font-size:13px;color:#64748b}
-.link-row a{color:#10b981}
-.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:rgba(220,38,38,.1);color:#f87171;border:1px solid rgba(220,38,38,.2)}
-.region-note{font-size:11px;color:#64748b;margin-top:4px}
+.link{text-align:center;margin-top:14px;font-size:12px;color:#4a6080}
+.link a{color:#10b981}
+.err{padding:10px 14px;border-radius:8px;font-size:12px;margin-bottom:14px;background:rgba(239,68,68,.08);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+.sec{font-size:10px;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px}
 </style>
 </head>
 <body>
 <div class="box">
   <div class="brand">L<span>EDGR</span></div>
-  <p class="subtitle">Create your free business workspace</p>
-
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-      <div class="alert">{{ message }}</div>
-    {% endfor %}
+  <p class="sub">Create your free business workspace</p>
+  {% with messages=get_flashed_messages(with_categories=true) %}
+    {% for _,msg in messages %}<div class="err">{{ msg }}</div>{% endfor %}
   {% endwith %}
-
   <form method="POST">
-    <div class="field-row">
-      <div>
-        <div class="field-label">Your name *</div>
-        <input class="field-input" type="text" name="name" placeholder="Mohamed Ahmed" required>
-      </div>
-      <div>
-        <div class="field-label">Business name *</div>
-        <input class="field-input" type="text" name="business_name" placeholder="Skill Engineering" required>
-      </div>
+    <div class="row">
+      <div><label>Your name *</label><input type="text" name="name" placeholder="Mohamed Ahmed" required></div>
+      <div><label>Business name *</label><input type="text" name="business_name" placeholder="Cafe Sunrise" required></div>
     </div>
-    <div class="field-group">
-      <div class="field-label">Email *</div>
-      <input class="field-input" type="email" name="email" placeholder="your@email.com" required>
+    <div class="fl"><label>Email *</label><input type="email" name="email" placeholder="you@email.com" required></div>
+    <div class="fl"><label>Password *</label><input type="password" name="password" placeholder="Min 8 characters" minlength="8" required></div>
+
+    <div class="sec">Business type</div>
+    <div class="type-grid">
+      {% set types = [
+        ('sole_proprietor','Sole Proprietor','Individual','simple'),
+        ('partnership','Partnership','2+ owners','standard'),
+        ('limited_company','Limited Company','Pvt Ltd','full'),
+        ('llc','LLC','Limited liability','full'),
+        ('cooperative','Cooperative','Member-owned','standard'),
+        ('other','Other','NGO/Freelance','simple')
+      ] %}
+      {% for val,name,desc,level in types %}
+      <label class="type-card {% if val=='sole_proprietor' %}selected{% endif %}" onclick="selectType(this,'{{ val }}')">
+        <input type="radio" name="business_type" value="{{ val }}" {% if val=='sole_proprietor' %}checked{% endif %}>
+        <div class="tn">{{ name }}</div>
+        <div class="ts">{{ desc }}</div>
+        <span class="tb {% if level=='full' %}full{% endif %}">{{ level }}</span>
+      </label>
+      {% endfor %}
     </div>
-    <div class="field-group">
-      <div class="field-label">Password *</div>
-      <input class="field-input" type="password" name="password" placeholder="Min 8 characters" minlength="8" required>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Market region *</div>
-      <select class="field-input" name="region">
-        {% for code, info in regions.items() %}
-        <option value="{{ code }}" {% if code == 'MV' %}selected{% endif %}>
-          {{ info.name }} — {{ info.currency }} · {{ info.tax_name }} {{ (info.tax_rate * 100)|int }}% ({{ info.authority }})
-        </option>
+
+    <div class="fl">
+      <label>Market region *</label>
+      <select name="region">
+        {% for code,info in regions.items() %}
+        <option value="{{ code }}" {% if code=='MV' %}selected{% endif %}>{{ info.name }} — {{ info.currency }} · {{ info.tax_name }} {{ (info.tax_rate*100)|int }}% ({{ info.authority }})</option>
         {% endfor %}
       </select>
-      <div class="region-note">Sets your default currency and tax compliance rules</div>
     </div>
-    <button type="submit" class="btn">Create free workspace</button>
+    <button type="submit" class="btn">Create free workspace →</button>
   </form>
-
-  <div class="link-row">
-    Already have an account? <a href="/login">Sign in</a>
-  </div>
+  <div class="link">Have an account? <a href="/login">Sign in</a></div>
 </div>
+<script>
+function selectType(el,val){
+  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  el.querySelector('input').checked=true;
+}
+</script>
 </body>
 </html>

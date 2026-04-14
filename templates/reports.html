@@ -1,152 +1,52 @@
-{% extends "base.html" %}
-{% block title %}Reports — LEDGR{% endblock %}
-{% block content %}
-<div class="topbar">
-  <div>
-    <div class="page-title">Financial Reports</div>
-    <div class="page-sub">P&L · Balance Sheet · Compliance Monitor</div>
-  </div>
-  <button class="btn" onclick="window.print()">Print / Export PDF</button>
-</div>
-
+{% extends "base.html" %}{% block title %}Reports — LEDGR{% endblock %}{% block content %}
+<div class="topbar"><div><div class="page-title">Financial Reports</div><div class="page-sub">P&L · Balance Sheet · Tax Threshold Monitor</div></div><button class="btn" onclick="window.print()">Print / PDF</button></div>
 <div class="content">
-
-  <!-- Threshold Monitor -->
-  {% if threshold %}
-  <div class="card" style="border-color:{% if threshold.exceeded %}#dc2626{% elif threshold.warning %}#fbbf24{% else %}#334155{% endif %}">
-    <div class="card-title">
-      {{ threshold.authority }} Tax Threshold Monitor
-      {% if threshold.exceeded %}
-        <span class="badge badge-red">THRESHOLD EXCEEDED</span>
-      {% elif threshold.warning %}
-        <span class="badge badge-amber">WARNING — APPROACHING THRESHOLD</span>
-      {% else %}
-        <span class="badge badge-green">Below Threshold</span>
-      {% endif %}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:12px">
-      <div>
-        <div class="field-label">12-Month Revenue</div>
-        <div style="font-size:18px;font-weight:600;color:#f1f5f9">{{ threshold.currency }} {{ "%.0f"|format(threshold.rolling_revenue) }}</div>
-      </div>
-      <div>
-        <div class="field-label">{{ threshold.tax }} Registration Threshold</div>
-        <div style="font-size:18px;font-weight:600;color:#fbbf24">{{ threshold.currency }} {{ "%.0f"|format(threshold.threshold) }}</div>
-      </div>
-      <div>
-        <div class="field-label">Progress</div>
-        <div style="font-size:18px;font-weight:600;color:{% if threshold.exceeded %}#f87171{% elif threshold.warning %}#fbbf24{% else %}#10b981{% endif %}">{{ threshold.percentage }}%</div>
-      </div>
-    </div>
-    <div style="background:#0f172a;border-radius:999px;height:8px;overflow:hidden">
-      <div style="background:{% if threshold.exceeded %}#dc2626{% elif threshold.warning %}#fbbf24{% else %}#10b981{% endif %};height:100%;width:{{ [threshold.percentage, 100]|min }}%;border-radius:999px;transition:width .5s"></div>
-    </div>
-    {% if threshold.warning and not threshold.exceeded %}
-    <p style="font-size:12px;color:#fbbf24;margin-top:10px">⚠ You are approaching the {{ threshold.authority }} registration threshold. Once exceeded, you must register for {{ threshold.tax }} and file returns. LEDGR will generate tax-ready reports when you activate Tax Mode.</p>
-    {% elif threshold.exceeded %}
-    <p style="font-size:12px;color:#f87171;margin-top:10px">🔴 You have exceeded the threshold. Please register with {{ threshold.authority }} immediately. Contact your accountant or visit {{ threshold.authority }}'s portal.</p>
-    {% endif %}
+{% if threshold %}
+<div class="card" style="border-color:{% if threshold.exceeded %}var(--red){% elif threshold.warning %}var(--amber){% else %}var(--border){% endif %}">
+  <div class="card-title">{{ tax.authority }} Threshold Monitor <span class="badge badge-{% if threshold.exceeded %}red{% elif threshold.warning %}amber{% else %}green{% endif %}">{% if threshold.exceeded %}EXCEEDED{% elif threshold.warning %}WARNING{% else %}OK{% endif %}</span></div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:12px">
+    <div><div class="field-label">12-Month Revenue</div><div style="font-size:16px;font-weight:600;color:var(--text);font-family:var(--mono)">{{ threshold.currency }} {{ "%.0f"|format(threshold.rolling_revenue) }}</div></div>
+    <div><div class="field-label">{{ threshold.tax }} Threshold</div><div style="font-size:16px;font-weight:600;color:var(--amber);font-family:var(--mono)">{{ threshold.currency }} {{ "%.0f"|format(threshold.threshold) }}</div></div>
+    <div><div class="field-label">Progress</div><div style="font-size:16px;font-weight:600;color:{% if threshold.exceeded %}var(--red){% elif threshold.warning %}var(--amber){% else %}var(--mint){% endif %}">{{ threshold.percentage }}%</div></div>
   </div>
-  {% endif %}
-
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
-
-    <!-- P&L Statement -->
-    <div class="card">
-      <div class="card-title">Profit & Loss Statement</div>
-      <table style="width:100%;font-size:13px;border-collapse:collapse">
-        <tr style="border-bottom:1px solid #334155">
-          <td style="padding:8px 0;color:#94a3b8">Revenue</td>
-          <td style="text-align:right;color:#10b981;font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_revenue) }}</td>
-        </tr>
-        <tr style="border-bottom:1px solid #334155">
-          <td style="padding:8px 0;color:#94a3b8">Total Expenses</td>
-          <td style="text-align:right;color:#f87171;font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_expenses) }}</td>
-        </tr>
-        <tr style="border-bottom:1px solid #334155">
-          <td style="padding:8px 0;color:#94a3b8">Tax Collected/Paid</td>
-          <td style="text-align:right;color:#fbbf24;font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_tax) }}</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 0;font-weight:600;color:#f1f5f9;font-size:15px">Net Profit / Loss</td>
-          <td style="text-align:right;font-weight:700;font-size:18px;color:{% if net_profit >= 0 %}#10b981{% else %}#f87171{% endif %}">
-            {{ business.base_currency }} {{ "%.2f"|format(net_profit) }}
-          </td>
-        </tr>
-      </table>
-      <div style="margin-top:16px;padding:10px;background:#0f172a;border-radius:8px;font-size:12px;color:#64748b">
-        Gross margin: {{ "%.1f"|format((net_profit / total_revenue * 100) if total_revenue > 0 else 0) }}%
-      </div>
-    </div>
-
-    <!-- Balance Sheet -->
-    <div class="card">
-      <div class="card-title">Balance Sheet</div>
-      <table style="width:100%;font-size:13px;border-collapse:collapse">
-        <tr><td colspan="2" style="padding:6px 0;font-size:11px;color:#10b981;font-weight:600;text-transform:uppercase;letter-spacing:.06em">ASSETS</td></tr>
-        <tr style="border-bottom:1px solid #334155">
-          <td style="padding:6px 0;color:#94a3b8">Total Assets</td>
-          <td style="text-align:right;color:#f1f5f9;font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_assets) }}</td>
-        </tr>
-        <tr><td colspan="2" style="padding:10px 0 6px;font-size:11px;color:#f87171;font-weight:600;text-transform:uppercase;letter-spacing:.06em">LIABILITIES</td></tr>
-        <tr style="border-bottom:1px solid #334155">
-          <td style="padding:6px 0;color:#94a3b8">Total Liabilities</td>
-          <td style="text-align:right;color:#f1f5f9;font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_liabilities) }}</td>
-        </tr>
-        <tr><td colspan="2" style="padding:10px 0 6px;font-size:11px;color:#60a5fa;font-weight:600;text-transform:uppercase;letter-spacing:.06em">EQUITY</td></tr>
-        <tr style="border-bottom:1px solid #334155">
-          <td style="padding:6px 0;color:#94a3b8">Total Equity + Profit</td>
-          <td style="text-align:right;color:#f1f5f9;font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_equity) }}</td>
-        </tr>
-        <tr>
-          <td style="padding:12px 0;font-weight:600;color:#f1f5f9">Balance Check</td>
-          <td style="text-align:right;font-weight:700;color:{% if (total_assets - total_liabilities - total_equity)|abs < 1 %}#10b981{% else %}#f87171{% endif %}">
-            {% if (total_assets - total_liabilities - total_equity)|abs < 1 %}✓ Balanced{% else %}⚠ Check entries{% endif %}
-          </td>
-        </tr>
-      </table>
-    </div>
+  <div style="background:var(--bg);border-radius:999px;height:6px;overflow:hidden"><div style="background:{% if threshold.exceeded %}var(--red){% elif threshold.warning %}var(--amber){% else %}var(--mint){% endif %};height:100%;width:{{ [threshold.percentage,100]|min }}%;border-radius:999px"></div></div>
+  {% if threshold.warning and not threshold.exceeded %}<p style="font-size:11px;color:var(--amber);margin-top:8px">Approaching the {{ threshold.authority }} registration threshold. Consider consulting an accountant.</p>{% elif threshold.exceeded %}<p style="font-size:11px;color:var(--red);margin-top:8px">Threshold exceeded. Register with {{ threshold.authority }} immediately and begin collecting {{ threshold.tax }}.</p>{% endif %}
+</div>
+{% endif %}
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+<div class="card">
+  <div class="card-title">Profit & Loss</div>
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 0;color:var(--text2)">Revenue</td><td style="text-align:right;color:var(--mint);font-weight:500;font-family:var(--mono)">{{ business.base_currency }} {{ "%.2f"|format(total_revenue) }}</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 0;color:var(--text2)">Expenses</td><td style="text-align:right;color:var(--red);font-weight:500;font-family:var(--mono)">{{ business.base_currency }} {{ "%.2f"|format(total_expenses) }}</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 0;color:var(--text2)">Tax</td><td style="text-align:right;color:var(--amber);font-weight:500;font-family:var(--mono)">{{ business.base_currency }} {{ "%.2f"|format(total_tax) }}</td></div></tr>
+    <tr><td style="padding:12px 0;font-weight:600;color:var(--text)">Net Profit/Loss</td><td style="text-align:right;font-weight:700;font-size:17px;color:{% if net_profit>=0 %}var(--mint){% else %}var(--red){% endif %};font-family:var(--mono)">{{ business.base_currency }} {{ "%.2f"|format(net_profit) }}</td></tr>
+  </table>
+  <div style="margin-top:12px;padding:10px;background:var(--bg);border-radius:7px;font-size:11px;color:var(--text3)">Gross margin: {{ "%.1f"|format((net_profit/total_revenue*100) if total_revenue>0 else 0) }}%</div>
+</div>
+<div class="card">
+  <div class="card-title">Balance Sheet</div>
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+    <tr><td colspan="2" style="padding:6px 0 3px;font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.06em">ASSETS</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 0;color:var(--text2)">Total Assets</td><td style="text-align:right;font-family:var(--mono);font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_assets) }}</td></tr>
+    <tr><td colspan="2" style="padding:10px 0 3px;font-size:10px;color:var(--red);font-weight:600;text-transform:uppercase;letter-spacing:.06em">LIABILITIES</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 0;color:var(--text2)">Total Liabilities</td><td style="text-align:right;font-family:var(--mono);font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_liabilities) }}</td></tr>
+    <tr><td colspan="2" style="padding:10px 0 3px;font-size:10px;color:#60a5fa;font-weight:600;text-transform:uppercase;letter-spacing:.06em">EQUITY</td></tr>
+    <tr style="border-bottom:1px solid var(--border)"><td style="padding:6px 0;color:var(--text2)">Equity + Profit</td><td style="text-align:right;font-family:var(--mono);font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(total_equity) }}</td></tr>
+    <tr><td style="padding:10px 0;font-weight:600;color:var(--text)">Balance Check</td><td style="text-align:right;font-weight:700;color:{% if (total_assets-total_liabilities-total_equity)|abs<1 %}var(--mint){% else %}var(--red){% endif %}">{% if (total_assets-total_liabilities-total_equity)|abs<1 %}✓ Balanced{% else %}⚠ Check entries{% endif %}</td></tr>
+  </table>
+</div>
+</div>
+<div class="card">
+  <div class="card-title">Export & Compliance</div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn" onclick="exportCSV()">Export CSV</button>
+    <button class="btn" onclick="window.print()">Export PDF</button>
   </div>
-
-  <!-- Export Options -->
-  <div class="card">
-    <div class="card-title">Export & Compliance</div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn" onclick="exportReport('csv')">Export CSV</button>
-      <button class="btn" onclick="window.print()">Export PDF</button>
-      <button class="btn btn-primary" onclick="exportReport('mira')" {% if business.region != 'MV' %}style="display:none"{% endif %}>MIRA Ready Export</button>
-      <button class="btn btn-primary" onclick="exportReport('fta')" {% if business.region != 'AE' %}style="display:none"{% endif %}>FTA Ready Export</button>
-    </div>
-    <p style="font-size:12px;color:#64748b;margin-top:10px">Reports are generated from your LEDGR data in real-time. PDF export uses your browser's print function.</p>
-  </div>
+  <p style="font-size:11px;color:var(--text3);margin-top:10px">Reports are generated in real-time from your LEDGR data.</p>
+</div>
 </div>
 {% endblock %}
-
-{% block scripts %}
-<script>
-function exportReport(type){
-  if(type==='csv'){
-    var data=[
-      ['LEDGR Financial Report'],
-      ['Business','{{ business.name }}'],
-      ['Region','{{ tax.name }}'],
-      ['Currency','{{ business.base_currency }}'],
-      [],
-      ['P&L STATEMENT'],
-      ['Revenue','{{ "%.2f"|format(total_revenue) }}'],
-      ['Expenses','{{ "%.2f"|format(total_expenses) }}'],
-      ['Tax','{{ "%.2f"|format(total_tax) }}'],
-      ['Net Profit','{{ "%.2f"|format(net_profit) }}'],
-    ];
-    var csv=data.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');
-    var blob=new Blob([csv],{type:'text/csv'});
-    var a=document.createElement('a');
-    a.href=URL.createObjectURL(blob);
-    a.download='ledgr-report-'+new Date().toISOString().split('T')[0]+'.csv';
-    a.click();
-  } else {
-    alert(type.toUpperCase()+' compliance export coming in next update!');
-  }
-}
-</script>
-{% endblock %}
+{% block scripts %}<script>
+function exportCSV(){var rows=[['LEDGR Report'],['Business','{{ business.name }}'],['Region','{{ tax.name }}'],['Currency','{{ business.base_currency }}'],[''],['P&L'],['Revenue','{{ "%.2f"|format(total_revenue) }}'],['Expenses','{{ "%.2f"|format(total_expenses) }}'],['Tax','{{ "%.2f"|format(total_tax) }}'],['Net Profit','{{ "%.2f"|format(net_profit) }}']];var csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\n');var blob=new Blob([csv],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='ledgr-report.csv';a.click();}
+</script>{% endblock %}
