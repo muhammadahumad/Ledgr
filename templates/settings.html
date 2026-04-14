@@ -36,7 +36,7 @@
         <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
       </div>
       <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
-        <input type="checkbox" id="toggle-{{ field }}" {% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
+        <input type="checkbox" id="toggle-{{ field }}" {% if val %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
         <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-{{ field }}"></span>
         <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-{{ field }}"></span>
       </label>

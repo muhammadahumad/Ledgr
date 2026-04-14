@@ -44,19 +44,47 @@
   <div id="result-section" style="display:none">
     <div class="status-bar status-success" id="result-bar"><span id="result-msg"></span></div>
     <div class="card">
-      <div class="card-title">Extracted data <span class="badge" id="conf-badge">HIGH</span></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
-        <div><div class="field-label">Vendor</div><div id="r-vendor" style="color:var(--text);font-weight:500"></div></div>
-        <div><div class="field-label">Tax ID</div><div id="r-taxid" style="color:var(--mint);font-family:var(--mono)"></div></div>
-        <div><div class="field-label">Invoice No.</div><div id="r-invno" style="color:var(--text)"></div></div>
-        <div><div class="field-label">Invoice Date</div><div id="r-date" style="color:var(--text)"></div></div>
-        <div><div class="field-label">Type</div><div id="r-type"></div></div>
-        <div><div class="field-label">Category</div><div id="r-cat" style="color:var(--text)"></div></div>
+      <div class="card-title">
+        Extracted data <span class="badge" id="conf-badge">HIGH</span>
+        <button class="btn btn-sm" id="edit-toggle-btn" onclick="toggleEditMode()" style="margin-left:8px">Edit</button>
       </div>
-      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:20px;font-size:12px">
-        <div style="text-align:right"><div style="color:var(--text3)">Subtotal</div><div id="r-sub" style="font-family:var(--mono)"></div></div>
-        <div style="text-align:right"><div style="color:var(--text3)">{{ tax.tax_name }}</div><div id="r-tax" style="color:var(--amber);font-family:var(--mono)"></div></div>
-        <div style="text-align:right"><div style="color:var(--text3);font-weight:500">Total</div><div id="r-total" style="color:var(--mint);font-size:17px;font-weight:600;font-family:var(--mono)"></div></div>
+      <!-- View mode -->
+      <div id="view-mode">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+          <div><div class="field-label">Vendor</div><div id="r-vendor" style="color:var(--text);font-weight:500"></div></div>
+          <div><div class="field-label">Tax ID</div><div id="r-taxid" style="color:var(--mint);font-family:var(--mono)"></div></div>
+          <div><div class="field-label">Invoice No.</div><div id="r-invno" style="color:var(--text)"></div></div>
+          <div><div class="field-label">Invoice Date</div><div id="r-date" style="color:var(--text)"></div></div>
+          <div><div class="field-label">Type</div><div id="r-type"></div></div>
+          <div><div class="field-label">Category</div><div id="r-cat" style="color:var(--text)"></div></div>
+        </div>
+        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:20px;font-size:12px">
+          <div style="text-align:right"><div style="color:var(--text3)">Subtotal</div><div id="r-sub" style="font-family:var(--mono)"></div></div>
+          <div style="text-align:right"><div style="color:var(--text3)">{{ tax.tax_name }}</div><div id="r-tax" style="color:var(--amber);font-family:var(--mono)"></div></div>
+          <div style="text-align:right"><div style="color:var(--text3);font-weight:500">Total</div><div id="r-total" style="color:var(--mint);font-size:17px;font-weight:600;font-family:var(--mono)"></div></div>
+        </div>
+      </div>
+      <!-- Edit mode -->
+      <div id="edit-mode" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><div class="field-label">Vendor Name</div><input class="field-input" id="e-vendor" style="font-size:12px"></div>
+          <div><div class="field-label">Tax ID</div><input class="field-input" id="e-taxid" style="font-size:12px"></div>
+          <div><div class="field-label">Invoice Number</div><input class="field-input" id="e-invno" style="font-size:12px"></div>
+          <div><div class="field-label">Invoice Date</div><input class="field-input" type="date" id="e-date" style="font-size:12px"></div>
+          <div><div class="field-label">Subtotal</div><input class="field-input" type="number" id="e-sub" step="0.01" style="font-size:12px" oninput="recalcTotal()"></div>
+          <div><div class="field-label">Tax Amount</div><input class="field-input" type="number" id="e-tax" step="0.01" style="font-size:12px" oninput="recalcTotal()"></div>
+          <div><div class="field-label">Total</div><input class="field-input" type="number" id="e-total" step="0.01" style="font-size:12px;color:var(--mint);font-weight:600"></div>
+          <div><div class="field-label">Currency</div>
+            <select class="select-input" id="e-currency" style="font-size:12px">
+              <option>MVR</option><option>AED</option><option>USD</option><option>PKR</option><option>LKR</option><option>INR</option>
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="btn btn-primary btn-sm" onclick="saveEdits()">Save Changes</button>
+          <button class="btn btn-sm" onclick="toggleEditMode()">Cancel</button>
+        </div>
+        <div id="save-msg" style="margin-top:8px;font-size:12px;display:none"></div>
       </div>
     </div>
 
@@ -113,6 +141,7 @@ function processFile(file){
   reader.readAsDataURL(file);
 }
 function showResult(res){
+  window._lastExtracted = res.extracted;
   document.getElementById('processing-section').style.display='none';
   document.getElementById('result-section').style.display='block';
   var bar=document.getElementById('result-bar');
@@ -150,6 +179,63 @@ function confirmInventory(){
     if(res.ok){var bar=document.getElementById('result-bar');bar.innerHTML+=` <strong style="margin-left:8px">· ${res.updated} inventory items updated</strong>`;}
   });
 }
+function toggleEditMode(){
+  var vm=document.getElementById('view-mode'),em=document.getElementById('edit-mode');
+  var btn=document.getElementById('edit-toggle-btn');
+  if(vm.style.display==='none'){
+    vm.style.display='block';em.style.display='none';btn.textContent='Edit';
+  } else {
+    // Populate edit fields from current display values
+    var d=window._lastExtracted||{};
+    document.getElementById('e-vendor').value=d.vendor_name||'';
+    document.getElementById('e-taxid').value=d.vendor_tax_id||'';
+    document.getElementById('e-invno').value=d.invoice_number||'';
+    document.getElementById('e-date').value=d.invoice_date||'';
+    document.getElementById('e-sub').value=d.subtotal||0;
+    document.getElementById('e-tax').value=d.tax_amount||0;
+    document.getElementById('e-total').value=d.total_amount||0;
+    document.getElementById('e-currency').value=d.currency||'MVR';
+    vm.style.display='none';em.style.display='block';btn.textContent='Cancel';
+  }
+}
+
+function recalcTotal(){
+  var s=parseFloat(document.getElementById('e-sub').value)||0;
+  var t=parseFloat(document.getElementById('e-tax').value)||0;
+  document.getElementById('e-total').value=(s+t).toFixed(2);
+}
+
+function saveEdits(){
+  if(!currentDocId){alert('No document to save');return;}
+  var payload={
+    vendor_name:document.getElementById('e-vendor').value,
+    vendor_tax_id:document.getElementById('e-taxid').value,
+    invoice_number:document.getElementById('e-invno').value,
+    invoice_date:document.getElementById('e-date').value,
+    subtotal:parseFloat(document.getElementById('e-sub').value)||0,
+    tax_amount:parseFloat(document.getElementById('e-tax').value)||0,
+    total_amount:parseFloat(document.getElementById('e-total').value)||0,
+    currency:document.getElementById('e-currency').value
+  };
+  fetch('/api/document/'+currentDocId+'/update',{
+    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+  }).then(r=>r.json()).then(res=>{
+    var msg=document.getElementById('save-msg');msg.style.display='block';
+    if(res.ok){
+      msg.style.color='var(--mint)';msg.textContent='✓ Changes saved';
+      // Update display
+      document.getElementById('r-vendor').textContent=payload.vendor_name||'—';
+      document.getElementById('r-taxid').textContent=payload.vendor_tax_id||'Not found';
+      document.getElementById('r-invno').textContent=payload.invoice_number||'—';
+      document.getElementById('r-date').textContent=payload.invoice_date||'—';
+      document.getElementById('r-sub').textContent=payload.currency+' '+fmt(payload.subtotal);
+      document.getElementById('r-tax').textContent=payload.currency+' '+fmt(payload.tax_amount);
+      document.getElementById('r-total').textContent=payload.currency+' '+fmt(payload.total_amount);
+      setTimeout(()=>toggleEditMode(),1000);
+    } else {msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}
+  });
+}
+
 function resetUpload(){
   document.getElementById('upload-section').style.display='block';
   document.getElementById('processing-section').style.display='none';

@@ -374,7 +374,8 @@ function recordSale() {
         method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({
           amount: res.amount, tax_amount: res.tax_amount,
-          note: note, payment_method: payment, customer_name: custName
+          note: note, payment_method: payment, customer_name: custName,
+          cart_items: cart.map(function(c) { return {name:c.name, qty:c.qty, price:c.price}; })
         })
       }).then(function(r) { return r.json(); }).then(function(rc) {
         if (rc.ok) { lastWaUrl = rc.wa_url; document.getElementById('wa-btn').style.display = 'block'; }
