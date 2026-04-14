@@ -1,0 +1,104 @@
+{% extends "base.html" %}{% block title %}Documents — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Document Archive</div><div class="page-sub">All uploaded bills, receipts, invoices and statements</div></div>
+  <div style="display:flex;gap:8px">
+    <a href="/upload" class="btn btn-primary">↑ Upload Document</a>
+    <button class="btn" onclick="openModal('manual-entry-modal')">✎ Manual Entry</button>
+  </div>
+</div>
+<div class="content">
+  <!-- Filter tabs -->
+  <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+    {% for t, label in [('','All'),('BILL','Bills'),('RECEIPT','Receipts'),('INVOICE','Invoices'),('PAYROLL_SLIP','Payroll'),('BANK_STATEMENT','Bank')] %}
+    <a href="/documents?type={{ t }}" class="btn btn-sm {% if doc_type==t %}btn-primary{% endif %}">{{ label }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-title">{{ docs|length }} documents {% if doc_type %}· {{ doc_type }}{% endif %}</div>
+    {% if docs %}
+    <table class="table">
+      <thead><tr><th>Date</th><th>Type</th><th>Vendor/Source</th><th>Invoice #</th><th style="text-align:right">Amount</th><th>Tax</th><th>Status</th><th>File</th><th></th></tr></thead>
+      <tbody>
+      {% for doc in docs %}
+      <tr>
+        <td style="color:var(--text3);font-size:11px;font-family:var(--mono)">{{ doc.created_at.strftime('%d %b %Y') }}</td>
+        <td><span class="badge badge-gray" style="font-size:10px">{{ doc.doc_type }}</span></td>
+        <td style="color:var(--text);font-weight:500">{{ doc.vendor_name or '—' }}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ doc.invoice_number or '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:500">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
+        <td style="color:var(--amber);font-family:var(--mono);font-size:11px">{% if doc.tax_amount > 0 %}{{ "%.2f"|format(doc.tax_amount) }}{% else %}—{% endif %}</td>
+        <td><span class="badge badge-{% if doc.status=='PROCESSED' %}green{% else %}amber{% endif %}">{{ doc.status }}</span></td>
+        <td>{% if doc.file_data %}<span class="badge badge-blue" style="font-size:10px">Saved</span>{% else %}<span style="color:var(--text3);font-size:11px">—</span>{% endif %}</td>
+        <td><a href="/documents/{{ doc.id }}" class="btn btn-sm">View</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px 0;color:var(--text3)">
+      <div style="font-size:28px;margin-bottom:10px">📄</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:14px">No documents yet</div>
+      <a href="/upload" class="btn btn-primary">Upload first document</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Manual Entry Modal -->
+<div id="manual-entry-modal" class="modal-overlay">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-title">Manual Document Entry <button class="modal-close" onclick="closeModal('manual-entry-modal')">×</button></div>
+    <div class="field-row">
+      <div><div class="field-label">Document Type</div>
+        <select class="select-input" id="m-type">
+          <option value="BILL">Bill</option><option value="RECEIPT">Receipt</option>
+          <option value="INVOICE">Invoice</option><option value="PAYROLL_SLIP">Payroll Slip</option>
+        </select>
+      </div>
+      <div><div class="field-label">Category</div>
+        <select class="select-input" id="m-cat">
+          <option>Office Supplies</option><option>Utilities</option><option>Travel</option>
+          <option>Meals</option><option>Professional Services</option><option>Inventory Purchase</option>
+          <option>Payroll</option><option>Tax Payment</option><option selected>Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Vendor Name *</div><input class="field-input" id="m-vendor" placeholder="Supplier name"></div>
+      <div><div class="field-label">Tax ID</div><input class="field-input" id="m-taxid" placeholder="{{ tax.tin_format }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Invoice Number</div><input class="field-input" id="m-invno" placeholder="INV-001"></div>
+      <div><div class="field-label">Invoice Date</div><input class="field-input" type="date" id="m-date"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Due Date</div><input class="field-input" type="date" id="m-due"></div>
+      <div><div class="field-label">Currency</div>
+        <select class="select-input" id="m-currency">
+          {% for code,info in [('MVR','MVR'),('AED','AED'),('USD','USD'),('PKR','PKR')] %}
+          <option value="{{ code }}" {% if code==business.base_currency %}selected{% endif %}>{{ code }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Subtotal *</div><input class="field-input" type="number" id="m-sub" step="0.01" placeholder="0.00" oninput="calcTotal()"></div>
+      <div><div class="field-label">Tax Amount</div><input class="field-input" type="number" id="m-tax" step="0.01" placeholder="0.00" oninput="calcTotal()"></div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Total</div>
+      <input class="field-input" type="number" id="m-total" step="0.01" placeholder="0.00" style="font-weight:600;color:var(--mint)">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="saveManual()">Save Document</button>
+      <button class="btn" onclick="closeModal('manual-entry-modal')">Cancel</button>
+    </div>
+    <div id="m-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+function calcTotal(){var s=parseFloat(document.getElementById('m-sub').value)||0,t=parseFloat(document.getElementById('m-tax').value)||0;document.getElementById('m-total').value=(s+t).toFixed(2);}
+function saveManual(){var vendor=document.getElementById('m-vendor').value.trim();if(!vendor){alert('Vendor name required');return;}fetch('/api/document/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_type:document.getElementById('m-type').value,category:document.getElementById('m-cat').value,vendor_name:vendor,vendor_tax_id:document.getElementById('m-taxid').value,invoice_number:document.getElementById('m-invno').value,invoice_date:document.getElementById('m-date').value,due_date:document.getElementById('m-due').value,currency:document.getElementById('m-currency').value,subtotal:parseFloat(document.getElementById('m-sub').value)||0,tax_amount:parseFloat(document.getElementById('m-tax').value)||0,total_amount:parseFloat(document.getElementById('m-total').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok){closeModal('manual-entry-modal');location.reload();}else{var m=document.getElementById('m-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
+</script>{% endblock %}

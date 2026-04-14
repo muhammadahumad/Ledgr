@@ -11,7 +11,7 @@
   --bg:#0a0e17;--surface:#111827;--surface2:#1a2235;--border:#1f2d45;--border2:#253348;
   --text:#e2e8f0;--text2:#8899aa;--text3:#4a6080;
   --mint:#10b981;--mint2:#059669;--mint-dim:rgba(16,185,129,.12);
-  --amber:#f59e0b;--red:#ef4444;--blue:#3b82f6;
+  --amber:#f59e0b;--red:#ef4444;--blue:#3b82f6;--blue-dim:rgba(59,130,246,.12);
   --font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
   --r:10px;--r2:14px;
 }
@@ -171,15 +171,20 @@ a:hover{text-decoration:underline}
   <a href="/upload" class="nav-item {% if request.path=='/upload' %}active{% endif %}"><span class="ni">↑</span>Upload</a>
   <a href="/ledger" class="nav-item {% if request.path=='/ledger' %}active{% endif %}"><span class="ni">≡</span>Ledger</a>
 
+  <div class="nav-section">Documents</div>
+  <a href="/documents" class="nav-item {% if request.path.startswith('/documents') %}active{% endif %}"><span class="ni">📄</span>Document Archive</a>
+
   <div class="nav-section">Accounting</div>
   <a href="/accounts" class="nav-item {% if request.path=='/accounts' %}active{% endif %}"><span class="ni">≣</span>Chart of Accounts</a>
   <a href="/journal" class="nav-item {% if request.path=='/journal' %}active{% endif %}"><span class="ni">✎</span>Journal</a>
   <a href="/reports" class="nav-item {% if request.path=='/reports' %}active{% endif %}"><span class="ni">↗</span>Reports</a>
-  <a href="/invoices" class="nav-item {% if request.path=='/invoices' %}active{% endif %}"><span class="ni">◻</span>Invoices</a>
+  <a href="/bank" class="nav-item {% if request.path=='/bank' %}active{% endif %}"><span class="ni">🏦</span>Bank</a>
 
   <div class="nav-section">Sales</div>
   <a href="/pos" class="nav-item {% if request.path=='/pos' %}active{% endif %}"><span class="ni">⚡</span>Point of Sale</a>
   <a href="/customers" class="nav-item {% if request.path=='/customers' %}active{% endif %}"><span class="ni">◎</span>Customers</a>
+  <a href="/invoices" class="nav-item {% if request.path=='/invoices' %}active{% endif %}"><span class="ni">◻</span>Invoices</a>
+  <a href="/quotations" class="nav-item {% if request.path=='/quotations' %}active{% endif %}"><span class="ni">📋</span>Quotations</a>
 
   <div class="nav-section">Operations</div>
   <a href="/inventory" class="nav-item {% if request.path=='/inventory' %}active{% endif %}"><span class="ni">▦</span>Inventory</a>

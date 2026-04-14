@@ -160,7 +160,7 @@ function setPay(m){
   ['Cash','Card','Transfer','Credit'].forEach(p=>{var b=document.getElementById('btn-'+p);if(b)b.className=p===m?'btn btn-primary btn-sm':'btn btn-sm';});
   if(m==='Credit'&&!custId){document.getElementById('customer-search').focus();document.getElementById('customer-search').placeholder='Select a customer for tab...';}
 }
-function addCustom(){var a=parseFloat(current)||0;if(a>0){addToCart({id:'custom-'+Date.now(),name:document.getElementById('sale-note').value||'Custom',price:a,qty:1});current='0';updateDisplay();}}
+function addCustom(){var a=parseFloat(current)||0;if(a>0){addToCart({id:'custom-'+Date.none,name:document.getElementById('sale-note').value||'Custom',price:a,qty:1});current='0';updateDisplay();}}
 function addProd(id,name,price){addToCart({id:'p'+id,name:name,price:price,qty:1});}
 function addToCart(item){var e=cart.find(c=>c.id===item.id);if(e)e.qty++;else cart.push({...item,qty:1});renderCart();}
 function removeFromCart(i){cart.splice(i,1);renderCart();}

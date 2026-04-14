@@ -1,0 +1,93 @@
+{% extends "base.html" %}{% block title %}Document — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">{{ doc.doc_type }} — {{ doc.vendor_name or 'Document' }}</div><div class="page-sub">Uploaded {{ doc.created_at.strftime('%d %b %Y %H:%M') }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn" onclick="exportDoc()">Export CSV</button>
+    <button class="btn" onclick="window.print()">Print</button>
+    <a href="/documents" class="btn">← Back</a>
+  </div>
+</div>
+<div class="content" style="max-width:800px">
+  <div style="display:grid;grid-template-columns:{% if doc.file_data %}1fr 1fr{% else %}1fr{% endif %};gap:14px">
+
+    <!-- Document data -->
+    <div>
+      <div class="card">
+        <div class="card-title">Document Details <button class="btn btn-sm" onclick="toggleEdit()">Edit</button></div>
+        <div id="view-mode">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+            <div><div class="field-label">Type</div><span class="badge badge-gray">{{ doc.doc_type }}</span></div>
+            <div><div class="field-label">Status</div><span class="badge badge-{% if doc.status=='PROCESSED' %}green{% else %}amber{% endif %}">{{ doc.status }}</span></div>
+            <div><div class="field-label">Vendor</div><div style="color:var(--text);font-weight:500">{{ doc.vendor_name or '—' }}</div></div>
+            <div><div class="field-label">Tax ID</div><div style="color:var(--mint);font-family:var(--mono)">{{ doc.vendor_tax_id or '—' }}</div></div>
+            <div><div class="field-label">Invoice Number</div><div style="color:var(--text);font-family:var(--mono)">{{ doc.invoice_number or '—' }}</div></div>
+            <div><div class="field-label">Date</div><div>{{ doc.invoice_date.strftime('%d %b %Y') if doc.invoice_date else '—' }}</div></div>
+            <div><div class="field-label">Due Date</div><div>{{ doc.due_date.strftime('%d %b %Y') if doc.due_date else '—' }}</div></div>
+            <div><div class="field-label">Currency</div><div>{{ doc.currency }}</div></div>
+          </div>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Subtotal</span><span style="font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.subtotal) }}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--text3)">Tax</span><span style="color:var(--amber);font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.tax_amount) }}</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700"><span>Total</span><span style="color:var(--mint);font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</span></div>
+          </div>
+          {% if doc.ledger_posted %}<div class="alert alert-success" style="margin-top:12px;font-size:11px">✓ Posted to Ledger and Journal</div>{% endif %}
+        </div>
+        <!-- Edit mode -->
+        <div id="edit-mode" style="display:none">
+          <div class="field-row">
+            <div><div class="field-label">Vendor Name</div><input class="field-input" id="e-vendor" value="{{ doc.vendor_name or '' }}"></div>
+            <div><div class="field-label">Tax ID</div><input class="field-input" id="e-taxid" value="{{ doc.vendor_tax_id or '' }}"></div>
+          </div>
+          <div class="field-row">
+            <div><div class="field-label">Invoice Number</div><input class="field-input" id="e-invno" value="{{ doc.invoice_number or '' }}"></div>
+            <div><div class="field-label">Invoice Date</div><input class="field-input" type="date" id="e-date" value="{{ doc.invoice_date.strftime('%Y-%m-%d') if doc.invoice_date else '' }}"></div>
+          </div>
+          <div class="field-row">
+            <div><div class="field-label">Subtotal</div><input class="field-input" type="number" id="e-sub" step="0.01" value="{{ "%.2f"|format(doc.subtotal) }}"></div>
+            <div><div class="field-label">Tax Amount</div><input class="field-input" type="number" id="e-tax" step="0.01" value="{{ "%.2f"|format(doc.tax_amount) }}"></div>
+          </div>
+          <div class="field-group"><div class="field-label">Total</div><input class="field-input" type="number" id="e-total" step="0.01" value="{{ "%.2f"|format(doc.total_amount) }}"></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+            <button class="btn" onclick="toggleEdit()">Cancel</button>
+          </div>
+          <div id="edit-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+        </div>
+      </div>
+
+      {% if doc.raw_ai_data and doc.raw_ai_data != '{}' %}
+      {% set ai_data = doc.raw_ai_data|tojson|safe %}
+      <div class="card">
+        <div class="card-title">AI Extraction Data</div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--text3);background:var(--bg);padding:12px;border-radius:7px;white-space:pre-wrap;overflow-x:auto;max-height:200px;overflow-y:auto">{{ doc.raw_ai_data }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- File preview -->
+    {% if doc.file_data %}
+    <div>
+      <div class="card">
+        <div class="card-title">Uploaded Document</div>
+        {% if doc.file_type and 'pdf' in doc.file_type %}
+          <div style="color:var(--text3);font-size:12px;text-align:center;padding:20px 0">
+            <div style="font-size:32px;margin-bottom:8px">📄</div>
+            PDF Document saved
+            <div style="margin-top:12px"><button class="btn btn-sm" onclick="downloadFile()">Download PDF</button></div>
+          </div>
+        {% else %}
+          <img src="data:{{ doc.file_type }};base64,{{ doc.file_data }}" style="width:100%;border-radius:7px;border:1px solid var(--border)" alt="Document image">
+          <div style="margin-top:8px"><button class="btn btn-sm" onclick="downloadFile()">Download Image</button></div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+function toggleEdit(){var v=document.getElementById('view-mode'),e=document.getElementById('edit-mode');if(v.style.display==='none'){v.style.display='block';e.style.display='none';}else{v.style.display='none';e.style.display='block';}}
+function saveEdit(){fetch('/api/document/{{ doc.id }}/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendor_name:document.getElementById('e-vendor').value,vendor_tax_id:document.getElementById('e-taxid').value,invoice_number:document.getElementById('e-invno').value,invoice_date:document.getElementById('e-date').value,subtotal:parseFloat(document.getElementById('e-sub').value)||0,tax_amount:parseFloat(document.getElementById('e-tax').value)||0,total_amount:parseFloat(document.getElementById('e-total').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{var m=document.getElementById('edit-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
+function exportDoc(){var rows=[['LEDGR Document Export'],['Type','{{ doc.doc_type }}'],['Vendor','{{ doc.vendor_name }}'],['Invoice #','{{ doc.invoice_number }}'],['Date','{{ doc.invoice_date }}'],['Subtotal','{{ "%.2f"|format(doc.subtotal) }}'],['Tax','{{ "%.2f"|format(doc.tax_amount) }}'],['Total','{{ "%.2f"|format(doc.total_amount) }}'],['Currency','{{ doc.currency }}']];var csv=rows.map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');var blob=new Blob([csv],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='doc-{{ doc.id }}.csv';a.click();}
+function downloadFile(){var a=document.createElement('a');a.href='data:{{ doc.file_type }};base64,{{ doc.file_data }}';a.download='doc-{{ doc.id }}.{% if doc.file_type and "pdf" in doc.file_type %}pdf{% else %}jpg{% endif %}';a.click();}
+</script>{% endblock %}

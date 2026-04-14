@@ -1,0 +1,166 @@
+{% extends "base.html" %}{% block title %}Bank — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Bank Accounts & Statements</div><div class="page-sub">Upload statements · Reconcile transactions</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="openModal('upload-stmt-modal')">↑ Upload Statement</button>
+    <button class="btn" onclick="openModal('add-bank-modal')">+ Add Bank Account</button>
+  </div>
+</div>
+<div class="content">
+  <!-- Bank Accounts -->
+  {% if bank_accounts %}
+  <div class="stat-grid" style="grid-template-columns:repeat({{ [bank_accounts|length,4]|min }},1fr);margin-bottom:14px">
+    {% for acct in bank_accounts %}
+    <div class="stat-card" style="border-color:rgba(16,185,129,.2)">
+      <div class="stat-label">{{ acct.bank_name }}</div>
+      <div class="stat-value" style="font-size:18px">{{ acct.currency }} {{ "%.2f"|format(acct.current_balance) }}</div>
+      <div class="stat-sub">{{ acct.account_name }} · {{ acct.account_number[-4:] if acct.account_number else '****' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Statement Upload Result -->
+  <div id="stmt-result" style="display:none">
+    <div class="card" style="border-color:rgba(16,185,129,.3)">
+      <div class="card-title" style="color:var(--mint)">Statement Extracted — Review & Post</div>
+      <div id="stmt-summary" style="font-size:12px;color:var(--text2);margin-bottom:12px"></div>
+      <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+        <table class="table" id="stmt-table">
+          <thead><tr><th style="width:30px"></th><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead>
+          <tbody id="stmt-body"></tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary" onclick="postAllTransactions()">Post All to Journal & Ledger</button>
+        <button class="btn" onclick="document.getElementById('stmt-result').style.display='none'">Cancel</button>
+      </div>
+      <div id="post-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="card">
+    <div class="card-title">Bank Transactions <span class="badge badge-green">{{ recent_txns|length }}</span></div>
+    {% if recent_txns %}
+    <table class="table"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th><th>Status</th></tr></thead><tbody>
+    {% for t in recent_txns %}<tr>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ t.txn_date.strftime('%d %b %Y') if t.txn_date else '—' }}</td>
+      <td style="color:var(--text)">{{ t.description or '—' }}</td>
+      <td style="color:var(--text3)">{{ t.category or '—' }}</td>
+      <td style="text-align:right;color:var(--red);font-family:var(--mono)">{% if t.debit > 0 %}{{ "%.2f"|format(t.debit) }}{% endif %}</td>
+      <td style="text-align:right;color:var(--mint);font-family:var(--mono)">{% if t.credit > 0 %}{{ "%.2f"|format(t.credit) }}{% endif %}</td>
+      <td style="text-align:right;font-family:var(--mono)">{{ "%.2f"|format(t.balance) }}</td>
+      <td><span class="badge badge-{% if t.is_reconciled %}green{% else %}amber{% endif %}">{% if t.is_reconciled %}Posted{% else %}Pending{% endif %}</span></td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}
+    <div style="text-align:center;padding:40px 0;color:var(--text3)">
+      <div style="font-size:28px;margin-bottom:10px">🏦</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:14px">No bank transactions yet</div>
+      <button class="btn btn-primary" onclick="openModal('upload-stmt-modal')">Upload your first bank statement</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Upload Statement Modal -->
+<div id="upload-stmt-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">Upload Bank Statement <button class="modal-close" onclick="closeModal('upload-stmt-modal')">×</button></div>
+    {% if bank_accounts %}
+    <div class="field-group">
+      <div class="field-label">Bank Account (optional)</div>
+      <select class="select-input" id="stmt-account">
+        <option value="">Select bank account...</option>
+        {% for acct in bank_accounts %}<option value="{{ acct.id }}">{{ acct.bank_name }} — {{ acct.account_name }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="upload-zone" id="stmt-drop" onclick="document.getElementById('stmt-file').click()" ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropStmt(event)" style="margin-bottom:12px">
+      <div style="font-size:28px;margin-bottom:8px;opacity:.5">🏦</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:4px">Drop bank statement here</div>
+      <div style="font-size:11px;color:var(--text3)">JPG · PNG · PDF — scanned or downloaded statements</div>
+    </div>
+    <input type="file" id="stmt-file" accept="image/*,application/pdf" style="display:none" onchange="handleStmt(this)">
+    <div id="stmt-processing" style="display:none" class="status-bar status-processing"><div class="spinner"></div><span>AI is reading your bank statement...</span></div>
+  </div>
+</div>
+
+<!-- Add Bank Account Modal -->
+<div id="add-bank-modal" class="modal-overlay">
+  <div class="modal">
+    <div class="modal-title">Add Bank Account <button class="modal-close" onclick="closeModal('add-bank-modal')">×</button></div>
+    <div class="field-row">
+      <div><div class="field-label">Bank Name *</div><input class="field-input" id="b-bank" placeholder="BML, HSBC..."></div>
+      <div><div class="field-label">Account Name *</div><input class="field-input" id="b-name" placeholder="Business Current Account"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Account Number</div><input class="field-input" id="b-num" placeholder="XXXXXXXXXXXX"></div>
+      <div><div class="field-label">Opening Balance</div><input class="field-input" type="number" id="b-bal" step="0.01" placeholder="0.00"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="addBankAcct()">Add Account</button>
+      <button class="btn" onclick="closeModal('add-bank-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+var stmtExtracted=null, stmtAccountId=null;
+var CAT_OPTIONS=['Sales Revenue','Salary Payment','Rent','Utilities','Supplier Payment','Tax Payment','Bank Charges','Transfer','Other'];
+function ev(e,on){e.preventDefault();document.getElementById('stmt-drop').classList.toggle('drag',on);}
+function dropStmt(e){e.preventDefault();document.getElementById('stmt-drop').classList.remove('drag');if(e.dataTransfer.files.length)processStmt(e.dataTransfer.files[0]);}
+function handleStmt(input){if(input.files.length)processStmt(input.files[0]);}
+function processStmt(file){
+  stmtAccountId=document.getElementById('stmt-account')?.value||null;
+  document.getElementById('stmt-processing').style.display='flex';
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var b64=e.target.result.split(',')[1];
+    fetch('/api/bank/upload-statement',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:b64,media_type:file.type||'image/jpeg',bank_account_id:stmtAccountId})}).then(r=>r.json()).then(res=>{
+      document.getElementById('stmt-processing').style.display='none';
+      closeModal('upload-stmt-modal');
+      if(res.ok){
+        stmtExtracted=res.extracted;
+        showStmtResult(res.extracted);
+      } else { alert('Error: '+res.error); }
+    });
+  };
+  reader.readAsDataURL(file);
+}
+function showStmtResult(data){
+  document.getElementById('stmt-result').style.display='block';
+  document.getElementById('stmt-summary').textContent=data.bank_name+' · '+data.account_name+' · '+data.statement_period+' · Opening: '+data.currency+' '+fmt(data.opening_balance)+' → Closing: '+data.currency+' '+fmt(data.closing_balance);
+  var tbody=document.getElementById('stmt-body'); tbody.innerHTML='';
+  (data.transactions||[]).forEach(function(t,i){
+    var opts=CAT_OPTIONS.map(c=>'<option'+(c===t.category?' selected':'')+'>'+c+'</option>').join('');
+    var tr=document.createElement('tr');
+    tr.innerHTML='<td><input type="checkbox" id="st-'+i+'" checked style="accent-color:var(--mint)"></td>'
+      +'<td style="font-size:11px;font-family:var(--mono)">'+esc(t.date||'')+'</td>'
+      +'<td style="color:var(--text)">'+esc(t.description||'')+'</td>'
+      +'<td><select style="font-size:11px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text)">'+opts+'</select></td>'
+      +'<td style="text-align:right;color:var(--red);font-family:var(--mono);font-size:11px">'+(t.debit>0?fmt(t.debit):'')+'</td>'
+      +'<td style="text-align:right;color:var(--mint);font-family:var(--mono);font-size:11px">'+(t.credit>0?fmt(t.credit):'')+'</td>'
+      +'<td style="text-align:right;font-family:var(--mono);font-size:11px">'+fmt(t.balance)+'</td>';
+    tbody.appendChild(tr);
+  });
+  document.getElementById('stmt-result').scrollIntoView({behavior:'smooth'});
+}
+function postAllTransactions(){
+  if(!stmtExtracted)return;
+  var rows=document.querySelectorAll('#stmt-body tr');
+  var txns=(stmtExtracted.transactions||[]).map(function(t,i){
+    var row=rows[i]; var sel=row?row.querySelector('select'):null; var cb=document.getElementById('st-'+i);
+    return{...t,category:sel?sel.value:t.category,include:cb?cb.checked:true};
+  });
+  var btn=document.querySelector('[onclick="postAllTransactions()"]');
+  btn.disabled=true;btn.textContent='Posting...';
+  fetch('/api/bank/post-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transactions:txns,bank_account_id:stmtAccountId})}).then(r=>r.json()).then(res=>{
+    var msg=document.getElementById('post-msg');msg.style.display='block';
+    if(res.ok){msg.style.color='var(--mint)';msg.textContent='✓ '+res.message;setTimeout(()=>location.reload(),2000);}
+    else{msg.style.color='var(--red)';msg.textContent='Error: '+res.error;btn.disabled=false;btn.textContent='Post All';}
+  });
+}
+function addBankAcct(){var bank=document.getElementById('b-bank').value.trim(),name=document.getElementById('b-name').value.trim();if(!bank||!name){alert('Bank name and account name required');return;}fetch('/api/bank/add-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bank_name:bank,account_name:name,account_number:document.getElementById('b-num').value,opening_balance:parseFloat(document.getElementById('b-bal').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok){closeModal('add-bank-modal');location.reload();}});}
+</script>{% endblock %}

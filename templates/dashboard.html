@@ -4,7 +4,7 @@
 <div class="topbar">
   <div>
     <div class="page-title">{{ business.name }}</div>
-    <div class="page-sub">{{ business.btype().name }} · {{ tax.name }} · {{ tax.currency }}</div>
+    <div class="page-sub">{{ btype_name }} · {{ tax.name }} · {{ tax.currency }}</div>
   </div>
   <div style="display:flex;gap:8px">
     {% if user_businesses|length > 1 %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}{% block title %}Quotations — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Quotations & Estimates</div><div class="page-sub">Create quotes, send via WhatsApp, convert to invoices</div></div>
+  <button class="btn btn-primary" onclick="openModal('create-quote-modal')">+ Create Quotation</button>
+</div>
+<div class="content">
+<div class="card">
+  <div class="card-title">Quotations</div>
+  {% if quotations %}
+  <table class="table"><thead><tr><th>Quote #</th><th>Customer</th><th>Date</th><th>Valid Until</th><th style="text-align:right">Total</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% for q in quotations %}<tr>
+    <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ q.quote_number }}</td>
+    <td style="color:var(--text)">{{ q.customer.name if q.customer else 'Walk-in' }}</td>
+    <td style="color:var(--text3);font-size:11px">{{ q.quote_date.strftime('%d %b %Y') if q.quote_date else '—' }}</td>
+    <td style="color:var(--text3);font-size:11px">{{ q.valid_until.strftime('%d %b %Y') if q.valid_until else '—' }}</td>
+    <td style="text-align:right;font-family:var(--mono);font-weight:500">{{ q.currency }} {{ "%.2f"|format(q.total_amount) }}</td>
+    <td><span class="badge badge-{% if q.status=='CONVERTED' %}green{% elif q.status=='ACCEPTED' %}blue{% elif q.status=='REJECTED' %}red{% elif q.status=='SENT' %}amber{% else %}gray{% endif %}">{{ q.status }}</span></td>
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
+      {% if q.status not in ['CONVERTED','REJECTED'] %}
+        <button class="btn btn-sm btn-primary" onclick="convertQuote({{ q.id }},'{{ q.quote_number }}')">→ Invoice</button>
+        <button class="btn btn-sm" onclick="markStatus({{ q.id }},'ACCEPTED')">Accept</button>
+        <button class="btn btn-sm" onclick="markStatus({{ q.id }},'REJECTED')" style="color:var(--red)">Reject</button>
+      {% endif %}
+      {% if q.status == 'CONVERTED' %}<span style="font-size:11px;color:var(--text3)">Invoiced</span>{% endif %}
+    </td>
+  </tr>{% endfor %}
+  </tbody></table>
+  {% else %}
+  <div style="text-align:center;padding:40px 0;color:var(--text3)">
+    <div style="font-size:28px;margin-bottom:10px">📋</div>
+    <div style="font-weight:500;color:var(--text2);margin-bottom:14px">No quotations yet</div>
+    <button class="btn btn-primary" onclick="openModal('create-quote-modal')">Create first quotation</button>
+  </div>
+  {% endif %}
+</div>
+</div>
+
+<!-- Create Quotation Modal -->
+<div id="create-quote-modal" class="modal-overlay">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-title">Create Quotation / Estimate <button class="modal-close" onclick="closeModal('create-quote-modal')">×</button></div>
+    <div class="field-row">
+      <div><div class="field-label">Customer</div>
+        <select class="select-input" id="q-cust">
+          <option value="">Walk-in / No customer</option>
+          {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><div class="field-label">Valid Until</div><input class="field-input" type="date" id="q-valid"></div>
+    </div>
+    <div class="field-label" style="margin-bottom:6px">Line Items *</div>
+    <div id="q-items-list"></div>
+    <button class="btn btn-sm" onclick="addQItem()" style="margin-bottom:12px">+ Add item</button>
+    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="q-notes" placeholder="Terms, delivery details, validity conditions..."></div>
+    <div id="q-total" style="text-align:right;font-size:15px;font-weight:700;color:var(--mint);margin-bottom:12px;font-family:var(--mono)">Total: 0.00</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="createQuote()">Create & Send via WhatsApp</button>
+      <button class="btn" onclick="closeModal('create-quote-modal')">Cancel</button>
+    </div>
+    <div id="q-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+var qItems=[];
+function addQItem(){var i=qItems.length;qItems.push({desc:'',qty:1,price:0,total:0});var div=document.createElement('div');div.id='qi-'+i;div.style.cssText='display:grid;grid-template-columns:2fr 70px 100px 100px 26px;gap:5px;margin-bottom:5px;align-items:center';div.innerHTML='<input class="field-input" placeholder="Item description" oninput="updQ('+i+',\'desc\',this.value)" style="font-size:11px"><input class="field-input" type="number" value="1" min="1" oninput="updQ('+i+',\'qty\',this.value)" style="font-size:11px;text-align:center"><input class="field-input" type="number" step="0.01" placeholder="Price" oninput="updQ('+i+',\'price\',this.value)" style="font-size:11px"><span id="ql-'+i+'" style="font-family:var(--mono);font-size:12px;color:var(--mint);text-align:right">0.00</span><button onclick="rmQ('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:15px">×</button>';document.getElementById('q-items-list').appendChild(div);updTotal();}
+function rmQ(i){qItems[i]=null;var el=document.getElementById('qi-'+i);if(el)el.remove();updTotal();}
+function updQ(i,k,v){if(!qItems[i])return;qItems[i][k]=k==='desc'?v:parseFloat(v)||0;qItems[i].total=qItems[i].qty*qItems[i].price;var el=document.getElementById('ql-'+i);if(el)el.textContent=fmt(qItems[i].total);updTotal();}
+function updTotal(){var t=qItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('q-total').textContent='Total: {{ business.base_currency }} '+t.toFixed(2);}
+function createQuote(){var items=qItems.filter(Boolean).filter(i=>i.desc&&i.total>0);if(!items.length){alert('Add at least one item with a price');return;}fetch('/api/quotation/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('q-cust').value||null,valid_until:document.getElementById('q-valid').value,notes:document.getElementById('q-notes').value,items:items.map(i=>({desc:i.desc,qty:i.qty,unit_price:i.price,total:i.total}))})}).then(r=>r.json()).then(res=>{if(res.ok){window.open(res.wa_url,'_blank');closeModal('create-quote-modal');location.reload();}else{var m=document.getElementById('q-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
+function convertQuote(id,num){if(confirm('Convert quotation '+num+' to an invoice?'))fetch('/api/quotation/'+id+'/convert',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){alert('Converted to invoice '+res.invoice_number);location.reload();}else alert('Error: '+res.error);});}
+function markStatus(id,status){fetch('/api/quotation/'+id+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
+</script>{% endblock %}

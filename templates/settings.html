@@ -8,7 +8,7 @@
     <div class="card-title">Business profile</div>
     <div class="field-row">
       <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.name }}</p></div>
-      <div><div class="field-label">Type</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.btype().name }}</p></div>
+      <div><div class="field-label">Type</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.btype_name() }}</p></div>
     </div>
     <div class="field-row">
       <div><div class="field-label">Region</div><p style="color:var(--mint);font-size:13px;padding:4px 0">{{ tax.name }}</p></div>
@@ -36,9 +36,9 @@
         <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
       </div>
       <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
-        <input type="checkbox" id="toggle-{{ field }}" {% if business[field] %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
-        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business[field] %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-{{ field }}"></span>
-        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business[field] %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-{{ field }}"></span>
+        <input type="checkbox" id="toggle-{{ field }}" {% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
+        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-{{ field }}"></span>
+        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-{{ field }}"></span>
       </label>
     </div>
     {% endfor %}
@@ -70,7 +70,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:6px;border:1px solid {% if ub.business_id==business.id %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
       <div>
         <div style="font-weight:500;font-size:13px;color:var(--text)">{{ ub.business.name }}</div>
-        <div style="font-size:11px;color:var(--text3)">{{ ub.business.btype().name }} · {{ ub.business.tax_rules().name }} · {{ ub.role.title() }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ ub.business.btype_name() }} · {{ ub.business.tax_rules().name }} · {{ ub.role.title() }}</div>
       </div>
       {% if ub.business_id==business.id %}
         <span class="badge badge-green">Active</span>
