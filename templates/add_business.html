@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Add Business — LEDGR</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;color:#f1f5f9;background:#0f172a;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.box{background:#1e293b;border:1px solid #334155;border-radius:16px;padding:36px;width:100%;max-width:520px}
+.brand{font-size:22px;font-weight:700;letter-spacing:-.02em;margin-bottom:4px}
+.brand span{color:#10b981}
+.subtitle{font-size:13px;color:#64748b;margin-bottom:28px}
+.field-group{margin-bottom:16px}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.field-label{font-size:11px;color:#64748b;font-weight:500;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.field-input{width:100%;padding:9px 12px;border:1px solid #334155;border-radius:8px;font-size:14px;color:#f1f5f9;background:#0f172a;font-family:inherit}
+.field-input:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.15)}
+.btn{width:100%;padding:10px;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;border:none;background:#10b981;color:#fff;font-family:inherit;transition:background .15s;margin-top:4px}
+.btn:hover{background:#059669}
+.btn-secondary{background:#334155;margin-top:8px}
+.btn-secondary:hover{background:#475569}
+.link-row{text-align:center;margin-top:16px;font-size:13px;color:#64748b}
+.link-row a{color:#10b981}
+.alert{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:16px;background:rgba(220,38,38,.1);color:#f87171;border:1px solid rgba(220,38,38,.2)}
+.type-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.type-card{border:1px solid #334155;border-radius:8px;padding:12px;cursor:pointer;transition:all .15s;text-align:center}
+.type-card:hover{border-color:#10b981;background:rgba(16,185,129,.05)}
+.type-card.selected{border-color:#10b981;background:rgba(16,185,129,.1)}
+.type-card input{display:none}
+.type-name{font-weight:500;font-size:13px;color:#f1f5f9;margin-bottom:2px}
+.type-desc{font-size:11px;color:#64748b}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:500;background:rgba(16,185,129,.15);color:#10b981;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="brand">L<span>EDGR</span></div>
+  <p class="subtitle">Add a new business workspace</p>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="alert">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  <form method="POST">
+    <div class="field-group">
+      <div class="field-label">Business name *</div>
+      <input class="field-input" type="text" name="business_name" placeholder="Maldives Cafe, Ahmed & Sons..." required>
+    </div>
+
+    <div class="field-label" style="margin-bottom:8px">Business type *</div>
+    <div class="type-grid">
+      <label class="type-card selected" onclick="selectType(this,'sole_proprietor')">
+        <input type="radio" name="business_type" value="sole_proprietor" checked>
+        <div class="type-name">Sole Proprietor</div>
+        <div class="type-desc">Individual owner</div>
+        <span class="badge">Simplified</span>
+      </label>
+      <label class="type-card" onclick="selectType(this,'partnership')">
+        <input type="radio" name="business_type" value="partnership">
+        <div class="type-name">Partnership</div>
+        <div class="type-desc">2+ owners</div>
+        <span class="badge">Standard</span>
+      </label>
+      <label class="type-card" onclick="selectType(this,'limited_company')">
+        <input type="radio" name="business_type" value="limited_company">
+        <div class="type-name">Limited Company</div>
+        <div class="type-desc">Pvt Ltd / LLC</div>
+        <span class="badge" style="background:rgba(59,130,246,.15);color:#60a5fa">Full CoA</span>
+      </label>
+      <label class="type-card" onclick="selectType(this,'llc')">
+        <input type="radio" name="business_type" value="llc">
+        <div class="type-name">LLC</div>
+        <div class="type-desc">Limited liability</div>
+        <span class="badge" style="background:rgba(59,130,246,.15);color:#60a5fa">Full CoA</span>
+      </label>
+      <label class="type-card" onclick="selectType(this,'cooperative')">
+        <input type="radio" name="business_type" value="cooperative">
+        <div class="type-name">Cooperative</div>
+        <div class="type-desc">Member-owned</div>
+        <span class="badge">Standard</span>
+      </label>
+      <label class="type-card" onclick="selectType(this,'other')">
+        <input type="radio" name="business_type" value="other">
+        <div class="type-name">Other</div>
+        <div class="type-desc">NGO, Freelance...</div>
+        <span class="badge">Simplified</span>
+      </label>
+    </div>
+
+    <div class="field-group">
+      <div class="field-label">Market region *</div>
+      <select class="field-input" name="region">
+        {% for code, info in regions.items() %}
+        <option value="{{ code }}" {% if code == 'MV' %}selected{% endif %}>
+          {{ info.name }} — {{ info.currency }} · {{ info.tax_name }} {{ (info.tax_rate * 100)|int }}%
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <button type="submit" class="btn">Create Business Workspace</button>
+    <a href="/dashboard"><button type="button" class="btn btn-secondary">Cancel</button></a>
+  </form>
+</div>
+
+<script>
+function selectType(el, val){
+  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('selected'));
+  el.classList.add('selected');
+  el.querySelector('input').checked=true;
+}
+</script>
+</body>
+</html>
