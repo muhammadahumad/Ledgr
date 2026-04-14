@@ -338,18 +338,32 @@ function recordSale(){
 
       var msg=document.getElementById('sale-msg');
       msg.style.display='block';msg.style.color='#10b981';
-      msg.textContent='✓ '+currency+' '+res.amount.toFixed(2)+' recorded';
+      msg.textContent='✓ '+currency+' '+res.amount.toFixed(2)+' recorded — '+payment;
 
-      // Show WhatsApp button
-      document.getElementById('wa-btn').style.display='block';
+      // Auto share WhatsApp receipt
+      fetch('/api/pos/receipt',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          amount:res.amount,tax_amount:res.tax_amount,
+          note:note,payment_method:payment,
+          customer_name:selectedCustomerName
+        })
+      }).then(r=>r.json()).then(receipt=>{
+        if(receipt.ok){
+          // Show WA button with link ready
+          var waBtn=document.getElementById('wa-btn');
+          waBtn.style.display='block';
+          waBtn.onclick=function(){ window.open(receipt.wa_url,'_blank'); };
+        }
+      });
 
       cart=[];current='0';updateDisplay();renderCart();
       document.getElementById('sale-note').value='';
       clearCustomer();
       btn.disabled=false;btn.textContent='✓ Record Sale';
 
-      // Auto reload after 3s
-      setTimeout(()=>location.reload(),3000);
+      // Reload after 8s to give time to share
+      setTimeout(()=>location.reload(),8000);
     } else {
       alert('Error: '+res.error);
       btn.disabled=false;btn.textContent='✓ Record Sale';
@@ -358,13 +372,7 @@ function recordSale(){
 }
 
 function shareWhatsApp(){
-  if(!lastSaleData)return;
-  fetch('/api/pos/receipt',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify(lastSaleData)
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok)window.open(res.wa_url,'_blank');
-  });
+  // handled inline after sale recording
 }
 
 // Keyboard support
