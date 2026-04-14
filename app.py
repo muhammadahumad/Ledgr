@@ -193,12 +193,24 @@ class Employee(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
     full_name = db.Column(db.String(100), nullable=False)
+    employee_id = db.Column(db.String(50))
     position = db.Column(db.String(100))
+    department = db.Column(db.String(100))
     nationality = db.Column(db.String(50))
     passport_number = db.Column(db.String(50))
+    visa_number = db.Column(db.String(50))
+    visa_expiry = db.Column(db.Date)
+    work_permit_number = db.Column(db.String(50))
+    work_permit_expiry = db.Column(db.Date)
+    id_card_number = db.Column(db.String(50))
+    phone = db.Column(db.String(30))
+    email = db.Column(db.String(150))
     monthly_salary = db.Column(db.Numeric(12, 2))
+    allowances = db.Column(db.Numeric(12, 2), default=0)
     currency = db.Column(db.String(3), default='MVR')
     joined_date = db.Column(db.Date)
+    contract_end_date = db.Column(db.Date)
+    employment_type = db.Column(db.String(20), default='Full-time')
     is_active = db.Column(db.Boolean, default=True)
 
 
@@ -218,6 +230,210 @@ class PayrollEntry(db.Model):
     status = db.Column(db.String(20), default='PENDING')
     employee = db.relationship('Employee', backref='payroll_entries')
 
+
+
+
+# ── ACCOUNTING HEART ─────────────────────────────────────────────────────────
+
+# Default Chart of Accounts per region
+DEFAULT_COA = {
+    'ASSET': [
+        ('1000', 'Cash on Hand'),
+        ('1010', 'Bank Account - Primary'),
+        ('1020', 'Bank Account - Secondary'),
+        ('1100', 'Accounts Receivable'),
+        ('1200', 'Inventory'),
+        ('1300', 'Prepaid Expenses'),
+        ('1500', 'Fixed Assets'),
+        ('1510', 'Equipment'),
+        ('1520', 'Furniture & Fittings'),
+        ('1600', 'Accumulated Depreciation'),
+    ],
+    'LIABILITY': [
+        ('2000', 'Accounts Payable'),
+        ('2100', 'Accrued Expenses'),
+        ('2200', 'Tax Payable'),
+        ('2210', 'GST/VAT Payable'),
+        ('2300', 'Salaries Payable'),
+        ('2400', 'Short-term Loans'),
+        ('2500', 'Long-term Loans'),
+    ],
+    'EQUITY': [
+        ('3000', 'Owner Capital'),
+        ('3100', 'Retained Earnings'),
+        ('3200', 'Current Year Profit/Loss'),
+        ('3300', 'Owner Drawings'),
+    ],
+    'REVENUE': [
+        ('4000', 'Sales Revenue'),
+        ('4010', 'Service Revenue'),
+        ('4020', 'Other Income'),
+        ('4100', 'Sales Returns'),
+    ],
+    'EXPENSE': [
+        ('5000', 'Cost of Goods Sold'),
+        ('5100', 'Salaries & Wages'),
+        ('5110', 'Allowances & Benefits'),
+        ('5200', 'Rent Expense'),
+        ('5300', 'Utilities'),
+        ('5400', 'Office Supplies'),
+        ('5500', 'Marketing & Advertising'),
+        ('5600', 'Professional Services'),
+        ('5700', 'Travel & Transportation'),
+        ('5800', 'Meals & Entertainment'),
+        ('5900', 'Bank Charges'),
+        ('5910', 'Interest Expense'),
+        ('6000', 'Depreciation Expense'),
+        ('6100', 'Insurance'),
+        ('6200', 'Tax Expense'),
+        ('6900', 'Miscellaneous Expense'),
+    ],
+}
+
+# Tax thresholds per region (annual revenue)
+TAX_THRESHOLDS = {
+    'MV': {'amount': 1000000, 'currency': 'MVR', 'authority': 'MIRA', 'tax': 'GST'},
+    'AE': {'amount': 375000, 'currency': 'AED', 'authority': 'FTA', 'tax': 'VAT'},
+    'PK': {'amount': 8000000, 'currency': 'PKR', 'authority': 'FBR', 'tax': 'GST'},
+    'CN': {'amount': 500000, 'currency': 'CNY', 'authority': 'SAT', 'tax': 'VAT'},
+    'LK': {'amount': 80000000, 'currency': 'LKR', 'authority': 'IRD', 'tax': 'VAT'},
+    'IN': {'amount': 2000000, 'currency': 'INR', 'authority': 'CBIC', 'tax': 'GST'},
+}
+
+
+class Account(db.Model):
+    """Chart of Accounts"""
+    __tablename__ = 'accounts'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    code = db.Column(db.String(10), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    account_type = db.Column(db.String(20))  # ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+    parent_code = db.Column(db.String(10))
+    is_active = db.Column(db.Boolean, default=True)
+    opening_balance = db.Column(db.Numeric(12, 2), default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    journal_lines = db.relationship('JournalLine', backref='account', lazy=True)
+
+    def balance(self, business_id):
+        debits = db.session.query(db.func.sum(JournalLine.debit)).filter_by(account_id=self.id).scalar() or 0
+        credits = db.session.query(db.func.sum(JournalLine.credit)).filter_by(account_id=self.id).scalar() or 0
+        opening = float(self.opening_balance or 0)
+        if self.account_type in ('ASSET', 'EXPENSE'):
+            return opening + float(debits) - float(credits)
+        else:
+            return opening + float(credits) - float(debits)
+
+
+class JournalEntry(db.Model):
+    """Double-Entry Journal"""
+    __tablename__ = 'journal_entries'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    date = db.Column(db.DateTime, default=datetime.utcnow)
+    description = db.Column(db.String(255))
+    reference = db.Column(db.String(100))
+    entry_type = db.Column(db.String(30))  # PURCHASE, SALE, PAYROLL, BANK, MANUAL
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    is_posted = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    lines = db.relationship('JournalLine', backref='entry', lazy=True, cascade='all, delete-orphan')
+
+
+class JournalLine(db.Model):
+    __tablename__ = 'journal_lines'
+    id = db.Column(db.Integer, primary_key=True)
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'))
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'))
+    description = db.Column(db.String(255))
+    debit = db.Column(db.Numeric(12, 2), default=0)
+    credit = db.Column(db.Numeric(12, 2), default=0)
+
+
+class BankAccount(db.Model):
+    __tablename__ = 'bank_accounts'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'))
+    bank_name = db.Column(db.String(100))
+    account_number = db.Column(db.String(50))
+    account_name = db.Column(db.String(100))
+    currency = db.Column(db.String(3), default='MVR')
+    opening_balance = db.Column(db.Numeric(12, 2), default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class POSSale(db.Model):
+    """Mobile POS — 3-second sale recording"""
+    __tablename__ = 'pos_sales'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
+    tax_amount = db.Column(db.Numeric(12, 2), default=0)
+    currency = db.Column(db.String(3), default='MVR')
+    payment_method = db.Column(db.String(20), default='Cash')
+    note = db.Column(db.String(100))
+    category = db.Column(db.String(50), default='Sale')
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
+
+
+def create_default_coa(business_id):
+    """Auto-generate Chart of Accounts for new business"""
+    for acct_type, accounts in DEFAULT_COA.items():
+        for code, name in accounts:
+            acct = Account(
+                business_id=business_id,
+                code=code,
+                name=name,
+                account_type=acct_type
+            )
+            db.session.add(acct)
+    db.session.commit()
+
+
+def get_account(business_id, code):
+    return Account.query.filter_by(business_id=business_id, code=code, is_active=True).first()
+
+
+def post_journal_entry(business_id, user_id, description, reference, entry_type, lines, document_id=None):
+    """Create a balanced double-entry journal entry"""
+    total_debits = sum(float(l.get('debit', 0)) for l in lines)
+    total_credits = sum(float(l.get('credit', 0)) for l in lines)
+
+    if abs(total_debits - total_credits) > 0.01:
+        raise ValueError(f'Journal entry not balanced: debits={total_debits}, credits={total_credits}')
+
+    entry = JournalEntry(
+        business_id=business_id,
+        description=description,
+        reference=reference,
+        entry_type=entry_type,
+        document_id=document_id,
+        created_by=user_id
+    )
+    db.session.add(entry)
+    db.session.flush()
+
+    for line in lines:
+        account = get_account(business_id, line['account_code'])
+        if not account:
+            account = Account.query.filter_by(business_id=business_id, code=line['account_code']).first()
+        if account:
+            jl = JournalLine(
+                journal_entry_id=entry.id,
+                account_id=account.id,
+                description=line.get('description', description),
+                debit=float(line.get('debit', 0)),
+                credit=float(line.get('credit', 0))
+            )
+            db.session.add(jl)
+
+    db.session.commit()
+    return entry
 
 with app.app_context():
     try:
@@ -376,7 +592,8 @@ def register():
         session['user_name'] = user.name
         session['plan'] = 'Free'
         session.permanent = True
-        flash(f'Welcome to LEDGR, {name}! Your business workspace is ready.', 'success')
+        create_default_coa(business.id)
+        flash(f'Welcome to LEDGR, {name}! Your Chart of Accounts is ready.', 'success')
         return redirect(url_for('dashboard'))
 
     return render_template('register.html', regions=TAX_RULES)
@@ -537,12 +754,41 @@ def api_upload():
         db.session.add(doc)
         db.session.flush()
 
+        # Map category to expense account code
+        category_map = {
+            'Office Supplies': '5400', 'Utilities': '5300', 'Travel': '5700',
+            'Meals': '5800', 'Professional Services': '5600',
+            'Inventory Purchase': '5000', 'Payroll': '5100',
+            'Tax Payment': '6200', 'Other': '6900'
+        }
+        expense_code = category_map.get(extracted.get('category', 'Other'), '6900')
+        total = float(extracted.get('total_amount') or 0)
+        tax = float(extracted.get('tax_amount') or 0)
+
+        try:
+            post_journal_entry(
+                business_id=business.id,
+                user_id=user.id,
+                description=f"{extracted.get('doc_type','BILL')} — {extracted.get('vendor_name','')}",
+                reference=extracted.get('invoice_number', f'DOC-{doc.id}'),
+                entry_type='PURCHASE',
+                document_id=doc.id,
+                lines=[
+                    {'account_code': expense_code, 'debit': total - tax, 'credit': 0, 'description': extracted.get('vendor_name','')},
+                    *([{'account_code': '2210', 'debit': tax, 'credit': 0, 'description': 'Tax on purchase'}] if tax > 0 else []),
+                    {'account_code': '2000', 'debit': 0, 'credit': total, 'description': extracted.get('vendor_name','')},
+                ]
+            )
+        except Exception as je:
+            print(f'Journal error: {je}')
+
+        # Also keep legacy LedgerEntry for backward compatibility
         entry = LedgerEntry(
             business_id=business.id,
             document_id=doc.id,
             entry_type='EXPENSE',
-            amount=float(extracted.get('total_amount') or 0),
-            tax_amount=float(extracted.get('tax_amount') or 0),
+            amount=total,
+            tax_amount=tax,
             currency=extracted.get('currency', business.base_currency),
             description=f"{extracted.get('doc_type','BILL')} — {extracted.get('vendor_name','')}",
             category=extracted.get('category', 'Other')
@@ -631,14 +877,31 @@ def api_employee_add():
     user = current_user()
     data = request.get_json()
 
+    def parse_date(d):
+        try: return datetime.strptime(d, '%Y-%m-%d').date() if d else None
+        except: return None
+
     employee = Employee(
         business_id=user.business_id,
         full_name=data.get('full_name', ''),
+        employee_id=data.get('employee_id', ''),
         position=data.get('position', ''),
+        department=data.get('department', ''),
         nationality=data.get('nationality', ''),
+        passport_number=data.get('passport_number', ''),
+        visa_number=data.get('visa_number', ''),
+        visa_expiry=parse_date(data.get('visa_expiry')),
+        work_permit_number=data.get('work_permit_number', ''),
+        work_permit_expiry=parse_date(data.get('work_permit_expiry')),
+        id_card_number=data.get('id_card_number', ''),
+        phone=data.get('phone', ''),
+        email=data.get('email', ''),
         monthly_salary=data.get('monthly_salary', 0),
+        allowances=data.get('allowances', 0),
         currency=user.business.base_currency,
-        joined_date=datetime.strptime(data['joined_date'], '%Y-%m-%d').date() if data.get('joined_date') else None
+        joined_date=parse_date(data.get('joined_date')),
+        contract_end_date=parse_date(data.get('contract_end_date')),
+        employment_type=data.get('employment_type', 'Full-time')
     )
     db.session.add(employee)
 
@@ -667,6 +930,335 @@ def api_status():
         'region': user.business.region,
         'currency': user.business.base_currency
     })
+
+
+
+
+# ── POS Routes ────────────────────────────────────────────────────────────────
+
+@app.route('/pos')
+@login_required
+def pos():
+    user = current_user()
+    business = user.business
+    today_sales = POSSale.query.filter(
+        POSSale.business_id == business.id,
+        db.func.date(POSSale.timestamp) == datetime.utcnow().date()
+    ).all()
+    today_total = sum(float(s.amount) for s in today_sales)
+    return render_template('pos.html', user=user, business=business,
+                           today_sales=today_sales, today_total=today_total,
+                           tax=business.tax_rules())
+
+
+@app.route('/api/pos/sale', methods=['POST'])
+@login_required
+def api_pos_sale():
+    user = current_user()
+    business = user.business
+    data = request.get_json()
+    amount = float(data.get('amount', 0))
+    if amount <= 0:
+        return jsonify({'ok': False, 'error': 'Amount must be greater than zero'})
+
+    tax_rate = TAX_RULES.get(business.region, TAX_RULES['MV'])['tax_rate']
+    is_tax_inclusive = data.get('tax_inclusive', True)
+    if is_tax_inclusive:
+        tax_amount = round(amount - (amount / (1 + tax_rate)), 2)
+        net_amount = amount - tax_amount
+    else:
+        tax_amount = 0
+        net_amount = amount
+
+    sale = POSSale(
+        business_id=business.id,
+        user_id=user.id,
+        amount=amount,
+        tax_amount=tax_amount,
+        currency=business.base_currency,
+        payment_method=data.get('payment_method', 'Cash'),
+        note=data.get('note', ''),
+        category=data.get('category', 'Sale')
+    )
+    db.session.add(sale)
+    db.session.flush()
+
+    # Auto post to journal
+    try:
+        cash_code = '1000' if data.get('payment_method', 'Cash') == 'Cash' else '1010'
+        lines = [
+            {'account_code': cash_code, 'debit': amount, 'credit': 0, 'description': data.get('note', 'POS Sale')},
+            {'account_code': '4000', 'debit': 0, 'credit': net_amount, 'description': 'Sales Revenue'},
+        ]
+        if tax_amount > 0:
+            lines.append({'account_code': '2210', 'debit': 0, 'credit': tax_amount, 'description': 'Tax collected'})
+
+        je = post_journal_entry(
+            business_id=business.id, user_id=user.id,
+            description=f'POS Sale — {data.get("note", "")}',
+            reference=f'POS-{sale.id}',
+            entry_type='SALE', lines=lines
+        )
+        sale.journal_entry_id = je.id
+
+        # Also add to LedgerEntry
+        entry = LedgerEntry(
+            business_id=business.id, entry_type='REVENUE',
+            amount=amount, tax_amount=tax_amount,
+            currency=business.base_currency,
+            description=f'POS Sale — {data.get("note", "")}',
+            category=data.get('category', 'Sale')
+        )
+        db.session.add(entry)
+    except Exception as e:
+        print(f'POS journal error: {e}')
+
+    db.session.commit()
+
+    # Check threshold
+    threshold = check_threshold(business)
+
+    return jsonify({
+        'ok': True,
+        'sale_id': sale.id,
+        'amount': amount,
+        'tax_amount': tax_amount,
+        'net_amount': net_amount,
+        'currency': business.base_currency,
+        'threshold_warning': threshold
+    })
+
+
+@app.route('/api/pos/today')
+@login_required
+def api_pos_today():
+    user = current_user()
+    business = user.business
+    today_sales = POSSale.query.filter(
+        POSSale.business_id == business.id,
+        db.func.date(POSSale.timestamp) == datetime.utcnow().date()
+    ).all()
+    return jsonify({
+        'ok': True,
+        'count': len(today_sales),
+        'total': sum(float(s.amount) for s in today_sales),
+        'currency': business.base_currency
+    })
+
+
+# ── Chart of Accounts Routes ──────────────────────────────────────────────────
+
+@app.route('/accounts')
+@login_required
+def chart_of_accounts():
+    user = current_user()
+    business = user.business
+    accounts = Account.query.filter_by(business_id=business.id, is_active=True).order_by(Account.code).all()
+    if not accounts:
+        create_default_coa(business.id)
+        accounts = Account.query.filter_by(business_id=business.id, is_active=True).order_by(Account.code).all()
+    grouped = {}
+    for acct in accounts:
+        t = acct.account_type
+        if t not in grouped:
+            grouped[t] = []
+        grouped[t].append(acct)
+    return render_template('accounts.html', user=user, business=business,
+                           grouped=grouped, tax=business.tax_rules())
+
+
+@app.route('/journal')
+@login_required
+def journal():
+    user = current_user()
+    business = user.business
+    entries = JournalEntry.query.filter_by(business_id=business.id).order_by(
+        JournalEntry.date.desc()).limit(50).all()
+    return render_template('journal.html', user=user, business=business,
+                           entries=entries, tax=business.tax_rules())
+
+
+# ── Reports ───────────────────────────────────────────────────────────────────
+
+@app.route('/reports')
+@login_required
+def reports():
+    user = current_user()
+    business = user.business
+    tax = business.tax_rules()
+    threshold = check_threshold(business)
+
+    # P&L
+    revenue_entries = LedgerEntry.query.filter_by(business_id=business.id, entry_type='REVENUE').all()
+    expense_entries = LedgerEntry.query.filter_by(business_id=business.id, entry_type='EXPENSE').all()
+    total_revenue = sum(float(e.amount or 0) for e in revenue_entries)
+    total_expenses = sum(float(e.amount or 0) for e in expense_entries)
+    total_tax = sum(float(e.tax_amount or 0) for e in expense_entries + revenue_entries)
+    net_profit = total_revenue - total_expenses
+
+    # Balance sheet from CoA
+    assets = Account.query.filter_by(business_id=business.id, account_type='ASSET', is_active=True).all()
+    liabilities = Account.query.filter_by(business_id=business.id, account_type='LIABILITY', is_active=True).all()
+    equity = Account.query.filter_by(business_id=business.id, account_type='EQUITY', is_active=True).all()
+
+    total_assets = sum(a.balance(business.id) for a in assets)
+    total_liabilities = sum(a.balance(business.id) for a in liabilities)
+    total_equity = sum(a.balance(business.id) for a in equity) + net_profit
+
+    return render_template('reports.html', user=user, business=business, tax=tax,
+                           total_revenue=total_revenue, total_expenses=total_expenses,
+                           total_tax=total_tax, net_profit=net_profit,
+                           total_assets=total_assets, total_liabilities=total_liabilities,
+                           total_equity=total_equity, threshold=threshold)
+
+
+# ── Compliance Monitor ────────────────────────────────────────────────────────
+
+def check_threshold(business):
+    threshold_info = TAX_THRESHOLDS.get(business.region)
+    if not threshold_info:
+        return None
+    from datetime import date
+    twelve_months_ago = datetime.utcnow() - timedelta(days=365)
+    revenue_entries = LedgerEntry.query.filter(
+        LedgerEntry.business_id == business.id,
+        LedgerEntry.entry_type == 'REVENUE',
+        LedgerEntry.timestamp >= twelve_months_ago
+    ).all()
+    rolling_revenue = sum(float(e.amount or 0) for e in revenue_entries)
+    threshold_amount = threshold_info['amount']
+    percentage = (rolling_revenue / threshold_amount * 100) if threshold_amount > 0 else 0
+    return {
+        'rolling_revenue': rolling_revenue,
+        'threshold': threshold_amount,
+        'currency': threshold_info['currency'],
+        'percentage': round(percentage, 1),
+        'authority': threshold_info['authority'],
+        'tax': threshold_info['tax'],
+        'warning': percentage >= 80,
+        'exceeded': percentage >= 100
+    }
+
+
+@app.route('/api/compliance/threshold')
+@login_required
+def api_compliance_threshold():
+    user = current_user()
+    threshold = check_threshold(user.business)
+    return jsonify({'ok': True, 'threshold': threshold})
+
+
+
+
+@app.route('/api/inventory/from-upload', methods=['POST'])
+@login_required
+def api_inventory_from_upload():
+    """Auto-update inventory from uploaded document line items"""
+    user = current_user()
+    business = user.business
+
+    if not business.has_inventory:
+        return jsonify({'ok': False, 'error': 'Inventory tracking is not enabled for this business'})
+
+    data = request.get_json()
+    items = data.get('items', [])
+    document_id = data.get('document_id')
+    results = []
+
+    for item in items:
+        if not item.get('include', True):
+            continue
+
+        name = item.get('description', '').strip()
+        qty = int(item.get('quantity') or 1)
+        unit_cost = float(item.get('unit_price') or 0)
+
+        if not name:
+            continue
+
+        # Try to match existing product by name
+        existing = Product.query.filter(
+            Product.business_id == business.id,
+            db.func.lower(Product.name).contains(name.lower()[:20])
+        ).first()
+
+        if existing:
+            old_stock = existing.stock_level
+            existing.stock_level = (existing.stock_level or 0) + qty
+            if unit_cost > 0:
+                existing.unit_cost = unit_cost
+            db.session.commit()
+            results.append({
+                'product': existing.name,
+                'action': 'updated',
+                'old_stock': old_stock,
+                'new_stock': existing.stock_level
+            })
+        else:
+            # Create new product
+            product = Product(
+                business_id=business.id,
+                name=name,
+                stock_level=qty,
+                unit_cost=unit_cost,
+                unit_price=round(unit_cost * 1.3, 2),  # default 30% markup
+                currency=business.base_currency,
+                reorder_level=max(5, qty // 2)
+            )
+            db.session.add(product)
+            db.session.commit()
+            results.append({
+                'product': name,
+                'action': 'created',
+                'old_stock': 0,
+                'new_stock': qty
+            })
+
+    # Post correct journal entry for inventory purchase
+    if results and document_id:
+        doc = Document.query.get(document_id)
+        if doc:
+            total = float(doc.total_amount or 0)
+            tax = float(doc.tax_amount or 0)
+            try:
+                post_journal_entry(
+                    business_id=business.id,
+                    user_id=user.id,
+                    description=f'Inventory Purchase — {doc.vendor_name or ""}',
+                    reference=doc.invoice_number or f'INV-{doc.id}',
+                    entry_type='INVENTORY_PURCHASE',
+                    document_id=document_id,
+                    lines=[
+                        {'account_code': '1200', 'debit': total - tax, 'credit': 0, 'description': 'Inventory received'},
+                        *([{'account_code': '2210', 'debit': tax, 'credit': 0, 'description': 'Tax on inventory purchase'}] if tax > 0 else []),
+                        {'account_code': '2000', 'debit': 0, 'credit': total, 'description': doc.vendor_name or 'Supplier'},
+                    ]
+                )
+            except Exception as e:
+                print(f'Inventory journal error: {e}')
+
+    return jsonify({'ok': True, 'results': results, 'updated': len(results)})
+
+
+@app.route('/api/business/settings', methods=['POST'])
+@login_required
+def api_business_settings():
+    """Update business settings including module toggles"""
+    user = current_user()
+    business = user.business
+    data = request.get_json()
+
+    if 'has_inventory' in data:
+        business.has_inventory = bool(data['has_inventory'])
+    if 'has_payroll' in data:
+        business.has_payroll = bool(data['has_payroll'])
+    if 'has_pos' in data:
+        business.has_pos = bool(data['has_pos'])
+    if 'tax_id' in data:
+        business.tax_id = data['tax_id']
+
+    db.session.commit()
+    return jsonify({'ok': True, 'message': 'Business settings updated'})
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
