@@ -1482,7 +1482,7 @@ You are NOT a replacement for a licensed accountant. Always recommend consulting
                 'anthropic-version': '2023-06-01'
             })
 
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read())
             reply = result['content'][0]['text']
 
@@ -1495,6 +1495,10 @@ You are NOT a replacement for a licensed accountant. Always recommend consulting
 
         return jsonify({'ok': True, 'reply': reply})
 
+    except urllib.error.HTTPError as e:
+        db.session.rollback()
+        error_body = e.read().decode()
+        return jsonify({'ok': False, 'error': f'AI API error {e.code}: {error_body}'})
     except Exception as e:
         db.session.rollback()
         return jsonify({'ok': False, 'error': str(e)})
