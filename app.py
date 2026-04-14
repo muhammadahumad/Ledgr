@@ -57,6 +57,9 @@ class Business(db.Model):
     has_inventory = db.Column(db.Boolean, default=False)
     has_payroll = db.Column(db.Boolean, default=False)
     has_pos = db.Column(db.Boolean, default=False)
+    is_tax_registered = db.Column(db.Boolean, default=False)
+    tax_registration_number = db.Column(db.String(50))
+    tax_registration_date = db.Column(db.Date)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     users = db.relationship('User', backref='business', lazy=True)
     documents = db.relationship('Document', backref='business', lazy=True)
@@ -371,12 +374,14 @@ class POSSale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
     amount = db.Column(db.Numeric(12, 2), nullable=False)
     tax_amount = db.Column(db.Numeric(12, 2), default=0)
     currency = db.Column(db.String(3), default='MVR')
     payment_method = db.Column(db.String(20), default='Cash')
     note = db.Column(db.String(100))
     category = db.Column(db.String(50), default='Sale')
+    is_credit = db.Column(db.Boolean, default=False)
     journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
@@ -434,6 +439,37 @@ def post_journal_entry(business_id, user_id, description, reference, entry_type,
 
     db.session.commit()
     return entry
+
+
+
+class Customer(db.Model):
+    """CRM — Customer profiles linked to POS sales"""
+    __tablename__ = 'customers'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(30))
+    email = db.Column(db.String(150))
+    notes = db.Column(db.Text)
+    is_vip = db.Column(db.Boolean, default=False)
+    credit_limit = db.Column(db.Numeric(12, 2), default=0)
+    outstanding_balance = db.Column(db.Numeric(12, 2), default=0)
+    total_spent = db.Column(db.Numeric(12, 2), default=0)
+    visit_count = db.Column(db.Integer, default=0)
+    last_visit = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    sales = db.relationship('POSSale', backref='customer', lazy=True)
+
+
+class AIConversation(db.Model):
+    """AI Accountant conversation history"""
+    __tablename__ = 'ai_conversations'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
+    role = db.Column(db.String(10))  # user or assistant
+    message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 with app.app_context():
     try:
@@ -1240,25 +1276,346 @@ def api_inventory_from_upload():
     return jsonify({'ok': True, 'results': results, 'updated': len(results)})
 
 
-@app.route('/api/business/settings', methods=['POST'])
+
+
+
+
+
+# ── Customer CRM Routes ───────────────────────────────────────────────────────
+
+@app.route('/customers')
 @login_required
-def api_business_settings():
-    """Update business settings including module toggles"""
+def customers():
+    user = current_user()
+    business = user.business
+    customer_list = Customer.query.filter_by(business_id=business.id).order_by(
+        Customer.total_spent.desc()).all()
+    total_customers = len(customer_list)
+    vip_count = sum(1 for c in customer_list if c.is_vip)
+    total_outstanding = sum(float(c.outstanding_balance or 0) for c in customer_list)
+    return render_template('customers.html', user=user, business=business,
+                           customers=customer_list, total_customers=total_customers,
+                           vip_count=vip_count, total_outstanding=total_outstanding,
+                           tax=business.tax_rules())
+
+
+@app.route('/api/customer/add', methods=['POST'])
+@login_required
+def api_customer_add():
+    user = current_user()
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'ok': False, 'error': 'Name is required'})
+    existing = Customer.query.filter_by(
+        business_id=user.business_id, phone=data.get('phone')).first()
+    if existing and data.get('phone'):
+        return jsonify({'ok': False, 'error': 'Customer with this phone already exists',
+                        'customer_id': existing.id, 'name': existing.name})
+    customer = Customer(
+        business_id=user.business_id,
+        name=name,
+        phone=data.get('phone', ''),
+        email=data.get('email', ''),
+        notes=data.get('notes', ''),
+        is_vip=data.get('is_vip', False),
+        credit_limit=float(data.get('credit_limit', 0))
+    )
+    db.session.add(customer)
+    db.session.commit()
+    return jsonify({'ok': True, 'customer_id': customer.id, 'name': customer.name})
+
+
+@app.route('/api/customer/search')
+@login_required
+def api_customer_search():
+    user = current_user()
+    q = request.args.get('q', '').strip().lower()
+    if not q or len(q) < 2:
+        return jsonify([])
+    customers = Customer.query.filter(
+        Customer.business_id == user.business_id,
+        db.or_(
+            db.func.lower(Customer.name).contains(q),
+            Customer.phone.contains(q)
+        )
+    ).limit(8).all()
+    return jsonify([{
+        'id': c.id, 'name': c.name, 'phone': c.phone or '',
+        'total_spent': float(c.total_spent or 0),
+        'visit_count': c.visit_count or 0,
+        'is_vip': c.is_vip,
+        'outstanding_balance': float(c.outstanding_balance or 0),
+        'currency': user.business.base_currency
+    } for c in customers])
+
+
+@app.route('/api/customer/<int:customer_id>')
+@login_required
+def api_customer_detail(customer_id):
+    user = current_user()
+    customer = Customer.query.filter_by(
+        id=customer_id, business_id=user.business_id).first()
+    if not customer:
+        return jsonify({'ok': False, 'error': 'Customer not found'})
+    recent_sales = POSSale.query.filter_by(
+        customer_id=customer_id).order_by(POSSale.timestamp.desc()).limit(10).all()
+    return jsonify({
+        'ok': True,
+        'id': customer.id,
+        'name': customer.name,
+        'phone': customer.phone,
+        'email': customer.email,
+        'notes': customer.notes,
+        'is_vip': customer.is_vip,
+        'total_spent': float(customer.total_spent or 0),
+        'visit_count': customer.visit_count or 0,
+        'outstanding_balance': float(customer.outstanding_balance or 0),
+        'credit_limit': float(customer.credit_limit or 0),
+        'last_visit': customer.last_visit.strftime('%d %b %Y %H:%M') if customer.last_visit else None,
+        'recent_sales': [{'amount': float(s.amount), 'date': s.timestamp.strftime('%d %b %Y'),
+                          'method': s.payment_method, 'note': s.note} for s in recent_sales]
+    })
+
+
+# ── AI Accountant ─────────────────────────────────────────────────────────────
+
+@app.route('/ai')
+@login_required
+def ai_accountant():
+    user = current_user()
+    business = user.business
+    history = AIConversation.query.filter_by(
+        business_id=business.id).order_by(AIConversation.created_at.desc()).limit(20).all()
+    history = list(reversed(history))
+    return render_template('ai.html', user=user, business=business,
+                           history=history, tax=business.tax_rules())
+
+
+@app.route('/api/ai/chat', methods=['POST'])
+@login_required
+def api_ai_chat():
     user = current_user()
     business = user.business
     data = request.get_json()
+    message = data.get('message', '').strip()
 
+    if not message:
+        return jsonify({'ok': False, 'error': 'Message is empty'})
+
+    if not ANTHROPIC_KEY:
+        return jsonify({'ok': False, 'error': 'AI not configured'})
+
+    # Build business context for AI
+    tax = business.tax_rules()
+    total_revenue = db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(
+        business_id=business.id, entry_type='REVENUE').scalar() or 0
+    total_expenses = db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(
+        business_id=business.id, entry_type='EXPENSE').scalar() or 0
+    total_docs = Document.query.filter_by(business_id=business.id).count()
+    total_customers = Customer.query.filter_by(business_id=business.id).count()
+    employee_count = Employee.query.filter_by(business_id=business.id, is_active=True).count()
+    monthly_payroll = db.session.query(db.func.sum(Employee.monthly_salary)).filter_by(
+        business_id=business.id, is_active=True).scalar() or 0
+
+    threshold = check_threshold(business)
+    threshold_info = f"Rolling 12-month revenue: {tax['currency']} {float(total_revenue):.2f} — {threshold['percentage'] if threshold else 0}% of {tax['authority']} threshold." if threshold else ""
+
+    recent_entries = LedgerEntry.query.filter_by(business_id=business.id).order_by(
+        LedgerEntry.timestamp.desc()).limit(5).all()
+    recent_summary = '; '.join([f"{e.entry_type} {e.currency} {float(e.amount):.2f} ({e.description or e.category})" for e in recent_entries])
+
+    system_prompt = f"""You are LEDGR AI Accountant — a friendly, expert financial advisor for {business.name}.
+
+BUSINESS CONTEXT:
+- Business: {business.name}
+- Region: {tax['name']} | Currency: {tax['currency']}
+- Tax Authority: {tax['authority']} | Tax: {tax['tax_name']} at {tax['tax_rate']*100:.0f}%
+- Tax Registered: {'Yes' if business.is_tax_registered else 'No — below threshold'}
+- Total Revenue: {tax['currency']} {float(total_revenue):.2f}
+- Total Expenses: {tax['currency']} {float(total_expenses):.2f}
+- Net Profit: {tax['currency']} {float(total_revenue - total_expenses):.2f}
+- Documents Processed: {total_docs}
+- Customers: {total_customers}
+- Employees: {employee_count} | Monthly Payroll: {tax['currency']} {float(monthly_payroll):.2f}
+- {threshold_info}
+- Recent transactions: {recent_summary}
+
+YOUR ROLE:
+- Answer financial questions about this business in simple, friendly language
+- Flag concerns proactively — cash flow issues, approaching tax threshold, high expenses
+- Explain accounting concepts simply — no jargon unless asked
+- Give actionable advice specific to {tax['name']} business regulations
+- If asked about tax, reference {tax['authority']} rules
+- Keep responses concise — 2-3 paragraphs maximum
+- Use {tax['currency']} for all amounts
+
+You are NOT a replacement for a licensed accountant. Always recommend consulting a professional for major decisions."""
+
+    # Get conversation history
+    history = AIConversation.query.filter_by(
+        business_id=business.id).order_by(AIConversation.created_at.desc()).limit(10).all()
+    history = list(reversed(history))
+
+    messages = [{'role': h.role, 'content': h.message} for h in history]
+    messages.append({'role': 'user', 'content': message})
+
+    # Save user message
+    user_msg = AIConversation(
+        business_id=business.id, user_id=user.id,
+        role='user', message=message)
+    db.session.add(user_msg)
+
+    try:
+        req_body = json.dumps({
+            'model': 'claude-sonnet-4-20250514',
+            'max_tokens': 1024,
+            'system': system_prompt,
+            'messages': messages
+        }).encode()
+
+        req = urllib.request.Request('https://api.anthropic.com/v1/messages',
+            data=req_body,
+            headers={
+                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_KEY,
+                'anthropic-version': '2023-06-01'
+            })
+
+        with urllib.request.urlopen(req) as resp:
+            result = json.loads(resp.read())
+            reply = result['content'][0]['text']
+
+        # Save assistant reply
+        ai_msg = AIConversation(
+            business_id=business.id, user_id=user.id,
+            role='assistant', message=reply)
+        db.session.add(ai_msg)
+        db.session.commit()
+
+        return jsonify({'ok': True, 'reply': reply})
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'ok': False, 'error': str(e)})
+
+
+# ── Updated POS sale with customer + tax toggle ────────────────────────────────
+
+@app.route('/api/pos/sale/v2', methods=['POST'])
+@login_required
+def api_pos_sale_v2():
+    user = current_user()
+    business = user.business
+    data = request.get_json()
+    amount = float(data.get('amount', 0))
+
+    if amount <= 0:
+        return jsonify({'ok': False, 'error': 'Amount must be greater than zero'})
+
+    # Tax calculation — only if business is tax registered
+    tax_amount = 0
+    net_amount = amount
+    if business.is_tax_registered:
+        tax_rate = TAX_RULES.get(business.region, TAX_RULES['MV'])['tax_rate']
+        if data.get('tax_inclusive', True):
+            tax_amount = round(amount - (amount / (1 + tax_rate)), 2)
+            net_amount = amount - tax_amount
+
+    payment_method = data.get('payment_method', 'Cash')
+    is_credit = payment_method == 'Credit'
+    customer_id = data.get('customer_id')
+
+    sale = POSSale(
+        business_id=business.id,
+        user_id=user.id,
+        customer_id=customer_id,
+        amount=amount,
+        tax_amount=tax_amount,
+        currency=business.base_currency,
+        payment_method=payment_method,
+        note=data.get('note', ''),
+        category=data.get('category', 'Sale'),
+        is_credit=is_credit
+    )
+    db.session.add(sale)
+    db.session.flush()
+
+    # Update customer stats
+    if customer_id:
+        customer = Customer.query.get(customer_id)
+        if customer:
+            customer.total_spent = float(customer.total_spent or 0) + amount
+            customer.visit_count = (customer.visit_count or 0) + 1
+            customer.last_visit = datetime.utcnow()
+            if is_credit:
+                customer.outstanding_balance = float(customer.outstanding_balance or 0) + amount
+            db.session.commit()
+
+    # Journal entry
+    try:
+        cash_code = '1100' if is_credit else ('1000' if payment_method == 'Cash' else '1010')
+        lines = [
+            {'account_code': cash_code, 'debit': amount, 'credit': 0,
+             'description': data.get('note', 'POS Sale')},
+            {'account_code': '4000', 'debit': 0, 'credit': net_amount,
+             'description': 'Sales Revenue'},
+        ]
+        if tax_amount > 0:
+            lines.append({'account_code': '2210', 'debit': 0, 'credit': tax_amount,
+                          'description': 'Tax collected'})
+
+        je = post_journal_entry(
+            business_id=business.id, user_id=user.id,
+            description=f'POS Sale — {data.get("note", "")}',
+            reference=f'POS-{sale.id}', entry_type='SALE', lines=lines)
+        sale.journal_entry_id = je.id
+
+        entry = LedgerEntry(
+            business_id=business.id, entry_type='REVENUE',
+            amount=amount, tax_amount=tax_amount,
+            currency=business.base_currency,
+            description=f'POS Sale — {data.get("note", "")}',
+            category=data.get('category', 'Sale'))
+        db.session.add(entry)
+    except Exception as e:
+        print(f'POS v2 journal error: {e}')
+
+    db.session.commit()
+
+    threshold = check_threshold(business)
+    return jsonify({
+        'ok': True,
+        'sale_id': sale.id,
+        'amount': amount,
+        'tax_amount': tax_amount,
+        'net_amount': net_amount,
+        'currency': business.base_currency,
+        'is_tax_registered': business.is_tax_registered,
+        'threshold_warning': threshold
+    })
+
+
+@app.route('/api/business/settings', methods=['POST'])
+@login_required
+def api_business_settings():
+    user = current_user()
+    business = user.business
+    data = request.get_json()
     if 'has_inventory' in data:
         business.has_inventory = bool(data['has_inventory'])
     if 'has_payroll' in data:
         business.has_payroll = bool(data['has_payroll'])
     if 'has_pos' in data:
         business.has_pos = bool(data['has_pos'])
+    if 'is_tax_registered' in data:
+        business.is_tax_registered = bool(data['is_tax_registered'])
+    if 'tax_registration_number' in data:
+        business.tax_registration_number = data['tax_registration_number']
     if 'tax_id' in data:
         business.tax_id = data['tax_id']
-
     db.session.commit()
-    return jsonify({'ok': True, 'message': 'Business settings updated'})
+    return jsonify({'ok': True, 'message': 'Settings updated'})
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
