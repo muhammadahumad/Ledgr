@@ -383,6 +383,18 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
+def business_required(f):
+    """Ensures a valid business is selected — redirects to add_business if not"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if 'user_id' not in session: return redirect(url_for('login'))
+        b = current_business()
+        if not b:
+            flash('Please create or select a business to continue.', 'error')
+            return redirect(url_for('add_business'))
+        return f(*args, **kwargs)
+    return decorated
+
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -396,10 +408,44 @@ def current_user():
     return None
 
 def current_business():
+    """Returns current business with access verification and safe fallback"""
+    user = current_user()
+    if not user:
+        return None
     bid = session.get('business_id')
-    if bid: return Business.query.get(bid)
-    u = current_user()
-    return u.business if u else None
+    if bid:
+        # Verify user has access via UserBusiness
+        ub = UserBusiness.query.filter_by(user_id=user.id, business_id=bid).first()
+        if ub:
+            return ub.business
+        # Legacy: check direct business_id on user
+        if user.business_id == bid:
+            b = Business.query.get(bid)
+            if b:
+                # Create UserBusiness record for legacy users
+                ub = UserBusiness(user_id=user.id, business_id=bid, role='owner')
+                db.session.add(ub)
+                try: db.session.commit()
+                except: db.session.rollback()
+                return b
+    # Fallback: find first accessible business
+    ub = UserBusiness.query.filter_by(user_id=user.id).first()
+    if ub:
+        session['business_id'] = ub.business_id
+        session['business_name'] = ub.business.name
+        return ub.business
+    # Last resort: user's direct business
+    if user.business_id:
+        b = Business.query.get(user.business_id)
+        if b:
+            ub = UserBusiness(user_id=user.id, business_id=b.id, role='owner')
+            db.session.add(ub)
+            try: db.session.commit()
+            except: db.session.rollback()
+            session['business_id'] = b.id
+            session['business_name'] = b.name
+            return b
+    return None
 
 def create_default_coa(business_id):
     for acct_type, accounts in DEFAULT_COA.items():
@@ -410,6 +456,13 @@ def create_default_coa(business_id):
 
 def get_account(business_id, code):
     return Account.query.filter_by(business_id=business_id, code=code, is_active=True).first()
+
+def api_business_guard():
+    """Returns (business, error_response) for API routes"""
+    b = current_business()
+    if not b:
+        return None, jsonify({'ok':False,'error':'No business selected. Please create or select a business.'})
+    return b, None
 
 def post_journal(business_id, user_id, description, reference, entry_type, lines, document_id=None):
     lines = [l for l in lines if l]
@@ -485,10 +538,23 @@ def login():
         if user and user.check_password(pw):
             session.permanent = True
             session['user_id'] = user.id
-            session['business_id'] = user.business_id
             session['user_name'] = user.name
             session['plan'] = user.plan.title()
-            session['business_name'] = user.business.name if user.business else 'My Business'
+            # Find first accessible business
+            ub = UserBusiness.query.filter_by(user_id=user.id).first()
+            if ub:
+                session['business_id'] = ub.business_id
+                session['business_name'] = ub.business.name
+            elif user.business_id:
+                session['business_id'] = user.business_id
+                b = Business.query.get(user.business_id)
+                session['business_name'] = b.name if b else 'My Business'
+                # Create missing UserBusiness record
+                existing = UserBusiness.query.filter_by(user_id=user.id, business_id=user.business_id).first()
+                if not existing:
+                    db.session.add(UserBusiness(user_id=user.id, business_id=user.business_id, role='owner'))
+                    try: db.session.commit()
+                    except: db.session.rollback()
             return redirect(url_for('dashboard'))
         flash('Invalid email or password', 'error')
     return render_template('login.html')
@@ -742,7 +808,9 @@ def switch_business(business_id):
 @app.route('/api/upload', methods=['POST'])
 @login_required
 def api_upload():
-    user = current_user(); business = current_business()
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
     if not user.can_upload():
         return jsonify({'ok':False,'error':'Upload limit reached. Upgrade your plan.','upgrade':True})
     if not ANTHROPIC_KEY:
@@ -799,7 +867,9 @@ def api_upload():
 @app.route('/api/ai/chat', methods=['POST'])
 @login_required
 def api_ai_chat():
-    user = current_user(); business = current_business()
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
     data = request.get_json()
     message = data.get('message','').strip()
     if not message: return jsonify({'ok':False,'error':'Empty message'})
@@ -846,7 +916,9 @@ YOUR ROLE: Answer financial questions in simple friendly language. Flag issues p
 @app.route('/api/pos/sale', methods=['POST'])
 @login_required
 def api_pos_sale():
-    user = current_user(); business = current_business()
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
     data = request.get_json()
     amount = float(data.get('amount',0))
     if amount <= 0: return jsonify({'ok':False,'error':'Amount must be greater than zero'})
@@ -1140,7 +1212,7 @@ if __name__ == '__main__':
 # ── Document Archive ──────────────────────────────────────────────────────────
 
 @app.route("/documents")
-@login_required
+@business_required
 def documents():
     user = current_user(); business = current_business()
     doc_type = request.args.get("type","")
@@ -1152,7 +1224,7 @@ def documents():
 
 
 @app.route("/documents/<int:doc_id>")
-@login_required
+@business_required
 def document_detail(doc_id):
     user = current_user(); business = current_business()
     doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
@@ -1224,7 +1296,7 @@ def api_document_manual():
 # ── Quotations ────────────────────────────────────────────────────────────────
 
 @app.route("/quotations")
-@login_required
+@business_required
 def quotations():
     user = current_user(); business = current_business()
     quotes = Quotation.query.filter_by(business_id=business.id).order_by(Quotation.created_at.desc()).all()
@@ -1315,7 +1387,7 @@ def api_quotation_status(qid):
 # ── Bank Statements ───────────────────────────────────────────────────────────
 
 @app.route("/bank")
-@login_required
+@business_required
 def bank():
     user = current_user(); business = current_business()
     bank_accounts = BankAccount.query.filter_by(business_id=business.id, is_active=True).all()
