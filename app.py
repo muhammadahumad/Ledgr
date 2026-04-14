@@ -54,9 +54,11 @@ class Business(db.Model):
     region = db.Column(db.String(5), default='MV')
     base_currency = db.Column(db.String(3), default='MVR')
     tax_id = db.Column(db.String(50))
+    business_type = db.Column(db.String(30), default='sole_proprietor')
     has_inventory = db.Column(db.Boolean, default=False)
     has_payroll = db.Column(db.Boolean, default=False)
-    has_pos = db.Column(db.Boolean, default=False)
+    has_pos = db.Column(db.Boolean, default=True)
+    has_full_accounting = db.Column(db.Boolean, default=False)
     is_tax_registered = db.Column(db.Boolean, default=False)
     tax_registration_number = db.Column(db.String(50))
     tax_registration_date = db.Column(db.Date)
@@ -304,6 +306,17 @@ TAX_THRESHOLDS = {
 }
 
 
+BUSINESS_TYPES = {
+    'sole_proprietor': {'name': 'Sole Proprietor', 'accounting': 'simple', 'equity_accounts': False},
+    'partnership':     {'name': 'Partnership',      'accounting': 'standard', 'equity_accounts': True},
+    'limited_company': {'name': 'Limited Company',  'accounting': 'full', 'equity_accounts': True},
+    'llc':             {'name': 'LLC',               'accounting': 'full', 'equity_accounts': True},
+    'cooperative':     {'name': 'Cooperative',       'accounting': 'standard', 'equity_accounts': True},
+    'ngo':             {'name': 'NGO / Non-Profit',  'accounting': 'standard', 'equity_accounts': False},
+    'other':           {'name': 'Other',             'accounting': 'simple', 'equity_accounts': False},
+}
+
+
 class Account(db.Model):
     """Chart of Accounts"""
     __tablename__ = 'accounts'
@@ -471,6 +484,18 @@ class AIConversation(db.Model):
     message = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+class UserBusiness(db.Model):
+    """Join table — one user can own/access many businesses"""
+    __tablename__ = 'user_businesses'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
+    role = db.Column(db.String(20), default='owner')  # owner, accountant, viewer
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='memberships', lazy=True)
+    user = db.relationship('User', backref='memberships', lazy=True)
+
+
 with app.app_context():
     try:
         db.create_all()
@@ -609,11 +634,16 @@ def register():
             flash('An account with this email already exists', 'error')
             return render_template('register.html', regions=TAX_RULES)
 
+        business_type = request.form.get('business_type', 'sole_proprietor')
         tax = TAX_RULES.get(region, TAX_RULES['MV'])
+        btype = BUSINESS_TYPES.get(business_type, BUSINESS_TYPES['sole_proprietor'])
         business = Business(
             name=business_name,
             region=region,
-            base_currency=tax['currency']
+            base_currency=tax['currency'],
+            business_type=business_type,
+            has_full_accounting=btype['accounting'] == 'full',
+            has_pos=True
         )
         db.session.add(business)
         db.session.flush()
@@ -621,15 +651,21 @@ def register():
         user = User(name=name, email=email, business_id=business.id, role='owner')
         user.set_password(password)
         db.session.add(user)
+        db.session.flush()
+
+        # Create UserBusiness link
+        ub = UserBusiness(user_id=user.id, business_id=business.id, role='owner')
+        db.session.add(ub)
         db.session.commit()
 
         session['user_id'] = user.id
         session['business_id'] = business.id
         session['user_name'] = user.name
         session['plan'] = 'Free'
+        session['business_name'] = business_name
         session.permanent = True
         create_default_coa(business.id)
-        flash(f'Welcome to LEDGR, {name}! Your Chart of Accounts is ready.', 'success')
+        flash(f'Welcome to LEDGR, {name}! Your {btype["name"]} workspace is ready.', 'success')
         return redirect(url_for('dashboard'))
 
     return render_template('register.html', regions=TAX_RULES)
@@ -646,6 +682,7 @@ def login():
             session['business_id'] = user.business_id
             session['user_name'] = user.name
             session['plan'] = user.plan.title()
+            session['business_name'] = user.business.name if user.business else 'My Business'
             session.permanent = True
             return redirect(url_for('dashboard'))
         flash('Invalid email or password', 'error')
@@ -982,9 +1019,12 @@ def pos():
         db.func.date(POSSale.timestamp) == datetime.utcnow().date()
     ).all()
     today_total = sum(float(s.amount) for s in today_sales)
+    products = Product.query.filter_by(
+        business_id=business.id, is_active=True if hasattr(Product,'is_active') else True
+    ).order_by(Product.name).all() if business.has_inventory else []
     return render_template('pos.html', user=user, business=business,
                            today_sales=today_sales, today_total=today_total,
-                           tax=business.tax_rules())
+                           tax=business.tax_rules(), products=products)
 
 
 @app.route('/api/pos/sale', methods=['POST'])
@@ -1620,6 +1660,103 @@ def api_business_settings():
         business.tax_id = data['tax_id']
     db.session.commit()
     return jsonify({'ok': True, 'message': 'Settings updated'})
+
+
+
+
+# ── Multi-Business Routes ─────────────────────────────────────────────────────
+
+@app.route('/business/add', methods=['GET', 'POST'])
+@login_required
+def add_business():
+    user = current_user()
+    if request.method == 'POST':
+        business_name = request.form.get('business_name', '').strip()
+        region = request.form.get('region', 'MV')
+        business_type = request.form.get('business_type', 'sole_proprietor')
+
+        if not business_name:
+            flash('Business name is required', 'error')
+            return render_template('add_business.html', regions=TAX_RULES,
+                                   business_types=BUSINESS_TYPES, user=user)
+
+        # Check plan limits
+        existing = UserBusiness.query.filter_by(user_id=user.id).count()
+        if existing >= 1 and user.plan == 'free':
+            flash('Upgrade to Pro or Business plan to add multiple businesses', 'error')
+            return redirect(url_for('settings'))
+
+        tax = TAX_RULES.get(region, TAX_RULES['MV'])
+        btype = BUSINESS_TYPES.get(business_type, BUSINESS_TYPES['sole_proprietor'])
+        business = Business(
+            name=business_name,
+            region=region,
+            base_currency=tax['currency'],
+            business_type=business_type,
+            has_full_accounting=btype['accounting'] == 'full',
+            has_pos=True
+        )
+        db.session.add(business)
+        db.session.flush()
+
+        ub = UserBusiness(user_id=user.id, business_id=business.id, role='owner')
+        db.session.add(ub)
+        db.session.commit()
+
+        create_default_coa(business.id)
+        session['business_id'] = business.id
+        flash(f'{business_name} workspace created!', 'success')
+        return redirect(url_for('dashboard'))
+
+    return render_template('add_business.html', regions=TAX_RULES,
+                           business_types=BUSINESS_TYPES, user=user)
+
+
+@app.route('/business/switch/<int:business_id>')
+@login_required
+def switch_business(business_id):
+    user = current_user()
+    ub = UserBusiness.query.filter_by(
+        user_id=user.id, business_id=business_id).first()
+    if ub:
+        session['business_id'] = business_id
+        flash(f'Switched to {ub.business.name}', 'success')
+    return redirect(url_for('dashboard'))
+
+
+@app.route('/api/pos/receipt', methods=['POST'])
+@login_required
+def api_pos_receipt():
+    """Generate WhatsApp receipt text"""
+    user = current_user()
+    business = user.business
+    data = request.get_json()
+    amount = float(data.get('amount', 0))
+    tax = float(data.get('tax_amount', 0))
+    note = data.get('note', 'Sale')
+    payment = data.get('payment_method', 'Cash')
+    customer_name = data.get('customer_name', '')
+    now = datetime.utcnow().strftime('%d %b %Y %H:%M')
+
+    receipt = f"""*{business.name}*
+━━━━━━━━━━━━━━━
+📋 RECEIPT
+Date: {now}
+{"Customer: " + customer_name if customer_name else ""}
+Item: {note}
+Payment: {payment}
+━━━━━━━━━━━━━━━
+{"Subtotal: " + business.base_currency + " " + f"{amount-tax:.2f}" if tax > 0 else ""}
+{"Tax: " + business.base_currency + " " + f"{tax:.2f}" if tax > 0 else ""}
+*TOTAL: {business.base_currency} {amount:.2f}*
+━━━━━━━━━━━━━━━
+Thank you! 🙏
+Powered by LEDGR"""
+
+    import urllib.parse
+    wa_url = 'https://wa.me/?text=' + urllib.parse.quote(receipt)
+    return jsonify({'ok': True, 'receipt': receipt, 'wa_url': wa_url})
+
 
 
 # ── Admin ─────────────────────────────────────────────────────────────────────
