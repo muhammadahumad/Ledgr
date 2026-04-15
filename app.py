@@ -811,8 +811,10 @@ def reports():
 def settings():
     user = current_user(); business = current_business()
     user_businesses = UserBusiness.query.filter_by(user_id=user.id).all()
+    threshold = TAX_THRESHOLDS.get(business.region, {})
     return render_template('settings.html', user=user, business=business, tax=business.tax_rules(),
-                           regions=TAX_RULES, business_types=BUSINESS_TYPES, user_businesses=user_businesses)
+                           regions=TAX_RULES, business_types=BUSINESS_TYPES,
+                           user_businesses=user_businesses, threshold_info=threshold)
 
 @app.route('/ai')
 @login_required
