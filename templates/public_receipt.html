@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Receipt — {{ business.display_name() }}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f1f5f9;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
+.receipt{background:#fff;width:100%;max-width:380px;border-radius:16px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.12)}
+.receipt-header{background:#0a0e17;padding:24px 20px;text-align:center}
+.logo-wrap{width:56px;height:56px;border-radius:10px;overflow:hidden;margin:0 auto 10px;background:#1a2235;display:flex;align-items:center;justify-content:center}
+.logo-wrap img{width:100%;height:100%;object-fit:contain}
+.logo-initial{color:#10b981;font-size:22px;font-weight:700;font-family:monospace}
+.biz-name{color:#fff;font-size:16px;font-weight:700;margin-bottom:2px}
+.biz-sub{color:#4a6080;font-size:11px}
+.receipt-body{padding:20px}
+.receipt-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f1f5f9;font-size:13px}
+.receipt-row:last-child{border-bottom:none}
+.r-label{color:#64748b}
+.r-val{color:#0a0e17;font-weight:500;text-align:right}
+.total-section{background:#f8fafc;border-radius:10px;padding:16px;margin:14px 0;text-align:center}
+.total-amount{font-size:32px;font-weight:800;color:#0a0e17;font-family:monospace;margin-bottom:2px}
+.total-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.06em}
+.status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;font-weight:700;background:#d1fae5;color:#065f46;margin-top:8px}
+.share-section{padding:0 20px 20px}
+.share-btn{width:100%;padding:13px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;border:none;margin-bottom:8px;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;transition:opacity .15s}
+.share-btn:hover{opacity:.9}
+.wa-btn{background:#25D366;color:#fff}
+.viber-btn{background:#7360f2;color:#fff}
+.receipt-footer{background:#f8fafc;padding:14px 20px;text-align:center;border-top:1px solid #e2e8f0}
+.footer-text{font-size:11px;color:#94a3b8}
+.footer-brand{color:#10b981;font-weight:600}
+</style>
+</head>
+<body>
+<div class="receipt">
+  <div class="receipt-header">
+    <div class="logo-wrap">
+      {% if business.logo_data %}
+      <img src="/api/business/logo" alt="{{ business.display_name() }}">
+      {% else %}
+      <div class="logo-initial">{{ business.name[0]|upper }}</div>
+      {% endif %}
+    </div>
+    <div class="biz-name">{{ business.display_name() }}</div>
+    <div class="biz-sub">{% if business.city %}{{ business.city }} · {% endif %}{{ business.base_currency }}</div>
+  </div>
+
+  <div class="receipt-body">
+    <div class="total-section">
+      <div class="total-label">Total Paid</div>
+      <div class="total-amount">{{ business.base_currency }} {{ "%.2f"|format(sale.amount|float) }}</div>
+      <div class="status-badge">✓ Payment Received</div>
+    </div>
+
+    <div class="receipt-row">
+      <span class="r-label">Date & Time</span>
+      <span class="r-val">{{ sale.timestamp.strftime('%d %b %Y, %H:%M') }}</span>
+    </div>
+    {% if sale.note and sale.note != 'Sale' %}
+    <div class="receipt-row">
+      <span class="r-label">Item</span>
+      <span class="r-val">{{ sale.note }}</span>
+    </div>
+    {% endif %}
+    {% if sale.customer %}
+    <div class="receipt-row">
+      <span class="r-label">Customer</span>
+      <span class="r-val">{{ sale.customer.name }}</span>
+    </div>
+    {% endif %}
+    <div class="receipt-row">
+      <span class="r-label">Payment Method</span>
+      <span class="r-val">{{ sale.payment_method }}</span>
+    </div>
+    {% if sale.tax_amount and sale.tax_amount > 0 %}
+    <div class="receipt-row">
+      <span class="r-label">Subtotal</span>
+      <span class="r-val">{{ business.base_currency }} {{ "%.2f"|format((sale.amount|float) - (sale.tax_amount|float)) }}</span>
+    </div>
+    <div class="receipt-row">
+      <span class="r-label">Tax</span>
+      <span class="r-val" style="color:#f59e0b">{{ business.base_currency }} {{ "%.2f"|format(sale.tax_amount|float) }}</span>
+    </div>
+    {% endif %}
+    {% if sale.service_charge and sale.service_charge > 0 %}
+    <div class="receipt-row">
+      <span class="r-label">Service Charge</span>
+      <span class="r-val">{{ business.base_currency }} {{ "%.2f"|format(sale.service_charge|float) }}</span>
+    </div>
+    {% endif %}
+    {% if sale.location %}
+    <div class="receipt-row">
+      <span class="r-label">Location</span>
+      <span class="r-val">{{ sale.location.name }}</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="share-section">
+    <button class="share-btn wa-btn" onclick="shareWA()">📤 Share on WhatsApp</button>
+    <button class="share-btn viber-btn" onclick="shareViber()">📤 Share on Viber</button>
+  </div>
+
+  <div class="receipt-footer">
+    <div class="footer-text">Powered by <span class="footer-brand">LEDGR</span> · ledgrglobal.com</div>
+    <div class="footer-text" style="margin-top:2px">Receipt ID: {{ sale.id }}</div>
+  </div>
+</div>
+
+<script>
+var receiptUrl = window.location.href;
+var bizName = '{{ business.display_name()|replace("'", "\\'") }}';
+var amount = '{{ business.base_currency }} {{ "%.2f"|format(sale.amount|float) }}';
+var text = 'Receipt from ' + bizName + '\n' + amount + '\nView: ' + receiptUrl;
+
+function shareWA() { window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank'); }
+function shareViber() { window.open('viber://forward?text=' + encodeURIComponent(text), '_blank'); }
+</script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Accountant Portal — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Accountant Portal</div>
+    <div class="page-sub">{{ clients|length }} client{% if clients|length != 1 %}s{% endif %} · Overview of all businesses you manage</div>
+  </div>
+  <a href="/business/add" class="btn btn-primary">+ Add Client Business</a>
+</div>
+
+<div class="content">
+  {% if not clients %}
+  <div class="card" style="text-align:center;padding:48px">
+    <div style="font-size:36px;margin-bottom:12px">💼</div>
+    <div style="font-weight:600;font-size:16px;color:var(--text);margin-bottom:6px">No client businesses yet</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:20px">Add client businesses or ask clients to grant you access to their LEDGR workspace.</div>
+    <a href="/business/add" class="btn btn-primary">Add First Client</a>
+  </div>
+  {% else %}
+
+  <!-- Summary stats across all clients -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="stat-card">
+      <div class="stat-label">Total Clients</div>
+      <div class="stat-value">{{ clients|length }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Combined Revenue (30d)</div>
+      <div class="stat-value" style="font-size:18px;color:var(--mint)">
+        {{ clients[0].tax.currency }} {{ "{:,.0f}".format(clients|sum(attribute='revenue_30d')) }}
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pending Documents</div>
+      <div class="stat-value" style="color:{% if clients|sum(attribute='pending_docs') > 0 %}var(--amber){% else %}var(--mint){% endif %}">
+        {{ clients|sum(attribute='pending_docs') }}
+      </div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Threshold Alerts</div>
+      <div class="stat-value" style="color:{% if clients|selectattr('threshold.warning')|list|length > 0 %}var(--red){% else %}var(--mint){% endif %}">
+        {{ clients|selectattr('threshold.warning')|list|length }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Client table -->
+  <div class="card">
+    <div class="card-title">Client Overview</div>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Business</th>
+          <th>Industry</th>
+          <th>Region</th>
+          <th style="text-align:right">Revenue (30d)</th>
+          <th style="text-align:right">Expenses (30d)</th>
+          <th style="text-align:right">Profit (30d)</th>
+          <th>Docs</th>
+          <th>Tax Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for client in clients %}
+        <tr>
+          <td>
+            <div style="font-weight:600;color:var(--text)">{{ client.business.display_name() }}</div>
+            <div style="font-size:10px;color:var(--text3)">{{ client.business.btype_name() }} · {{ client.role.title() }}</div>
+          </td>
+          <td style="font-size:11px;color:var(--text3)">{{ client.business.industry().name }}</td>
+          <td style="font-size:11px;color:var(--text3)">{{ client.tax.name }}</td>
+          <td style="text-align:right;color:var(--mint);font-family:var(--mono)">{{ client.tax.currency }} {{ "{:,.0f}".format(client.revenue_30d) }}</td>
+          <td style="text-align:right;color:var(--red);font-family:var(--mono)">{{ client.tax.currency }} {{ "{:,.0f}".format(client.expenses_30d) }}</td>
+          <td style="text-align:right;font-family:var(--mono);font-weight:600;color:{% if client.profit_30d >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+            {{ client.tax.currency }} {{ "{:,.0f}".format(client.profit_30d) }}
+          </td>
+          <td>
+            {% if client.pending_docs > 0 %}
+            <span class="badge badge-amber">{{ client.pending_docs }} pending</span>
+            {% else %}
+            <span class="badge badge-green">Clear</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if client.threshold.warning %}
+            <span class="badge badge-red" title="{{ client.threshold.message }}">⚠ {{ client.threshold.percentage|int }}%</span>
+            {% elif client.business.is_tax_registered %}
+            <span class="badge badge-blue">Registered</span>
+            {% else %}
+            <span class="badge badge-gray">Below threshold</span>
+            {% endif %}
+          </td>
+          <td>
+            <div style="display:flex;gap:4px">
+              <a href="/accountant/switch/{{ client.business.id }}" class="btn btn-sm btn-primary">Open →</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Threshold alerts -->
+  {% set alert_clients = clients|selectattr('threshold.warning')|list %}
+  {% if alert_clients %}
+  <div class="card" style="border-color:rgba(239,68,68,.3)">
+    <div class="card-title" style="color:var(--red)">⚠ Tax Threshold Alerts</div>
+    {% for client in alert_clients %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:rgba(239,68,68,.05);border-radius:8px;margin-bottom:8px;border:1px solid rgba(239,68,68,.15)">
+      <div>
+        <div style="font-weight:600;color:var(--text)">{{ client.business.display_name() }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ client.threshold.message }}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:20px;font-weight:700;color:var(--red)">{{ client.threshold.percentage|int }}%</div>
+        <a href="/accountant/switch/{{ client.business.id }}" class="btn btn-sm">Review →</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% endif %}
+</div>
+{% endblock %}

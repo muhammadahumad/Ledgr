@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Setup Your Business — LEDGR</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;background:#0a0e17;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.wizard{width:100%;max-width:580px}
+.brand{font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:600;letter-spacing:.08em;margin-bottom:4px;text-align:center}
+.brand span{color:#10b981}
+.sub{font-size:12px;color:#4a6080;margin-bottom:32px;text-align:center}
+
+/* Steps */
+.steps{display:flex;justify-content:center;gap:0;margin-bottom:32px}
+.step{display:flex;align-items:center;gap:0}
+.step-dot{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;transition:all .3s;border:2px solid #1f2d45;background:#0a0e17;color:#4a6080;cursor:default}
+.step-dot.active{border-color:#10b981;background:#10b981;color:#fff}
+.step-dot.done{border-color:#10b981;background:rgba(16,185,129,.15);color:#10b981}
+.step-line{width:40px;height:2px;background:#1f2d45;transition:background .3s}
+.step-line.done{background:#10b981}
+
+/* Cards */
+.card{background:#111827;border:1px solid #1f2d45;border-radius:14px;padding:28px;margin-bottom:14px}
+.card-title{font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:4px}
+.card-sub{font-size:12px;color:#4a6080;margin-bottom:20px}
+.fl{margin-bottom:14px}
+label{display:block;font-size:10px;color:#4a6080;font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+input,select,textarea{width:100%;padding:9px 12px;border:1px solid #1f2d45;border-radius:8px;font-size:13px;color:#e2e8f0;background:#0a0e17;font-family:'IBM Plex Sans',sans-serif;transition:border-color .15s}
+input:focus,select:focus{outline:none;border-color:#10b981;box-shadow:0 0 0 3px rgba(16,185,129,.1)}
+
+/* Option grid */
+.opt-grid{display:grid;gap:8px}
+.opt-grid-2{grid-template-columns:1fr 1fr}
+.opt-grid-3{grid-template-columns:1fr 1fr 1fr}
+.opt{border:2px solid #1f2d45;border-radius:10px;padding:14px 12px;cursor:pointer;transition:all .15s;user-select:none;text-align:center}
+.opt:hover{border-color:#2a4060}
+.opt.sel{border-color:#10b981;background:rgba(16,185,129,.08)}
+.opt-icon{font-size:22px;margin-bottom:5px}
+.opt-name{font-size:13px;font-weight:600;color:#e2e8f0;margin-bottom:2px}
+.opt-desc{font-size:10px;color:#4a6080}
+.opt-tag{display:inline-block;padding:1px 7px;border-radius:3px;font-size:9px;font-weight:600;margin-top:4px;background:rgba(16,185,129,.15);color:#10b981}
+.opt-tag.full{background:rgba(59,130,246,.15);color:#60a5fa}
+
+/* Location inputs */
+.loc-input{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.loc-input input{flex:1}
+
+/* Buttons */
+.btn-row{display:flex;gap:10px;margin-top:6px}
+.btn{padding:11px 22px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:'IBM Plex Sans',sans-serif;transition:all .15s}
+.btn-primary{background:#10b981;color:#fff;flex:1}
+.btn-primary:hover{background:#059669}
+.btn-primary:disabled{opacity:.6;cursor:not-allowed}
+.btn-back{background:#1a2235;color:#8899aa;border:1px solid #1f2d45}
+.btn-back:hover{background:#253348;color:#e2e8f0}
+
+/* Summary */
+.summary-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1f2d45;font-size:13px}
+.summary-row:last-child{border-bottom:none}
+.s-label{color:#4a6080}
+.s-val{color:#e2e8f0;font-weight:500;text-align:right}
+.s-val.mint{color:#10b981}
+
+.msg{padding:10px 14px;border-radius:8px;font-size:12px;margin-top:12px;display:none}
+.msg.success{background:rgba(16,185,129,.08);color:#10b981;border:1px solid rgba(16,185,129,.2)}
+.msg.error{background:rgba(239,68,68,.08);color:#ef4444;border:1px solid rgba(239,68,68,.2)}
+</style>
+</head>
+<body>
+<div class="wizard">
+  <div class="brand">L<span>EDGR</span></div>
+  <p class="sub">Set up your business workspace — takes 60 seconds</p>
+
+  <!-- Progress -->
+  <div class="steps">
+    <div class="step"><div class="step-dot active" id="dot-1">1</div></div>
+    <div class="step"><div class="step-line" id="line-1"></div></div>
+    <div class="step"><div class="step-dot" id="dot-2">2</div></div>
+    <div class="step"><div class="step-line" id="line-2"></div></div>
+    <div class="step"><div class="step-dot" id="dot-3">3</div></div>
+    <div class="step"><div class="step-line" id="line-3"></div></div>
+    <div class="step"><div class="step-dot" id="dot-4">4</div></div>
+  </div>
+
+  <!-- Step 1: Where + What type -->
+  <div id="step-1">
+    <div class="card">
+      <div class="card-title">Where is your business?</div>
+      <div class="card-sub">This sets your tax rules, currency, and compliance requirements automatically.</div>
+      <div class="fl">
+        <label>Country / Market</label>
+        <select id="w-region" onchange="updateRegionInfo()">
+          {% for code, info in tax_rules.items() %}
+          <option value="{{ code }}" {% if code=='MV' %}selected{% endif %}>{{ info.name }} — {{ info.currency }} · {{ info.tax_name }} {{ (info.tax_rate*100)|int }}%</option>
+          {% endfor %}
+        </select>
+        <div id="region-info" style="font-size:11px;color:#4a6080;margin-top:5px"></div>
+      </div>
+      <div class="fl">
+        <label>Business Name *</label>
+        <input type="text" id="w-name" placeholder="Cafe Sunrise, Ahmed & Sons, ABC Pharmacy...">
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">Legal structure</div>
+      <div class="card-sub">Determines accounting complexity and reporting requirements.</div>
+      <div class="opt-grid opt-grid-3" id="btype-grid">
+        {% for code, info in business_types.items() %}
+        <div class="opt {% if code=='sole_proprietor' %}sel{% endif %}" onclick="selBtype('{{ code }}',this)">
+          <div class="opt-name">{{ info.name }}</div>
+          <span class="opt-tag {% if info.accounting=='full' %}full{% endif %}">{{ info.accounting }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <input type="hidden" id="w-btype" value="sole_proprietor">
+    </div>
+    <div class="btn-row">
+      <a href="/dashboard" class="btn btn-back" style="text-decoration:none;display:flex;align-items:center;justify-content:center">Skip for now</a>
+      <button class="btn btn-primary" onclick="goStep(2)">Next: Industry →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Industry -->
+  <div id="step-2" style="display:none">
+    <div class="card">
+      <div class="card-title">What type of business?</div>
+      <div class="card-sub">LEDGR configures your accounts, tax logic, and features automatically for your industry.</div>
+      <div class="opt-grid opt-grid-2" id="industry-grid">
+        <div class="opt sel" onclick="selIndustry('general',this)">
+          <div class="opt-icon">🏢</div>
+          <div class="opt-name">General Business</div>
+          <div class="opt-desc">Consulting, services, mixed</div>
+        </div>
+        <div class="opt" onclick="selIndustry('hospitality',this)">
+          <div class="opt-icon">☕</div>
+          <div class="opt-name">Hospitality / F&B</div>
+          <div class="opt-desc">Cafe, restaurant, guesthouse</div>
+          <span class="opt-tag">Service charge</span>
+        </div>
+        <div class="opt" onclick="selIndustry('retail',this)">
+          <div class="opt-icon">🛒</div>
+          <div class="opt-name">Retail / Grocery</div>
+          <div class="opt-desc">Shop, supermarket, store</div>
+        </div>
+        <div class="opt" onclick="selIndustry('healthcare',this)">
+          <div class="opt-icon">💊</div>
+          <div class="opt-name">Healthcare / Pharmacy</div>
+          <div class="opt-desc">Pharmacy, clinic, lab</div>
+          <span class="opt-tag">Expiry tracking</span>
+        </div>
+        <div class="opt" onclick="selIndustry('construction',this)">
+          <div class="opt-icon">🏗️</div>
+          <div class="opt-name">Construction / Trade</div>
+          <div class="opt-desc">Contractor, builder, supplier</div>
+        </div>
+        <div class="opt" onclick="selIndustry('professional',this)">
+          <div class="opt-icon">💼</div>
+          <div class="opt-name">Professional Services</div>
+          <div class="opt-desc">Legal, accounting, consulting</div>
+        </div>
+        <div class="opt" onclick="selIndustry('logistics',this)">
+          <div class="opt-icon">🚚</div>
+          <div class="opt-name">Logistics / Delivery</div>
+          <div class="opt-desc">Transport, courier, freight</div>
+        </div>
+        <div class="opt" onclick="selIndustry('education',this)">
+          <div class="opt-icon">📚</div>
+          <div class="opt-name">Education</div>
+          <div class="opt-desc">School, tuition, training</div>
+        </div>
+      </div>
+      <input type="hidden" id="w-industry" value="general">
+      <div id="industry-note" style="font-size:11px;color:#4a6080;margin-top:12px;padding:10px;background:#0a0e17;border-radius:7px;border:1px solid #1f2d45;display:none"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="goStep(1)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(3)">Next: Locations →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Locations -->
+  <div id="step-3" style="display:none">
+    <div class="card">
+      <div class="card-title">How many locations?</div>
+      <div class="card-sub">Each location has its own separate inventory. You can add more later.</div>
+      <div class="opt-grid opt-grid-3" style="margin-bottom:16px">
+        <div class="opt sel" onclick="setLocCount(1,this)"><div class="opt-name" style="font-size:22px;margin-bottom:4px">1</div><div class="opt-desc">Single outlet</div></div>
+        <div class="opt" onclick="setLocCount(2,this)"><div class="opt-name" style="font-size:22px;margin-bottom:4px">2</div><div class="opt-desc">Two branches</div></div>
+        <div class="opt" onclick="setLocCount(3,this)"><div class="opt-name" style="font-size:22px;margin-bottom:4px">3+</div><div class="opt-desc">Multiple outlets</div></div>
+      </div>
+      <div id="loc-names-section">
+        <label>Name your locations</label>
+        <div id="loc-inputs">
+          <div class="loc-input"><input type="text" placeholder="Main Branch" value="Main Branch" class="loc-name-field"></div>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="goStep(2)">← Back</button>
+      <button class="btn btn-primary" onclick="goStep(4)">Review & Create →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Summary + Create -->
+  <div id="step-4" style="display:none">
+    <div class="card">
+      <div class="card-title">Ready to launch 🚀</div>
+      <div class="card-sub">Review your setup before we create your workspace.</div>
+      <div id="summary"></div>
+    </div>
+    <div class="card" style="background:rgba(16,185,129,.04);border-color:rgba(16,185,129,.2)">
+      <div style="font-size:12px;color:#4a6080;margin-bottom:8px;font-weight:600">LEDGR will automatically set up:</div>
+      <div id="auto-setup" style="font-size:12px;color:#8899aa;line-height:1.8"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="goStep(3)">← Back</button>
+      <button class="btn btn-primary" id="create-btn" onclick="createBusiness()">Create My Workspace →</button>
+    </div>
+    <div class="msg" id="wizard-msg"></div>
+  </div>
+</div>
+
+<script>
+var state = { region:'MV', name:'', btype:'sole_proprietor', industry:'general', num_locations:1, location_names:['Main Branch'] };
+var industryNotes = {
+  general: '', hospitality: '✓ Service Charge Payable account · ✓ F&B revenue accounts · ✓ Kitchen cost accounts',
+  retail: '✓ Goods for Resale inventory account · ✓ Shrinkage account',
+  healthcare: '✓ Medicine Inventory accounts · ✓ Expiry tracking enabled · ✓ Dispensing revenue',
+  construction: '✓ Work in Progress account · ✓ Contract Revenue · ✓ Subcontractor Costs',
+  professional: '✓ Professional Fees Revenue · ✓ Standard service accounts',
+  logistics: '✓ Fleet/Vehicle accounts · ✓ Delivery Revenue',
+  education: '✓ Tuition Revenue · ✓ Course Materials accounts'
+};
+var btypeLabels = {};
+{% for code, info in business_types.items() %}btypeLabels['{{ code }}'] = '{{ info.name }}';{% endfor %}
+var industryLabels = {general:'General Business',hospitality:'Hospitality / F&B',retail:'Retail / Grocery',healthcare:'Healthcare / Pharmacy',construction:'Construction / Trade',professional:'Professional Services',logistics:'Logistics / Delivery',education:'Education'};
+var regionLabels = {};
+{% for code, info in tax_rules.items() %}regionLabels['{{ code }}'] = '{{ info.name }} ({{ info.currency }})';{% endfor %}
+
+function goStep(n) {
+  if (n === 2 && !document.getElementById('w-name').value.trim()) { alert('Please enter your business name'); return; }
+  for (var i=1;i<=4;i++) { document.getElementById('step-'+i).style.display = i===n?'block':'none'; }
+  for (var i=1;i<=4;i++) {
+    var dot = document.getElementById('dot-'+i);
+    dot.className = 'step-dot' + (i===n?' active':i<n?' done':'');
+    if (i<4) { document.getElementById('line-'+i).className = 'step-line' + (i<n?' done':''); }
+  }
+  if (n === 4) buildSummary();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+function selBtype(code, el) {
+  document.querySelectorAll('#btype-grid .opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel'); state.btype = code; document.getElementById('w-btype').value = code;
+}
+
+function selIndustry(code, el) {
+  document.querySelectorAll('#industry-grid .opt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel'); state.industry = code; document.getElementById('w-industry').value = code;
+  var note = document.getElementById('industry-note');
+  if (industryNotes[code]) { note.textContent = industryNotes[code]; note.style.display='block'; }
+  else { note.style.display = 'none'; }
+}
+
+function setLocCount(n, el) {
+  document.querySelectorAll('.opt-grid .opt').forEach(function(o,i){if(i<3)o.classList.remove('sel')});
+  el.classList.add('sel'); state.num_locations = n;
+  var inputs = document.getElementById('loc-inputs'); inputs.innerHTML = '';
+  var placeholders = ['Main Branch','Branch 2','Branch 3'];
+  var count = n === 3 ? 3 : n;
+  for (var i=0;i<count;i++) {
+    var d = document.createElement('div'); d.className = 'loc-input';
+    d.innerHTML = '<input type="text" class="loc-name-field" placeholder="'+placeholders[i]+'" value="'+(i===0?'Main Branch':'')+'">';
+    inputs.appendChild(d);
+  }
+}
+
+function updateRegionInfo() {
+  state.region = document.getElementById('w-region').value;
+}
+
+function buildSummary() {
+  state.name = document.getElementById('w-name').value.trim();
+  state.region = document.getElementById('w-region').value;
+  state.btype = document.getElementById('w-btype').value;
+  state.industry = document.getElementById('w-industry').value;
+  var locs = Array.from(document.querySelectorAll('.loc-name-field')).map(i=>i.value||'Branch');
+  state.location_names = locs; state.num_locations = locs.length;
+
+  document.getElementById('summary').innerHTML =
+    '<div class="summary-row"><span class="s-label">Business Name</span><span class="s-val mint">' + state.name + '</span></div>' +
+    '<div class="summary-row"><span class="s-label">Country</span><span class="s-val">' + (regionLabels[state.region]||state.region) + '</span></div>' +
+    '<div class="summary-row"><span class="s-label">Legal Structure</span><span class="s-val">' + (btypeLabels[state.btype]||state.btype) + '</span></div>' +
+    '<div class="summary-row"><span class="s-label">Industry</span><span class="s-val">' + (industryLabels[state.industry]||state.industry) + '</span></div>' +
+    '<div class="summary-row"><span class="s-label">Locations</span><span class="s-val">' + state.location_names.join(', ') + '</span></div>';
+
+  var autoItems = ['✓ Full Chart of Accounts for ' + (industryLabels[state.industry]||state.industry)];
+  if (state.industry === 'hospitality') autoItems.push('✓ Service Charge Payable liability account');
+  if (state.industry === 'healthcare') autoItems.push('✓ Medicine Inventory & Expiry tracking');
+  if (state.num_locations > 1) autoItems.push('✓ ' + state.num_locations + ' separate inventory locations');
+  autoItems.push('✓ POS enabled · AI Accountant ready · WhatsApp receipts');
+  document.getElementById('auto-setup').innerHTML = autoItems.join('<br>');
+}
+
+function createBusiness() {
+  var btn = document.getElementById('create-btn');
+  btn.disabled = true; btn.textContent = 'Creating workspace...';
+  fetch('/setup/wizard/complete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      region: state.region, business_name: state.name,
+      business_type: state.btype, industry_type: state.industry,
+      num_locations: state.num_locations, location_names: state.location_names
+    })
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) {
+      var msg = document.getElementById('wizard-msg');
+      msg.className = 'msg success'; msg.style.display = 'block';
+      msg.textContent = res.message;
+      setTimeout(function(){ window.location.href = res.redirect; }, 1500);
+    } else {
+      btn.disabled = false; btn.textContent = 'Create My Workspace →';
+      var msg = document.getElementById('wizard-msg');
+      msg.className = 'msg error'; msg.style.display = 'block';
+      msg.textContent = 'Error: ' + res.error;
+    }
+  });
+}
+</script>
+</body>
+</html>
