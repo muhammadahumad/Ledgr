@@ -12,9 +12,10 @@
     <td style="color:var(--text3);font-size:11px">{{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
     <td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text)">{{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
     <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='SENT' %}blue{% else %}gray{% endif %}">{{ inv.status }}</span></td>
-    <td style="display:flex;gap:4px">
-      {% if inv.status != 'PAID' %}<button class="btn btn-sm" onclick="markPaid({{ inv.id }})">Mark Paid</button>{% endif %}
-      <button class="btn btn-sm" onclick="shareWA({{ inv.id }})">📤 WA</button>
+    <td style="display:flex;gap:4px;flex-wrap:wrap">
+      <a href="/invoice/{{ inv.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
+      {% if inv.status != 'PAID' %}<button class="btn btn-sm btn-primary" onclick="markPaid({{ inv.id }})">✓ Paid</button>{% endif %}
+      <button class="btn btn-sm" onclick="emailInv({{ inv.id }})">✉</button>
     </td>
   </tr>{% endfor %}
   </tbody></table>
@@ -54,5 +55,5 @@ function updateItem(i,k,v){if(!invItems[i])return;invItems[i][k]=k==='desc'?v:pa
 function updateTotal(){var t=invItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('inv-total').textContent='Total: '+t.toFixed(2);}
 function createInvoice(){var items=invItems.filter(Boolean).filter(i=>i.desc);if(!items.length){alert('Add at least one item');return;}fetch('/api/invoice/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('inv-cust').value||null,due_date:document.getElementById('inv-due').value,notes:document.getElementById('inv-notes').value,items:items})}).then(r=>r.json()).then(res=>{if(res.ok){var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--mint)';msg.textContent='✓ Invoice '+res.invoice_number+' created — Total: '+res.total.toFixed(2);window._lastWaUrl=res.wa_url;setTimeout(()=>{if(confirm('Share invoice on WhatsApp?'))window.open(res.wa_url,'_blank');closeModal('create-inv-modal');location.reload();},500);}else{var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}});}
 function markPaid(id){if(confirm('Mark this invoice as paid?'))fetch('/api/invoice/'+id+'/mark-paid',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
-function shareWA(id){alert('WhatsApp sharing: re-create the invoice to get a fresh link, or copy the invoice number and send manually.');}
+function emailInv(id){fetch('/api/invoice/'+id+'/email',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject)+'&body='+encodeURIComponent(res.subject);}}}); }
 </script>{% endblock %}

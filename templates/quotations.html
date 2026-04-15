@@ -16,10 +16,11 @@
     <td style="text-align:right;font-family:var(--mono);font-weight:500">{{ q.currency }} {{ "%.2f"|format(q.total_amount) }}</td>
     <td><span class="badge badge-{% if q.status=='CONVERTED' %}green{% elif q.status=='ACCEPTED' %}blue{% elif q.status=='REJECTED' %}red{% elif q.status=='SENT' %}amber{% else %}gray{% endif %}">{{ q.status }}</span></td>
     <td style="display:flex;gap:4px;flex-wrap:wrap">
+      <a href="/quote/{{ q.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
       {% if q.status not in ['CONVERTED','REJECTED'] %}
         <button class="btn btn-sm btn-primary" onclick="convertQuote({{ q.id }},'{{ q.quote_number }}')">→ Invoice</button>
         <button class="btn btn-sm" onclick="markStatus({{ q.id }},'ACCEPTED')">Accept</button>
-        <button class="btn btn-sm" onclick="markStatus({{ q.id }},'REJECTED')" style="color:var(--red)">Reject</button>
+        <button class="btn btn-sm" onclick="emailQuote({{ q.id }})">✉</button>
       {% endif %}
       {% if q.status == 'CONVERTED' %}<span style="font-size:11px;color:var(--text3)">Invoiced</span>{% endif %}
     </td>
@@ -69,5 +70,6 @@ function updQ(i,k,v){if(!qItems[i])return;qItems[i][k]=k==='desc'?v:parseFloat(v
 function updTotal(){var t=qItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('q-total').textContent='Total: {{ business.base_currency }} '+t.toFixed(2);}
 function createQuote(){var items=qItems.filter(Boolean).filter(i=>i.desc&&i.total>0);if(!items.length){alert('Add at least one item with a price');return;}fetch('/api/quotation/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('q-cust').value||null,valid_until:document.getElementById('q-valid').value,notes:document.getElementById('q-notes').value,items:items.map(i=>({desc:i.desc,qty:i.qty,unit_price:i.price,total:i.total}))})}).then(r=>r.json()).then(res=>{if(res.ok){window.open(res.wa_url,'_blank');closeModal('create-quote-modal');location.reload();}else{var m=document.getElementById('q-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
 function convertQuote(id,num){if(confirm('Convert quotation '+num+' to an invoice?'))fetch('/api/quotation/'+id+'/convert',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){alert('Converted to invoice '+res.invoice_number);location.reload();}else alert('Error: '+res.error);});}
+function emailQuote(id){fetch('/api/quote/'+id+'/email',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject);}}});}
 function markStatus(id,status){fetch('/api/quotation/'+id+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
 </script>{% endblock %}

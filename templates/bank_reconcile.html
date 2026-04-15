@@ -1,0 +1,86 @@
+{% extends "base.html" %}{% block title %}Reconcile — {{ account.bank_name }}{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Bank Reconciliation</div><div class="page-sub">{{ account.bank_name }} · {{ account.account_name }} · {{ account.currency }}</div></div>
+  <a href="/bank" class="btn">← Back to Bank</a>
+</div>
+<div class="content" style="max-width:700px">
+  <div class="card" style="border-color:rgba(16,185,129,.3)">
+    <div class="card-title">Reconcile Account</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px">
+      <div class="stat-card"><div class="stat-label">Opening Balance</div><div class="stat-value" style="font-size:16px">{{ account.currency }} {{ "%.2f"|format(account.opening_balance) }}</div></div>
+      <div class="stat-card"><div class="stat-label">Current Book Balance</div><div class="stat-value" style="font-size:16px" id="book-bal">{{ account.currency }} {{ "%.2f"|format(account.current_balance) }}</div></div>
+      <div class="stat-card" id="variance-card"><div class="stat-label">Variance</div><div class="stat-value" style="font-size:16px" id="variance-val">—</div></div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Statement Closing Balance (from your bank statement)</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="color:var(--mint);font-weight:600">{{ account.currency }}</span>
+        <input class="field-input" type="number" id="stmt-bal" step="0.01" placeholder="0.00" oninput="calcVariance()" style="flex:1;max-width:200px">
+        <button class="btn btn-primary" onclick="reconcile()">Reconcile</button>
+      </div>
+    </div>
+    <div id="reconcile-result" style="display:none;margin-top:12px"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Transaction History <span class="badge badge-blue">{{ transactions|length }}</span></div>
+    {% if transactions %}
+    <table class="table"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th><th>Status</th></tr></thead><tbody>
+    {% for t in transactions %}<tr>
+      <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">{{ t.txn_date.strftime('%d %b %Y') if t.txn_date else '—' }}</td>
+      <td style="color:var(--text)">{{ t.description or '—' }}</td>
+      <td style="color:var(--text3);font-size:11px">{{ t.category or '—' }}</td>
+      <td style="text-align:right;color:var(--red);font-family:var(--mono)">{% if t.debit > 0 %}{{ "%.2f"|format(t.debit) }}{% endif %}</td>
+      <td style="text-align:right;color:var(--mint);font-family:var(--mono)">{% if t.credit > 0 %}{{ "%.2f"|format(t.credit) }}{% endif %}</td>
+      <td style="text-align:right;font-family:var(--mono)">{{ "%.2f"|format(t.balance) }}</td>
+      <td><span class="badge badge-{% if t.is_reconciled %}green{% else %}amber{% endif %}">{% if t.is_reconciled %}✓{% else %}Pending{% endif %}</span></td>
+    </tr>{% endfor %}
+    </tbody></table>
+    {% else %}
+    <div style="text-align:center;padding:30px;color:var(--text3)">No transactions yet. Upload a bank statement to get started.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+var bookBal = {{ account.current_balance|float }};
+var currency = '{{ account.currency }}';
+
+function calcVariance() {
+  var stmt = parseFloat(document.getElementById('stmt-bal').value) || 0;
+  var variance = stmt - bookBal;
+  var el = document.getElementById('variance-val');
+  var card = document.getElementById('variance-card');
+  el.textContent = currency + ' ' + variance.toFixed(2);
+  if (Math.abs(variance) < 0.01) {
+    el.style.color = 'var(--mint)';
+    card.style.borderColor = 'rgba(16,185,129,.3)';
+  } else {
+    el.style.color = variance < 0 ? 'var(--red)' : 'var(--amber)';
+    card.style.borderColor = 'rgba(239,68,68,.3)';
+  }
+}
+
+function reconcile() {
+  var stmt = parseFloat(document.getElementById('stmt-bal').value);
+  if (!stmt && stmt !== 0) { alert('Enter statement balance'); return; }
+  fetch('/api/bank/reconcile', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({account_id: {{ account.id }}, statement_balance: stmt})
+  }).then(r=>r.json()).then(res=>{
+    var el = document.getElementById('reconcile-result');
+    el.style.display = 'block';
+    if (res.ok) {
+      if (res.reconciled) {
+        el.innerHTML = '<div class="alert alert-success">✓ Reconciled! Statement balance matches book balance. Difference: ' + currency + ' 0.00</div>';
+      } else {
+        el.innerHTML = '<div class="alert" style="background:rgba(245,158,11,.08);border-color:var(--amber);color:var(--amber)">⚠ Variance of ' + currency + ' ' + Math.abs(res.variance).toFixed(2) + '. Review unrecorded transactions or timing differences.</div>';
+      }
+      document.getElementById('book-bal').textContent = currency + ' ' + res.book_balance.toFixed(2);
+      bookBal = res.book_balance;
+    } else {
+      el.innerHTML = '<div class="alert alert-error">Error: ' + res.error + '</div>';
+    }
+  });
+}
+</script>{% endblock %}

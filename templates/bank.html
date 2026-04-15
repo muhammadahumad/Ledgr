@@ -15,6 +15,7 @@
       <div class="stat-label">{{ acct.bank_name }}</div>
       <div class="stat-value" style="font-size:18px">{{ acct.currency }} {{ "%.2f"|format(acct.current_balance) }}</div>
       <div class="stat-sub">{{ acct.account_name }} · {{ acct.account_number[-4:] if acct.account_number else '****' }}</div>
+      <a href="/bank/reconcile/{{ acct.id }}" style="font-size:11px;color:var(--mint);text-decoration:none;margin-top:4px;display:inline-block">Reconcile →</a>
     </div>
     {% endfor %}
   </div>

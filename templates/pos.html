@@ -13,6 +13,16 @@
 </div>
 
 <div class="content">
+{% if locations|length > 1 %}
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+  <span style="font-size:11px;color:var(--text3);font-weight:500">Branch:</span>
+  {% for loc in locations %}
+  <a href="/pos?location_id={{ loc.id }}" class="btn btn-sm {% if current_location and current_location.id==loc.id %}btn-primary{% endif %}">
+    {% if loc.is_warehouse %}🏭{% else %}🏪{% endif %} {{ loc.name }}
+  </a>
+  {% endfor %}
+</div>
+{% endif %}
 <div style="display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start">
 
   <!-- LEFT: Customer + Products + Cart -->
@@ -365,7 +375,9 @@ function recordSale() {
     body: JSON.stringify({
       amount: amt, payment_method: payment,
       note: note, category: 'Sale',
-      customer_id: custId, tax_inclusive: true
+      customer_id: custId, tax_inclusive: true,
+      location_id: {{ current_location.id if current_location else 'null' }},
+      apply_service_charge: {{ 'true' if business.has_service_charge else 'false' }}
     })
   }).then(function(r) { return r.json(); }).then(function(res) {
     if (res.ok) {
@@ -386,6 +398,7 @@ function recordSale() {
       result.style.display = 'block';
       result.textContent = '✓ ' + CUR + ' ' + res.amount.toFixed(2) + ' recorded';
       if (res.tax_amount > 0) result.textContent += ' · Tax: ' + res.tax_amount.toFixed(2);
+      if (res.service_charge > 0) result.textContent += ' · Service Charge: ' + res.service_charge.toFixed(2);
       if (res.threshold_warning && res.threshold_warning.warning) result.textContent += ' ⚠ Approaching threshold!';
 
       document.getElementById('next-btn').style.display = 'block';
