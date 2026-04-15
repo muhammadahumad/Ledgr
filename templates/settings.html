@@ -3,7 +3,10 @@
 {% block content %}
 <div class="topbar">
   <div><div class="page-title">Settings</div><div class="page-sub">Business profile · Legal details · Modules · Account</div></div>
-  <button class="btn btn-primary" onclick="saveAllSettings()">Save All Changes</button>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="global-msg" style="display:none;font-size:12px;font-weight:500"></span>
+    <button class="btn btn-primary" onclick="saveAllSettings()">Save All Changes</button>
+  </div>
 </div>
 <div class="content" style="max-width:800px">
 
@@ -211,21 +214,13 @@ function toggleField(key, value, toggleId, spanId, knobId) {
   fetch('/api/business/settings', {
     method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
   }).then(r => r.json()).then(res => {
-    var msg = document.getElementById('module-msg');
-    msg.style.display = 'block';
     if (res.ok) {
-      msg.style.color = 'var(--mint)';
-      msg.textContent = '✓ Saved';
+      showMsg('✓ Saved');
     } else {
-      msg.style.color = 'var(--red)';
-      msg.textContent = 'Error: ' + (res.error || 'Unknown error');
+      showMsg('Error: ' + (res.error || 'Unknown'), true);
     }
-    setTimeout(() => msg.style.display = 'none', 2500);
-  }).catch(function(err) {
-    var msg = document.getElementById('module-msg');
-    msg.style.display = 'block';
-    msg.style.color = 'var(--red)';
-    msg.textContent = 'Connection error';
+  }).catch(function() {
+    showMsg('Connection error', true);
   });
 }
 
@@ -281,11 +276,22 @@ function saveAllSettings() {
 }
 
 function showMsg(msg, isError) {
-  var el = document.getElementById('module-msg');
-  el.style.display = 'block';
-  el.style.color = isError ? 'var(--red)' : 'var(--mint)';
-  el.textContent = msg;
-  setTimeout(() => el.style.display = 'none', 3000);
+  // Show in topbar
+  var el = document.getElementById('global-msg');
+  if (el) {
+    el.style.display = 'inline-block';
+    el.style.color = isError ? 'var(--red)' : 'var(--mint)';
+    el.textContent = msg;
+    setTimeout(() => el.style.display = 'none', 3000);
+  }
+  // Also show in module-msg if it exists
+  var el2 = document.getElementById('module-msg');
+  if (el2) {
+    el2.style.display = 'block';
+    el2.style.color = isError ? 'var(--red)' : 'var(--mint)';
+    el2.textContent = msg;
+    setTimeout(() => el2.style.display = 'none', 3000);
+  }
 }
 
 function requestUpgrade(plan) {
