@@ -71,22 +71,66 @@ DEFAULT_COA = {
 class Business(db.Model):
     __tablename__ = 'businesses'
     id = db.Column(db.Integer, primary_key=True)
+    # Core identity
     name = db.Column(db.String(100), nullable=False)
+    legal_name = db.Column(db.String(200))           # Full legal registered name
     business_type = db.Column(db.String(30), default='sole_proprietor')
     region = db.Column(db.String(5), default='MV')
     base_currency = db.Column(db.String(3), default='MVR')
-    tax_id = db.Column(db.String(50))
+    secondary_currency = db.Column(db.String(3))     # e.g. USD for Maldives businesses
+    # Legal registration
+    registration_number = db.Column(db.String(100))  # Company reg number
+    tax_id = db.Column(db.String(50))                # General tax ID
+    tax_registration_number = db.Column(db.String(50))  # GST/VAT reg number
+    tax_registration_date = db.Column(db.Date)
+    # Address
+    address_line1 = db.Column(db.String(200))
+    address_line2 = db.Column(db.String(200))
+    city = db.Column(db.String(100))
+    country = db.Column(db.String(100))
+    phone = db.Column(db.String(30))
+    email = db.Column(db.String(150))
+    website = db.Column(db.String(200))
+    # Branding
+    logo_data = db.Column(db.Text)                   # base64 logo
+    logo_type = db.Column(db.String(30))             # image/png etc
+    # Banking
+    bank_name = db.Column(db.String(100))
+    bank_account_name = db.Column(db.String(100))
+    bank_account_number = db.Column(db.String(50))
+    bank_swift = db.Column(db.String(20))
+    # Invoice settings
+    invoice_prefix = db.Column(db.String(10), default='INV')
+    quote_prefix = db.Column(db.String(10), default='QUO')
+    invoice_notes = db.Column(db.Text)               # Default payment terms
+    invoice_counter = db.Column(db.Integer, default=0)
+    quote_counter = db.Column(db.Integer, default=0)
+    # Module toggles
     has_inventory = db.Column(db.Boolean, default=False)
     has_payroll = db.Column(db.Boolean, default=False)
     has_pos = db.Column(db.Boolean, default=True)
     has_full_accounting = db.Column(db.Boolean, default=False)
+    # Tax settings
     is_tax_registered = db.Column(db.Boolean, default=False)
-    tax_registration_number = db.Column(db.String(50))
+    collect_tax_on_sales = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
     def tax_rules(self): return TAX_RULES.get(self.region, TAX_RULES['MV'])
     def btype(self): return BUSINESS_TYPES.get(self.business_type, BUSINESS_TYPES['sole_proprietor'])
     def btype_name(self): return self.btype()['name']
     def btype_accounting(self): return self.btype()['accounting']
+    def display_name(self): return self.legal_name or self.name
+    def full_address(self):
+        parts = [p for p in [self.address_line1, self.address_line2, self.city, self.country] if p]
+        return ', '.join(parts)
+    def next_invoice_number(self):
+        self.invoice_counter = (self.invoice_counter or 0) + 1
+        db.session.commit()
+        return f"{self.invoice_prefix or 'INV'}-{datetime.utcnow().year}-{self.invoice_counter:04d}"
+    def next_quote_number(self):
+        self.quote_counter = (self.quote_counter or 0) + 1
+        db.session.commit()
+        return f"{self.quote_prefix or 'QUO'}-{datetime.utcnow().year}-{self.quote_counter:04d}" 
 
 class User(db.Model):
     __tablename__ = 'users'
@@ -242,6 +286,27 @@ class Customer(db.Model):
     last_visit = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+
+class Supplier(db.Model):
+    """Vendors/Suppliers — auto-populated from document uploads"""
+    __tablename__ = 'suppliers'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    name = db.Column(db.String(200), nullable=False)
+    tax_id = db.Column(db.String(50))           # Vendor TIN/VAT number
+    email = db.Column(db.String(150))
+    phone = db.Column(db.String(30))
+    address = db.Column(db.Text)
+    currency = db.Column(db.String(3), default='MVR')
+    payment_terms = db.Column(db.String(50), default='Net 30')
+    notes = db.Column(db.Text)
+    total_purchases = db.Column(db.Numeric(12,2), default=0)
+    is_active = db.Column(db.Boolean, default=True)
+    auto_detected = db.Column(db.Boolean, default=False)  # True if added from upload
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='suppliers')
+
 class POSSale(db.Model):
     __tablename__ = 'pos_sales'
     id = db.Column(db.Integer, primary_key=True)
@@ -299,18 +364,24 @@ class Invoice(db.Model):
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
     invoice_number = db.Column(db.String(50))
+    po_number = db.Column(db.String(100))        # Customer PO reference
     invoice_date = db.Column(db.Date, default=date.today)
     due_date = db.Column(db.Date)
     currency = db.Column(db.String(3), default='MVR')
+    exchange_rate = db.Column(db.Numeric(10,4), default=1)  # For multicurrency
     subtotal = db.Column(db.Numeric(12,2), default=0)
+    discount_amount = db.Column(db.Numeric(12,2), default=0)
     tax_amount = db.Column(db.Numeric(12,2), default=0)
     total_amount = db.Column(db.Numeric(12,2), default=0)
-    status = db.Column(db.String(20), default='DRAFT')
+    amount_paid = db.Column(db.Numeric(12,2), default=0)
+    status = db.Column(db.String(20), default='DRAFT')  # DRAFT SENT PAID PARTIAL OVERDUE CANCELLED
+    payment_terms = db.Column(db.String(100))
     notes = db.Column(db.Text)
-    items = db.Column(db.Text, default='[]')
+    items = db.Column(db.Text, default='[]')     # JSON line items
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     customer = db.relationship('Customer', backref='invoices')
     business = db.relationship('Business', backref='invoices')
+    def amount_due(self): return float(self.total_amount or 0) - float(self.amount_paid or 0)
 
 
 
@@ -324,11 +395,14 @@ class Quotation(db.Model):
     quote_date = db.Column(db.Date, default=date.today)
     valid_until = db.Column(db.Date)
     currency = db.Column(db.String(3), default='MVR')
+    exchange_rate = db.Column(db.Numeric(10,4), default=1)
     subtotal = db.Column(db.Numeric(12,2), default=0)
+    discount_amount = db.Column(db.Numeric(12,2), default=0)
     tax_amount = db.Column(db.Numeric(12,2), default=0)
     total_amount = db.Column(db.Numeric(12,2), default=0)
-    status = db.Column(db.String(20), default='DRAFT')  # DRAFT, SENT, ACCEPTED, REJECTED, CONVERTED
+    status = db.Column(db.String(20), default='DRAFT')
     notes = db.Column(db.Text)
+    terms = db.Column(db.Text)                   # Payment/delivery terms
     items = db.Column(db.Text, default='[]')
     converted_invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -1315,8 +1389,7 @@ def api_quotation_create():
     tax_rate = business.tax_rules()["tax_rate"] if business.is_tax_registered else 0
     tax_amt = round(subtotal * tax_rate, 2)
     total = subtotal + tax_amt
-    count = Quotation.query.filter_by(business_id=business.id).count() + 1
-    q_num = "QUO-" + str(datetime.utcnow().year) + "-" + str(count).zfill(4)
+    q_num = business.next_quote_number()
     valid_until = None
     try:
         if data.get("valid_until"): valid_until = datetime.strptime(data["valid_until"],"%Y-%m-%d").date()
@@ -1345,8 +1418,7 @@ def api_quotation_convert(qid):
     quote = Quotation.query.filter_by(id=qid, business_id=business.id).first()
     if not quote: return jsonify({"ok":False,"error":"Quotation not found"})
     if quote.status == "CONVERTED": return jsonify({"ok":False,"error":"Already converted"})
-    count = Invoice.query.filter_by(business_id=business.id).count() + 1
-    inv_num = "INV-" + str(datetime.utcnow().year) + "-" + str(count).zfill(4)
+    inv_num = business.next_invoice_number()
     inv = Invoice(business_id=business.id, customer_id=quote.customer_id,
                   invoice_number=inv_num, subtotal=quote.subtotal, tax_amount=quote.tax_amount,
                   total_amount=quote.total_amount, currency=quote.currency,
