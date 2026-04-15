@@ -823,6 +823,41 @@ def ai_accountant():
     history = AIConversation.query.filter_by(business_id=business.id).order_by(AIConversation.created_at.asc()).limit(30).all()
     return render_template('ai.html', user=user, business=business, history=history, tax=business.tax_rules())
 
+
+@app.route("/api/business/profile", methods=["POST"])
+@login_required
+def api_business_profile():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    text_fields = ["name","legal_name","registration_number","phone","email","website",
+                   "address_line1","address_line2","city","country","tax_id",
+                   "tax_registration_number","bank_name","bank_account_name",
+                   "bank_account_number","bank_swift","secondary_currency",
+                   "invoice_prefix","quote_prefix","invoice_notes"]
+    for field in text_fields:
+        if field in data and data[field] is not None:
+            setattr(business, field, data[field])
+    if data.get("logo_data"):
+        business.logo_data = data["logo_data"]
+        business.logo_type = data.get("logo_type","image/png")
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Business profile updated"})
+
+
+@app.route("/api/business/logo")
+@login_required
+def api_business_logo():
+    business, err = api_business_guard()
+    if err: return ("", 404)
+    if business.logo_data:
+        import base64 as b64lib
+        from flask import Response
+        img_data = b64lib.b64decode(business.logo_data)
+        return Response(img_data, mimetype=business.logo_type or "image/png")
+    return "", 404
+
+
 @app.route('/admin')
 @login_required
 @admin_required
