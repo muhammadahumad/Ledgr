@@ -28,7 +28,7 @@
     <div class="stat-card">
       <div class="stat-label">Combined Revenue (30d)</div>
       <div class="stat-value" style="font-size:18px;color:var(--mint)">
-        {{ clients[0].tax.currency }} {{ "{:,.0f}".format(clients|sum(attribute='revenue_30d')) }}
+        {% if clients %}{{ clients[0].tax.currency }}{% endif %} {{ "{:,.0f}".format(clients|sum(attribute='revenue_30d')) }}
       </div>
     </div>
     <div class="stat-card">
@@ -39,8 +39,8 @@
     </div>
     <div class="stat-card">
       <div class="stat-label">Threshold Alerts</div>
-      <div class="stat-value" style="color:{% if clients|selectattr('threshold.warning')|list|length > 0 %}var(--red){% else %}var(--mint){% endif %}">
-        {{ clients|selectattr('threshold.warning')|list|length }}
+      <div class="stat-value" style="color:{% set ac=namespace(n=0) %}{% for c in clients %}{% if c.threshold and c.threshold.warning %}{% set ac.n=ac.n+1 %}{% endif %}{% endfor %}{% if ac.n>0 %}var(--red){% else %}var(--mint){% endif %}">
+        {% set ac=namespace(n=0) %}{% for c in clients %}{% if c.threshold and c.threshold.warning %}{% set ac.n=ac.n+1 %}{% endif %}{% endfor %}{{ ac.n }}
       </div>
     </div>
   </div>
@@ -69,7 +69,7 @@
             <div style="font-weight:600;color:var(--text)">{{ client.business.display_name() }}</div>
             <div style="font-size:10px;color:var(--text3)">{{ client.business.btype_name() }} · {{ client.role.title() }}</div>
           </td>
-          <td style="font-size:11px;color:var(--text3)">{{ client.business.industry().name }}</td>
+          <td style="font-size:11px;color:var(--text3)">{{ client.business.industry()['name'] }}</td>
           <td style="font-size:11px;color:var(--text3)">{{ client.tax.name }}</td>
           <td style="text-align:right;color:var(--mint);font-family:var(--mono)">{{ client.tax.currency }} {{ "{:,.0f}".format(client.revenue_30d) }}</td>
           <td style="text-align:right;color:var(--red);font-family:var(--mono)">{{ client.tax.currency }} {{ "{:,.0f}".format(client.expenses_30d) }}</td>
@@ -85,7 +85,7 @@
           </td>
           <td>
             {% if client.threshold.warning %}
-            <span class="badge badge-red" title="{{ client.threshold.message }}">⚠ {{ client.threshold.percentage|int }}%</span>
+            <span class="badge badge-red" title="{{ client.threshold.message }}">⚠ {{ (client.threshold.percentage or 0)|int }}%</span>
             {% elif client.business.is_tax_registered %}
             <span class="badge badge-blue">Registered</span>
             {% else %}
@@ -104,7 +104,7 @@
   </div>
 
   <!-- Threshold alerts -->
-  {% set alert_clients = clients|selectattr('threshold.warning')|list %}
+  {% set alert_clients = [] %}{% for c in clients %}{% if c.threshold and c.threshold.warning %}{% set _ = alert_clients.append(c) %}{% endif %}{% endfor %}
   {% if alert_clients %}
   <div class="card" style="border-color:rgba(239,68,68,.3)">
     <div class="card-title" style="color:var(--red)">⚠ Tax Threshold Alerts</div>
@@ -115,7 +115,7 @@
         <div style="font-size:11px;color:var(--text3)">{{ client.threshold.message }}</div>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
-        <div style="font-size:20px;font-weight:700;color:var(--red)">{{ client.threshold.percentage|int }}%</div>
+        <div style="font-size:20px;font-weight:700;color:var(--red)">{{ (client.threshold.percentage or 0)|int }}%</div>
         <a href="/accountant/switch/{{ client.business.id }}" class="btn btn-sm">Review →</a>
       </div>
     </div>
