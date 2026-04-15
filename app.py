@@ -1088,6 +1088,173 @@ def api_business_industry():
 
 
 
+
+
+# ── Professional Invoices & Quotes ────────────────────────────────────────────
+
+@app.route("/invoice/<int:inv_id>/pdf")
+@login_required
+def invoice_pdf(inv_id):
+    business = current_business()
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return "Invoice not found", 404
+    items = json.loads(inv.items or "[]")
+    html = render_template("invoice_pdf.html", business=business, invoice=inv,
+                           items=items, tax=business.tax_rules(), doc_type="INVOICE")
+    return html
+
+
+@app.route("/quote/<int:qid>/pdf")
+@login_required
+def quote_pdf(qid):
+    business = current_business()
+    quote = Quotation.query.filter_by(id=qid, business_id=business.id).first()
+    if not quote: return "Quote not found", 404
+    items = json.loads(quote.items or "[]")
+    html = render_template("invoice_pdf.html", business=business, invoice=quote,
+                           items=items, tax=business.tax_rules(), doc_type="QUOTATION")
+    return html
+
+
+@app.route("/api/invoice/<int:inv_id>/email", methods=["POST"])
+@login_required
+def api_invoice_email(inv_id):
+    """Send invoice via email using simple mailto link"""
+    business = current_business()
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    items = json.loads(inv.items or "[]")
+    customer_email = ""
+    if inv.customer and inv.customer.email:
+        customer_email = inv.customer.email
+    # Build email content
+    lines = []
+    for item in items:
+        lines.append(item.get("desc","Item") + " x" + str(item.get("qty",1)) + 
+                    " = " + str(inv.currency) + " " + str(float(item.get("total",0))))
+    nl = "\n"
+    body_parts = [
+        "Dear " + (inv.customer.name if inv.customer else "Customer") + "," + nl + nl,
+        "Please find your invoice details below." + nl + nl,
+        "Invoice: " + (inv.invoice_number or "") + nl,
+        "Date: " + (inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "") + nl,
+        "Due: " + (inv.due_date.strftime("%d %b %Y") if inv.due_date else "On receipt") + nl + nl,
+        "Items:" + nl + nl.join(lines) + nl + nl,
+        "Subtotal: " + str(inv.currency) + " " + str(float(inv.subtotal or 0)) + nl,
+    ]
+    if float(inv.tax_amount or 0) > 0:
+        body_parts.append("Tax: " + str(inv.currency) + " " + str(float(inv.tax_amount or 0)) + nl)
+    body_parts.append("TOTAL DUE: " + str(inv.currency) + " " + str(float(inv.total_amount or 0)) + nl + nl)
+    if inv.notes: body_parts.append(inv.notes + nl + nl)
+    body_parts.append("Bank Details:" + nl)
+    if business.bank_name: body_parts.append(business.bank_name + nl)
+    if business.bank_account_name: body_parts.append(business.bank_account_name + nl)
+    if business.bank_account_number: body_parts.append("Account: " + business.bank_account_number + nl)
+    if business.bank_swift: body_parts.append("SWIFT: " + business.bank_swift + nl)
+    body_parts.append(nl + "Powered by LEDGR | ledgrglobal.com")
+    body = "".join(body_parts)
+    subject = "Invoice " + (inv.invoice_number or "") + " from " + business.display_name()
+    mailto = "mailto:" + urllib.parse.quote(customer_email) + "?subject=" + urllib.parse.quote(subject) + "&body=" + urllib.parse.quote(body)
+    return jsonify({"ok":True,"mailto":mailto,"customer_email":customer_email,
+                    "subject":subject,"has_email":bool(customer_email)})
+
+
+@app.route("/api/quote/<int:qid>/email", methods=["POST"])
+@login_required  
+def api_quote_email(qid):
+    business = current_business()
+    quote = Quotation.query.filter_by(id=qid, business_id=business.id).first()
+    if not quote: return jsonify({"ok":False,"error":"Quote not found"})
+    items = json.loads(quote.items or "[]")
+    customer_email = ""
+    if quote.customer and quote.customer.email:
+        customer_email = quote.customer.email
+    lines = []
+    for item in items:
+        lines.append(item.get("desc","Item") + " x" + str(item.get("qty",1)) +
+                    " = " + str(quote.currency) + " " + str(float(item.get("total",0))))
+    nl = "\n"
+    body_parts = [
+        "Dear " + (quote.customer.name if quote.customer else "Customer") + "," + nl + nl,
+        "Please find our quotation below." + nl + nl,
+        "Quote: " + (quote.quote_number or "") + nl,
+        "Date: " + (quote.quote_date.strftime("%d %b %Y") if quote.quote_date else "") + nl,
+        "Valid Until: " + (quote.valid_until.strftime("%d %b %Y") if quote.valid_until else "14 days") + nl + nl,
+        "Items:" + nl + nl.join(lines) + nl + nl,
+        "Subtotal: " + str(quote.currency) + " " + str(float(quote.subtotal or 0)) + nl,
+    ]
+    if float(quote.tax_amount or 0) > 0:
+        body_parts.append("Tax: " + str(quote.currency) + " " + str(float(quote.tax_amount or 0)) + nl)
+    body_parts.append("TOTAL: " + str(quote.currency) + " " + str(float(quote.total_amount or 0)) + nl + nl)
+    if quote.notes: body_parts.append(quote.notes + nl + nl)
+    body_parts.append("This is a quotation only. Please confirm your acceptance to proceed." + nl + nl)
+    body_parts.append("Powered by LEDGR | ledgrglobal.com")
+    body = "".join(body_parts)
+    subject = "Quotation " + (quote.quote_number or "") + " from " + business.display_name()
+    mailto = "mailto:" + urllib.parse.quote(customer_email) + "?subject=" + urllib.parse.quote(subject) + "&body=" + urllib.parse.quote(body)
+    return jsonify({"ok":True,"mailto":mailto,"customer_email":customer_email,
+                    "subject":subject,"has_email":bool(customer_email)})
+
+
+# ── Multicurrency Bank Reconciliation ─────────────────────────────────────────
+
+@app.route("/bank/reconcile/<int:account_id>")
+@business_required
+def bank_reconcile(account_id):
+    user = current_user(); business = current_business()
+    acct = BankAccount.query.filter_by(id=account_id, business_id=business.id).first()
+    if not acct: return redirect(url_for("bank"))
+    transactions = BankTransaction.query.filter_by(
+        bank_account_id=account_id).order_by(BankTransaction.txn_date.desc()).limit(100).all()
+    return render_template("bank_reconcile.html", user=user, business=business,
+                           account=acct, transactions=transactions, tax=business.tax_rules())
+
+
+@app.route("/api/bank/reconcile", methods=["POST"])
+@login_required
+def api_bank_reconcile():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    account_id = data.get("account_id")
+    statement_balance = float(data.get("statement_balance", 0))
+    acct = BankAccount.query.filter_by(id=account_id, business_id=business.id).first()
+    if not acct: return jsonify({"ok":False,"error":"Account not found"})
+    # Calculate book balance from transactions
+    txns = BankTransaction.query.filter_by(bank_account_id=account_id).all()
+    book_balance = float(acct.opening_balance or 0)
+    for t in txns:
+        book_balance += float(t.credit or 0) - float(t.debit or 0)
+    variance = statement_balance - book_balance
+    acct.current_balance = statement_balance
+    db.session.commit()
+    return jsonify({"ok":True,"statement_balance":statement_balance,
+                    "book_balance":round(book_balance,2),
+                    "variance":round(variance,2),
+                    "reconciled":abs(variance) < 0.01,
+                    "currency":acct.currency})
+
+
+@app.route("/api/bank/add-account", methods=["POST"])
+@login_required
+def api_bank_add_account_v2():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    acct = BankAccount(business_id=business.id,
+                       bank_name=data.get("bank_name",""),
+                       account_name=data.get("account_name",""),
+                       account_number=data.get("account_number",""),
+                       currency=data.get("currency", business.base_currency),
+                       opening_balance=float(data.get("opening_balance",0)),
+                       current_balance=float(data.get("opening_balance",0)))
+    db.session.add(acct)
+    db.session.commit()
+    return jsonify({"ok":True,"account_id":acct.id,"name":acct.account_name,
+                    "currency":acct.currency})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
