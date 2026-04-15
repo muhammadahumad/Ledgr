@@ -1,89 +1,170 @@
 {% extends "base.html" %}
 {% block title %}Settings — LEDGR{% endblock %}
 {% block content %}
-<div class="topbar"><div><div class="page-title">Settings</div><div class="page-sub">Business profile · Modules · Account</div></div></div>
-<div class="content" style="max-width:720px">
+<div class="topbar">
+  <div><div class="page-title">Settings</div><div class="page-sub">Business profile · Legal details · Modules · Account</div></div>
+  <button class="btn btn-primary" onclick="saveAllSettings()">Save All Changes</button>
+</div>
+<div class="content" style="max-width:800px">
 
+  <!-- Business Identity -->
   <div class="card">
-    <div class="card-title">Business profile</div>
-    <div class="field-row">
-      <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.name }}</p></div>
-      <div><div class="field-label">Type</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.btype_name() }}</p></div>
+    <div class="card-title">Business Identity & Branding</div>
+    <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:16px">
+      <!-- Logo -->
+      <div style="flex-shrink:0">
+        <div id="logo-preview" style="width:80px;height:80px;border-radius:10px;border:2px dashed var(--border2);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;background:var(--bg)" onclick="document.getElementById('logo-file').click()">
+          {% if business.logo_data %}
+          <img src="/api/business/logo" style="width:100%;height:100%;object-fit:contain">
+          {% else %}
+          <div style="text-align:center;font-size:11px;color:var(--text3)">Click to<br>add logo</div>
+          {% endif %}
+        </div>
+        <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="uploadLogo(this)">
+        <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">PNG/JPG</div>
+      </div>
+      <div style="flex:1">
+        <div class="field-row">
+          <div><div class="field-label">Trading Name *</div><input class="field-input" id="b-name" value="{{ business.name }}" placeholder="Maldives Cafe"></div>
+          <div><div class="field-label">Full Legal Name</div><input class="field-input" id="b-legal-name" value="{{ business.legal_name or '' }}" placeholder="Maldives Cafe Pvt Ltd"></div>
+        </div>
+        <div class="field-row">
+          <div><div class="field-label">Business Type</div><p style="color:var(--text);font-size:12px;padding:4px 0">{{ business.btype_name() }}</p></div>
+          <div><div class="field-label">Registration Number</div><input class="field-input" id="b-reg-num" value="{{ business.registration_number or '' }}" placeholder="C-XXXXXX / BRN"></div>
+        </div>
+      </div>
     </div>
     <div class="field-row">
-      <div><div class="field-label">Region</div><p style="color:var(--mint);font-size:13px;padding:4px 0">{{ tax.name }}</p></div>
-      <div><div class="field-label">Currency</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.base_currency }}</p></div>
+      <div><div class="field-label">Business Phone</div><input class="field-input" id="b-phone" value="{{ business.phone or '' }}" placeholder="+960 XXX XXXX"></div>
+      <div><div class="field-label">Business Email</div><input class="field-input" id="b-email" value="{{ business.email or '' }}" placeholder="info@business.com"></div>
     </div>
+    <div class="field-group"><div class="field-label">Website</div><input class="field-input" id="b-website" value="{{ business.website or '' }}" placeholder="https://"></div>
+  </div>
+
+  <!-- Address -->
+  <div class="card">
+    <div class="card-title">Registered Address</div>
+    <div class="field-group"><div class="field-label">Address Line 1</div><input class="field-input" id="b-addr1" value="{{ business.address_line1 or '' }}" placeholder="Street / Building / Floor"></div>
+    <div class="field-group"><div class="field-label">Address Line 2</div><input class="field-input" id="b-addr2" value="{{ business.address_line2 or '' }}" placeholder="Area / Island / District"></div>
     <div class="field-row">
-      <div><div class="field-label">Tax Authority</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ tax.authority }} · {{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</p></div>
-      <div><div class="field-label">Business Tax ID</div><input class="field-input" id="tax-id" value="{{ business.tax_id or '' }}" placeholder="Business registration number" onblur="saveField('tax_id',this.value)"></div>
+      <div><div class="field-label">City / Atoll</div><input class="field-input" id="b-city" value="{{ business.city or '' }}" placeholder="Male'"></div>
+      <div><div class="field-label">Country</div><input class="field-input" id="b-country" value="{{ business.country or tax.name }}" placeholder="{{ tax.name }}"></div>
     </div>
   </div>
 
+  <!-- Tax & Compliance -->
   <div class="card">
-    <div class="card-title">Module settings</div>
-    <p style="font-size:11px;color:var(--text3);margin-bottom:14px">Enable only what your business needs. Changes apply immediately.</p>
-    {% set toggles = [
-      ('has_pos','Point of Sale (POS)','Record sales in seconds. Barber shops, takeaways, cafes, any cash business.'),
-      ('has_inventory','Inventory Tracking','Auto-update stock from supplier invoices. Grocery shops, cafes, retail, construction.'),
-      ('has_payroll','Payroll & HR','Track employees, salaries, visa and work permit expiry.'),
-      ('has_full_accounting','Full Accounting Mode','Trial balance, detailed CoA, advanced journal entries. For Limited Companies.'),
+    <div class="card-title">Tax & Compliance — {{ tax.authority }}</div>
+    <div class="field-row">
+      <div><div class="field-label">{{ tax.authority }} Tax ID / TIN</div><input class="field-input" id="b-tax-id" value="{{ business.tax_id or '' }}" placeholder="{{ tax.tin_format }}"></div>
+      <div><div class="field-label">{{ tax.tax_name }} Registration Number</div><input class="field-input" id="b-tax-reg" value="{{ business.tax_registration_number or '' }}" placeholder="GST/VAT reg number"></div>
+    </div>
+    <div style="margin-top:12px">
+      {% for field, label, desc, val in [
+        ('is_tax_registered', tax.tax_name + ' Registered', 'Business is registered with ' + tax.authority + ' and must collect ' + tax.tax_name + '.', business.is_tax_registered),
+        ('collect_tax_on_sales', 'Collect ' + tax.tax_name + ' on Sales', 'Add ' + tax.tax_name + ' to POS sales and invoices. Only enable if registered.', business.collect_tax_on_sales),
+      ] %}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:7px;margin-bottom:8px;border:1px solid {% if val %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
+        <div style="flex:1;padding-right:14px">
+          <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:1px">{{ label }}</div>
+          <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0;cursor:pointer">
+          <input type="checkbox" id="tog-{{ field }}" {% if val %}checked{% endif %} style="opacity:0;width:0;height:0" onchange="toggleField('{{ field }}',this.checked)">
+          <span style="position:absolute;inset:0;background:{% if val %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;cursor:pointer" id="span-{{ field }}" onclick="document.getElementById('tog-{{ field }}').click()"></span>
+          <span style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if val %}translateX(18px){% else %}translateX(0){% endif %}" id="knob-{{ field }}" onclick="document.getElementById('tog-{{ field }}').click()"></span>
+        </label>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="alert alert-info" style="margin-top:10px;font-size:11px">
+      <div>{{ tax.name }} {{ tax.tax_name }} threshold: <strong>{{ tax.currency }} {{ "{:,.0f}".format(TAX_THRESHOLDS[business.region]['amount']) }}</strong> annual revenue. Below this threshold, tax registration is optional.</div>
+    </div>
+  </div>
+
+  <!-- Bank Details -->
+  <div class="card">
+    <div class="card-title">Bank Details (for Invoices)</div>
+    <div class="field-row">
+      <div><div class="field-label">Bank Name</div><input class="field-input" id="b-bank-name" value="{{ business.bank_name or '' }}" placeholder="Bank of Maldives"></div>
+      <div><div class="field-label">Account Name</div><input class="field-input" id="b-bank-acct-name" value="{{ business.bank_account_name or '' }}" placeholder="Maldives Cafe Pvt Ltd"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Account Number</div><input class="field-input" id="b-bank-acct-num" value="{{ business.bank_account_number or '' }}" placeholder="XXXXXXXXXXXX"></div>
+      <div><div class="field-label">SWIFT / BIC</div><input class="field-input" id="b-swift" value="{{ business.bank_swift or '' }}" placeholder="BMLIMVMV"></div>
+    </div>
+    <div class="field-row">
+      <div>
+        <div class="field-label">Primary Currency</div>
+        <p style="color:var(--mint);font-size:13px;padding:6px 0;font-weight:500">{{ business.base_currency }}</p>
+      </div>
+      <div>
+        <div class="field-label">Secondary Currency (e.g. USD)</div>
+        <select class="select-input" id="b-sec-currency">
+          <option value="">None</option>
+          {% for c in ['USD','EUR','GBP','AED','SGD','CNY'] %}
+          <option value="{{ c }}" {% if business.secondary_currency==c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoice Settings -->
+  <div class="card">
+    <div class="card-title">Invoice & Quote Settings</div>
+    <div class="field-row">
+      <div><div class="field-label">Invoice Prefix</div><input class="field-input" id="b-inv-prefix" value="{{ business.invoice_prefix or 'INV' }}" placeholder="INV" maxlength="6"></div>
+      <div><div class="field-label">Quote Prefix</div><input class="field-input" id="b-quo-prefix" value="{{ business.quote_prefix or 'QUO' }}" placeholder="QUO" maxlength="6"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Default Invoice Notes / Payment Terms</div>
+      <textarea class="field-input" id="b-inv-notes" rows="3" placeholder="e.g. Payment due within 30 days. Bank transfer to account above.">{{ business.invoice_notes or '' }}</textarea>
+    </div>
+  </div>
+
+  <!-- Module Toggles -->
+  <div class="card">
+    <div class="card-title">Modules</div>
+    {% for field, label, desc, val in [
+      ('has_pos','Point of Sale','Record sales instantly. For retail, cafes, barbers, restaurants.', business.has_pos),
+      ('has_inventory','Inventory Tracking','Track stock. Auto-update from supplier invoices.', business.has_inventory),
+      ('has_payroll','Payroll & HR','Employee management, visas, salaries.', business.has_payroll),
+      ('has_full_accounting','Full Accounting Mode','Complete CoA, trial balance. For companies.', business.has_full_accounting),
     ] %}
-    {% for field, label, desc in toggles %}
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">
-      <div style="flex:1;padding-right:16px">
-        <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px">{{ label }}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:7px;margin-bottom:8px;border:1px solid var(--border)">
+      <div style="flex:1;padding-right:14px">
+        <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:1px">{{ label }}</div>
         <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
       </div>
-      <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
-        <input type="checkbox" id="toggle-{{ field }}" {% if val %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
-        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-{{ field }}"></span>
-        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-{{ field }}"></span>
+      <label style="position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0;cursor:pointer">
+        <input type="checkbox" id="tog-{{ field }}" {% if val %}checked{% endif %} style="opacity:0;width:0;height:0" onchange="toggleField('{{ field }}',this.checked)">
+        <span style="position:absolute;inset:0;background:{% if val %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;cursor:pointer" id="span-{{ field }}" onclick="document.getElementById('tog-{{ field }}').click()"></span>
+        <span style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if val %}translateX(18px){% else %}translateX(0){% endif %}" id="knob-{{ field }}" onclick="document.getElementById('tog-{{ field }}').click()"></span>
       </label>
     </div>
     {% endfor %}
-
-    <!-- Tax Registration -->
-    <div style="padding:12px;background:var(--bg);border-radius:8px;border:1px solid {% if business.is_tax_registered %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:{% if business.is_tax_registered %}12px{% else %}0{% endif %}">
-        <div style="flex:1;padding-right:16px">
-          <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px">Tax Registration ({{ tax.tax_name }}/{{ tax.authority }})</div>
-          <div style="font-size:11px;color:var(--text3)">Activates {{ tax.tax_name }} on POS receipts and reports. Enable after registering with {{ tax.authority }}.</div>
-        </div>
-        <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
-          <input type="checkbox" id="toggle-is_tax_registered" {% if business.is_tax_registered %}checked{% endif %} onchange="toggleModule('is_tax_registered',this.checked)" style="opacity:0;width:0;height:0">
-          <span onclick="document.getElementById('toggle-is_tax_registered').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business.is_tax_registered %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-is_tax_registered"></span>
-          <span onclick="document.getElementById('toggle-is_tax_registered').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business.is_tax_registered %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-is_tax_registered"></span>
-        </label>
-      </div>
-      {% if business.is_tax_registered %}
-      <div><div class="field-label">{{ tax.authority }} Registration Number</div>
-      <input class="field-input" id="tax-reg-num" value="{{ business.tax_registration_number or '' }}" placeholder="{{ tax.tin_format }}" style="max-width:280px" onblur="saveField('tax_registration_number',this.value)"></div>
-      {% endif %}
-    </div>
-    <div id="module-msg" style="display:none;margin-top:10px;font-size:11px;color:var(--mint)">✓ Settings saved</div>
+    <div id="module-msg" style="display:none;font-size:11px;color:var(--mint);margin-top:4px">✓ Saved</div>
   </div>
 
+  <!-- My Businesses -->
   <div class="card">
-    <div class="card-title">My businesses</div>
+    <div class="card-title">My Businesses</div>
     {% for ub in user_businesses %}
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:6px;border:1px solid {% if ub.business_id==business.id %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
       <div>
         <div style="font-weight:500;font-size:13px;color:var(--text)">{{ ub.business.name }}</div>
         <div style="font-size:11px;color:var(--text3)">{{ ub.business.btype_name() }} · {{ ub.business.tax_rules().name }} · {{ ub.role.title() }}</div>
       </div>
-      {% if ub.business_id==business.id %}
-        <span class="badge badge-green">Active</span>
-      {% else %}
-        <a href="/business/switch/{{ ub.business_id }}" class="btn btn-sm">Switch</a>
-      {% endif %}
+      {% if ub.business_id==business.id %}<span class="badge badge-green">Active</span>
+      {% else %}<a href="/business/switch/{{ ub.business_id }}" class="btn btn-sm">Switch</a>{% endif %}
     </div>
     {% endfor %}
     <a href="/business/add" class="btn" style="margin-top:4px">+ Add another business</a>
   </div>
 
+  <!-- Account -->
   <div class="card">
-    <div class="card-title">Account</div>
+    <div class="card-title">My Account</div>
     <div class="field-row">
       <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.name }}</p></div>
       <div><div class="field-label">Email</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.email }}</p></div>
@@ -93,16 +174,13 @@
       <div><div class="field-label">Uploads this month</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.uploads_this_month or 0 }}</p></div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
-      {% for pk,pv in [('free',{'name':'Free','price':0,'uploads':10}),('pro',{'name':'Pro','price':15,'uploads':500}),('business',{'name':'Business','price':35,'uploads':'∞'})] %}
+      {% for pk,pname,pprice,puploads in [('free','Free',0,'10'),('pro','Pro',15,'500'),('business','Business',35,'∞')] %}
       <div style="border:1px solid {% if user.plan==pk %}rgba(16,185,129,.4){% else %}var(--border){% endif %};border-radius:8px;padding:14px;text-align:center">
-        <div style="font-weight:600;margin-bottom:3px;color:var(--text)">{{ pv.name }}</div>
-        <div style="font-size:18px;font-weight:700;color:var(--mint);margin-bottom:3px">${{ pv.price }}</div>
-        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">{{ pv.uploads }} uploads/mo</div>
-        {% if user.plan==pk %}
-          <span class="badge badge-green">Current</span>
-        {% else %}
-          <button class="btn btn-sm btn-primary" style="width:100%" onclick="requestUpgrade('{{ pk }}')">Upgrade</button>
-        {% endif %}
+        <div style="font-weight:600;color:var(--text);margin-bottom:3px">{{ pname }}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--mint);margin-bottom:3px">${{ pprice }}/mo</div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">{{ puploads }} uploads</div>
+        {% if user.plan==pk %}<span class="badge badge-green">Current</span>
+        {% else %}<button class="btn btn-sm btn-primary" style="width:100%" onclick="requestUpgrade('{{ pk }}')">Upgrade</button>{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -120,17 +198,94 @@
 
 {% block scripts %}
 <script>
-function toggleModule(key, value){
-  var data={};data[key]=value;
-  var span=document.getElementById('span-'+key),knob=document.getElementById('knob-'+key);
-  if(span){span.style.background=value?'var(--mint)':'var(--border2)';}
-  if(knob){knob.style.transform=value?'translateX(20px)':'translateX(0)';}
-  fetch('/api/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(res=>{
-    if(res.ok){var msg=document.getElementById('module-msg');msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
-    if(key==='is_tax_registered')setTimeout(()=>location.reload(),500);}
+var pendingToggles = {};
+
+function toggleField(key, value) {
+  pendingToggles[key] = value;
+  var span = document.getElementById('span-' + key);
+  var knob = document.getElementById('knob-' + key);
+  if (span) span.style.background = value ? 'var(--mint)' : 'var(--border2)';
+  if (knob) knob.style.transform = value ? 'translateX(18px)' : 'translateX(0)';
+  // Auto-save toggles immediately
+  var data = {}; data[key] = value;
+  fetch('/api/business/settings', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+  }).then(r => r.json()).then(res => {
+    if (res.ok) {
+      var msg = document.getElementById('module-msg');
+      msg.style.display = 'block';
+      setTimeout(() => msg.style.display = 'none', 2000);
+    }
   });
 }
-function saveField(key,value){var data={};data[key]=value;fetch('/api/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
-function requestUpgrade(plan){fetch('/api/request-upgrade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:plan})}).then(r=>r.json()).then(res=>{var m=document.getElementById('upgrade-msg');m.style.display='block';m.textContent=res.message||'Request sent!';});}
+
+function uploadLogo(input) {
+  if (!input.files.length) return;
+  var file = input.files[0];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var b64 = e.target.result.split(',')[1];
+    var mediaType = file.type;
+    // Preview
+    document.getElementById('logo-preview').innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:contain">';
+    // Save
+    fetch('/api/business/profile', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({logo_data: b64, logo_type: mediaType})
+    }).then(r => r.json()).then(res => {
+      if (res.ok) showMsg('Logo saved!');
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function saveAllSettings() {
+  var payload = {
+    name: document.getElementById('b-name').value,
+    legal_name: document.getElementById('b-legal-name').value,
+    registration_number: document.getElementById('b-reg-num').value,
+    phone: document.getElementById('b-phone').value,
+    email: document.getElementById('b-email').value,
+    website: document.getElementById('b-website').value,
+    address_line1: document.getElementById('b-addr1').value,
+    address_line2: document.getElementById('b-addr2').value,
+    city: document.getElementById('b-city').value,
+    country: document.getElementById('b-country').value,
+    tax_id: document.getElementById('b-tax-id').value,
+    tax_registration_number: document.getElementById('b-tax-reg').value,
+    bank_name: document.getElementById('b-bank-name').value,
+    bank_account_name: document.getElementById('b-bank-acct-name').value,
+    bank_account_number: document.getElementById('b-bank-acct-num').value,
+    bank_swift: document.getElementById('b-swift').value,
+    secondary_currency: document.getElementById('b-sec-currency').value,
+    invoice_prefix: document.getElementById('b-inv-prefix').value,
+    quote_prefix: document.getElementById('b-quo-prefix').value,
+    invoice_notes: document.getElementById('b-inv-notes').value,
+  };
+  fetch('/api/business/profile', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)
+  }).then(r => r.json()).then(res => {
+    if (res.ok) showMsg('All settings saved!');
+    else showMsg('Error: ' + res.error, true);
+  });
+}
+
+function showMsg(msg, isError) {
+  var el = document.getElementById('module-msg');
+  el.style.display = 'block';
+  el.style.color = isError ? 'var(--red)' : 'var(--mint)';
+  el.textContent = msg;
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+function requestUpgrade(plan) {
+  fetch('/api/request-upgrade', {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({plan:plan})
+  }).then(r => r.json()).then(res => {
+    var m = document.getElementById('upgrade-msg');
+    m.style.display = 'block';
+    m.textContent = res.message || 'Request sent!';
+  });
+}
 </script>
 {% endblock %}

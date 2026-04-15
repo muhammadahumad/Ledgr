@@ -1,0 +1,73 @@
+{% extends "base.html" %}{% block title %}Suppliers — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Suppliers</div><div class="page-sub">{{ suppliers|length }} suppliers · Auto-populated from uploaded invoices</div></div>
+  <button class="btn btn-primary" onclick="openModal('add-sup-modal')">+ Add Supplier</button>
+</div>
+<div class="content">
+<div class="card">
+  <div class="card-title">Supplier Database <input class="field-input" id="search-sup" placeholder="Search..." style="width:200px;font-size:11px;padding:4px 8px" oninput="filterSup(this.value)"></div>
+  {% if suppliers %}
+  <table class="table"><thead><tr><th>Name</th><th>Tax ID</th><th>Phone</th><th>Email</th><th>Currency</th><th>Total Purchases</th><th>Source</th></tr></thead><tbody>
+  {% for s in suppliers %}<tr class="sup-row" data-n="{{ s.name|lower }}">
+    <td style="color:var(--text);font-weight:500">{{ s.name }}</td>
+    <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ s.tax_id or '—' }}</td>
+    <td style="color:var(--text3)">{{ s.phone or '—' }}</td>
+    <td style="color:var(--text3);font-size:11px">{{ s.email or '—' }}</td>
+    <td>{{ s.currency }}</td>
+    <td style="font-family:var(--mono);color:var(--mint);font-weight:500">{{ s.currency }} {{ "%.2f"|format(s.total_purchases) }}</td>
+    <td><span class="badge badge-{% if s.auto_detected %}blue{% else %}gray{% endif %}">{% if s.auto_detected %}Auto{% else %}Manual{% endif %}</span></td>
+  </tr>{% endfor %}
+  </tbody></table>
+  {% else %}
+  <div style="text-align:center;padding:40px 0;color:var(--text3)">
+    <div style="font-size:28px;margin-bottom:10px">🏭</div>
+    <div style="font-weight:500;color:var(--text2);margin-bottom:6px">No suppliers yet</div>
+    <div style="font-size:11px;margin-bottom:14px">Upload a bill or receipt and suppliers will be automatically detected</div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <a href="/upload" class="btn btn-primary">Upload Document</a>
+      <button class="btn" onclick="openModal('add-sup-modal')">Add Manually</button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+</div>
+
+<div id="add-sup-modal" class="modal-overlay">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-title">Add Supplier <button class="modal-close" onclick="closeModal('add-sup-modal')">×</button></div>
+    <div class="field-row">
+      <div><div class="field-label">Supplier Name *</div><input class="field-input" id="s-name" placeholder="ABC Trading Pvt Ltd"></div>
+      <div><div class="field-label">Tax ID / TIN</div><input class="field-input" id="s-taxid" placeholder="{{ tax.tin_format }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="s-phone" placeholder="+960 XXX XXXX"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="s-email" placeholder="supplier@email.com"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="s-address" placeholder="Full address"></div>
+    <div class="field-row">
+      <div><div class="field-label">Currency</div>
+        <select class="select-input" id="s-currency">
+          {% for c in ['MVR','USD','AED','PKR','LKR','INR','CNY'] %}
+          <option value="{{ c }}" {% if c==business.base_currency %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><div class="field-label">Payment Terms</div>
+        <select class="select-input" id="s-terms">
+          <option>Net 30</option><option>Net 15</option><option>Net 60</option><option>Cash on Delivery</option><option>Advance Payment</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="s-notes" placeholder="Any notes about this supplier"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="addSupplier()">Add Supplier</button>
+      <button class="btn" onclick="closeModal('add-sup-modal')">Cancel</button>
+    </div>
+    <div id="s-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+function filterSup(q){q=q.toLowerCase();document.querySelectorAll('.sup-row').forEach(r=>r.style.display=r.dataset.n.includes(q)?'':'none');}
+function addSupplier(){var name=document.getElementById('s-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/supplier/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,tax_id:document.getElementById('s-taxid').value,phone:document.getElementById('s-phone').value,email:document.getElementById('s-email').value,address:document.getElementById('s-address').value,currency:document.getElementById('s-currency').value,payment_terms:document.getElementById('s-terms').value,notes:document.getElementById('s-notes').value})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{var m=document.getElementById('s-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
+</script>{% endblock %}
