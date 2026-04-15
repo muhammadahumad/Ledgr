@@ -1255,6 +1255,199 @@ def api_bank_add_account_v2():
 
 
 
+
+
+# ── Onboarding Wizard ─────────────────────────────────────────────────────────
+
+@app.route("/setup/wizard")
+@login_required
+def setup_wizard():
+    user = current_user()
+    return render_template("wizard.html", user=user,
+                           tax_rules=TAX_RULES, industry_types=INDUSTRY_TYPES,
+                           business_types=BUSINESS_TYPES)
+
+
+@app.route("/setup/wizard/complete", methods=["POST"])
+@login_required
+def setup_wizard_complete():
+    user = current_user()
+    data = request.get_json()
+
+    region = data.get("region", "MV")
+    business_type = data.get("business_type", "sole_proprietor")
+    industry = data.get("industry_type", "general")
+    business_name = data.get("business_name", "").strip()
+    num_locations = int(data.get("num_locations", 1))
+    location_names = data.get("location_names", [])
+
+    if not business_name:
+        return jsonify({"ok": False, "error": "Business name required"})
+
+    tax = TAX_RULES.get(region, TAX_RULES["MV"])
+    bt = BUSINESS_TYPES.get(business_type, BUSINESS_TYPES["sole_proprietor"])
+    ind = INDUSTRY_TYPES.get(industry, INDUSTRY_TYPES["general"])
+
+    # Create business
+    business = Business(
+        name=business_name,
+        region=region,
+        base_currency=tax["currency"],
+        business_type=business_type,
+        industry_type=industry,
+        has_pos=True,
+        has_full_accounting=(bt["accounting"] == "full"),
+        has_service_charge=ind["service_charge"],
+        has_expiry_tracking=ind["expiry_tracking"],
+        has_multi_location=(num_locations > 1),
+        is_tax_registered=False
+    )
+    db.session.add(business)
+    db.session.flush()
+
+    # Link user to business
+    ub = UserBusiness(user_id=user.id, business_id=business.id, role="owner")
+    db.session.add(ub)
+
+    # Create Chart of Accounts
+    for acct_type, accounts in DEFAULT_COA.items():
+        for code, name in accounts:
+            if not Account.query.filter_by(business_id=business.id, code=code).first():
+                db.session.add(Account(business_id=business.id, code=code,
+                                       name=name, account_type=acct_type))
+
+    for code, name, acct_type in INDUSTRY_COA.get(industry, []):
+        if not Account.query.filter_by(business_id=business.id, code=code).first():
+            db.session.add(Account(business_id=business.id, code=code,
+                                   name=name, account_type=acct_type))
+
+    # Create locations
+    for i in range(max(1, num_locations)):
+        loc_name = location_names[i] if i < len(location_names) else ("Main Branch" if i == 0 else "Branch " + str(i + 1))
+        db.session.add(Location(business_id=business.id, name=loc_name))
+
+    # Update user session
+    session["business_id"] = business.id
+    session["business_name"] = business.name
+
+    db.session.commit()
+
+    return jsonify({"ok": True, "business_id": business.id,
+                    "redirect": "/dashboard",
+                    "message": "Welcome to LEDGR! Your " + ind["name"] + " workspace is ready."})
+
+
+# ── Shareable Public Receipt ───────────────────────────────────────────────────
+
+@app.route("/receipt/<token>")
+def public_receipt(token):
+    """Public shareable receipt — no login required"""
+    import hashlib
+    # Find sale by token (hash of sale id + secret)
+    # Try to decode token as sale_id
+    try:
+        sale_id = int(token.split("-")[0])
+        sale = POSSale.query.get(sale_id)
+        if not sale:
+            return "Receipt not found", 404
+        # Verify token
+        expected = hashlib.md5(
+            (str(sale.id) + str(sale.business_id) + app.secret_key[:8]).encode()
+        ).hexdigest()[:8]
+        if token != str(sale.id) + "-" + expected:
+            return "Invalid receipt link", 403
+        business = Business.query.get(sale.business_id)
+        return render_template("public_receipt.html", sale=sale, business=business)
+    except Exception as e:
+        return "Receipt not found", 404
+
+
+@app.route("/api/pos/receipt-link/<int:sale_id>")
+@login_required
+def api_receipt_link(sale_id):
+    """Generate shareable receipt link"""
+    import hashlib
+    business = current_business()
+    sale = POSSale.query.filter_by(id=sale_id, business_id=business.id).first()
+    if not sale:
+        return jsonify({"ok": False, "error": "Sale not found"})
+    token = str(sale.id) + "-" + hashlib.md5(
+        (str(sale.id) + str(sale.business_id) + app.secret_key[:8]).encode()
+    ).hexdigest()[:8]
+    base_url = "https://ledgrglobal.com"
+    receipt_url = base_url + "/receipt/" + token
+    wa_url = "https://wa.me/?text=" + urllib.parse.quote(
+        "Your receipt from " + business.display_name() + "\n" +
+        business.base_currency + " " + str(float(sale.amount)) + "\n" +
+        "View receipt: " + receipt_url
+    )
+    viber_url = "viber://forward?text=" + urllib.parse.quote(
+        "Your receipt from " + business.display_name() + "\n" +
+        business.base_currency + " " + str(float(sale.amount)) + "\n" +
+        "View receipt: " + receipt_url
+    )
+    return jsonify({"ok": True, "receipt_url": receipt_url,
+                    "wa_url": wa_url, "viber_url": viber_url, "token": token})
+
+
+# ── Accountant Portal ──────────────────────────────────────────────────────────
+
+@app.route("/accountant")
+@login_required
+def accountant_portal():
+    user = current_user()
+    # Get all businesses this user has accountant or owner access to
+    user_businesses = UserBusiness.query.filter_by(user_id=user.id).all()
+    clients = []
+    for ub in user_businesses:
+        b = ub.business
+        if not b:
+            continue
+        # Calculate key metrics per client
+        from sqlalchemy import func as sqlfunc
+        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        revenue = db.session.query(sqlfunc.sum(LedgerEntry.amount)).filter(
+            LedgerEntry.business_id == b.id,
+            LedgerEntry.entry_type == "REVENUE",
+            LedgerEntry.created_at >= thirty_days_ago
+        ).scalar() or 0
+        expenses = db.session.query(sqlfunc.sum(LedgerEntry.amount)).filter(
+            LedgerEntry.business_id == b.id,
+            LedgerEntry.entry_type == "EXPENSE",
+            LedgerEntry.created_at >= thirty_days_ago
+        ).scalar() or 0
+        pending_docs = Document.query.filter_by(
+            business_id=b.id, status="PENDING").count()
+        threshold = check_threshold(b)
+        clients.append({
+            "business": b,
+            "role": ub.role,
+            "revenue_30d": float(revenue),
+            "expenses_30d": float(expenses),
+            "profit_30d": float(revenue) - float(expenses),
+            "pending_docs": pending_docs,
+            "threshold": threshold,
+            "tax": b.tax_rules()
+        })
+    return render_template("accountant.html", user=user, clients=clients)
+
+
+@app.route("/accountant/switch/<int:business_id>")
+@login_required
+def accountant_switch(business_id):
+    """Accountant switches to a client business"""
+    user = current_user()
+    ub = UserBusiness.query.filter_by(user_id=user.id, business_id=business_id).first()
+    if not ub:
+        flash("You do not have access to this business", "error")
+        return redirect(url_for("accountant_portal"))
+    session["business_id"] = business_id
+    session["business_name"] = ub.business.name
+    flash("Switched to " + ub.business.name, "success")
+    return redirect(url_for("dashboard"))
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
