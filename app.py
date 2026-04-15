@@ -1199,11 +1199,15 @@ def api_employee_add():
 @app.route('/api/business/settings', methods=['POST'])
 @login_required
 def api_business_settings():
-    business = current_business()
+    business, err = api_business_guard()
+    if err: return err
     data = request.get_json()
-    for field in ['has_inventory','has_payroll','has_pos','is_tax_registered','has_full_accounting']:
+    bool_fields = ['has_inventory','has_payroll','has_pos','is_tax_registered',
+                   'has_full_accounting','collect_tax_on_sales']
+    for field in bool_fields:
         if field in data: setattr(business, field, bool(data[field]))
-    for field in ['tax_registration_number','tax_id']:
+    text_fields = ['tax_registration_number','tax_id','secondary_currency']
+    for field in text_fields:
         if field in data: setattr(business, field, data[field])
     db.session.commit()
     return jsonify({'ok':True,'message':'Settings updated'})
