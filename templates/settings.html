@@ -63,22 +63,14 @@
       <div><div class="field-label">{{ tax.tax_name }} Registration Number</div><input class="field-input" id="b-tax-reg" value="{{ business.tax_registration_number or '' }}" placeholder="GST/VAT reg number"></div>
     </div>
     <div style="margin-top:12px">
-      {% for field, label, desc, val in [
-        ('is_tax_registered', tax.tax_name + ' Registered', 'Business is registered with ' + tax.authority + ' and must collect ' + tax.tax_name + '.', business.is_tax_registered),
-        ('collect_tax_on_sales', 'Collect ' + tax.tax_name + ' on Sales', 'Add ' + tax.tax_name + ' to POS sales and invoices. Only enable if registered.', business.collect_tax_on_sales),
-      ] %}
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:7px;margin-bottom:8px;border:1px solid {% if val %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
-        <div style="flex:1;padding-right:14px">
-          <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:1px">{{ label }}</div>
-          <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
-        </div>
-        <label style="position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0;cursor:pointer">
-          <input type="checkbox" id="t2-{{ field }}" {% if val %}checked{% endif %} style="opacity:0;width:0;height:0" onchange="toggleField('{{ field }}',this.checked,'t2-{{ field }}','sp2-{{ field }}','kn2-{{ field }}')">
-          <span style="position:absolute;inset:0;background:{% if val %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;cursor:pointer" id="sp2-{{ field }}" onclick="document.getElementById('t2-{{ field }}').click()"></span>
-          <span style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if val %}translateX(18px){% else %}translateX(0){% endif %}" id="kn2-{{ field }}" onclick="document.getElementById('t2-{{ field }}').click()"></span>
-        </label>
+      <div class="toggle-row" onclick="doToggle('is_tax_registered')">
+        <div><div class="toggle-label">{{ tax.tax_name }} Registered</div><div class="toggle-desc">Business is registered with {{ tax.authority }} and must collect {{ tax.tax_name }}.</div></div>
+        <div class="toggle-switch {% if business.is_tax_registered %}on{% endif %}" id="sw-is_tax_registered"></div>
       </div>
-      {% endfor %}
+      <div class="toggle-row" onclick="doToggle('collect_tax_on_sales')">
+        <div><div class="toggle-label">Collect {{ tax.tax_name }} on Sales</div><div class="toggle-desc">Add {{ tax.tax_name }} to POS sales and invoices. Only enable if registered.</div></div>
+        <div class="toggle-switch {% if business.collect_tax_on_sales %}on{% endif %}" id="sw-collect_tax_on_sales"></div>
+      </div>
     </div>
     <div class="alert alert-info" style="margin-top:10px;font-size:11px">
       <div>{{ tax.name }} {{ tax.tax_name }} threshold: <strong>{{ tax.currency }} {{ "{:,.0f}".format(threshold_info.get("amount", 0)) }}</strong> annual revenue. Below this threshold, tax registration is optional.</div>
@@ -128,25 +120,23 @@
   <!-- Module Toggles -->
   <div class="card">
     <div class="card-title">Modules</div>
-    {% for field, label, desc, val in [
-      ('has_pos','Point of Sale','Record sales instantly. For retail, cafes, barbers, restaurants.', business.has_pos),
-      ('has_inventory','Inventory Tracking','Track stock. Auto-update from supplier invoices.', business.has_inventory),
-      ('has_payroll','Payroll & HR','Employee management, visas, salaries.', business.has_payroll),
-      ('has_full_accounting','Full Accounting Mode','Complete CoA, trial balance. For companies.', business.has_full_accounting),
-    ] %}
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:7px;margin-bottom:8px;border:1px solid var(--border)">
-      <div style="flex:1;padding-right:14px">
-        <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:1px">{{ label }}</div>
-        <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
-      </div>
-      <label style="position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0;cursor:pointer">
-        <input type="checkbox" id="tog-{{ field }}" {% if val %}checked{% endif %} style="opacity:0;width:0;height:0" onchange="toggleField('{{ field }}',this.checked)">
-        <span style="position:absolute;inset:0;background:{% if val %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;cursor:pointer" id="span-{{ field }}" onclick="document.getElementById('tog-{{ field }}').click()"></span>
-        <span style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if val %}translateX(18px){% else %}translateX(0){% endif %}" id="knob-{{ field }}" onclick="document.getElementById('tog-{{ field }}').click()"></span>
-      </label>
+    <div id="module-msg" style="display:none;font-size:11px;color:var(--mint);margin-bottom:8px">✓ Saved</div>
+    <div class="toggle-row" onclick="doToggle('has_pos')">
+      <div><div class="toggle-label">Point of Sale</div><div class="toggle-desc">Record sales instantly. For retail, cafes, barbers, restaurants.</div></div>
+      <div class="toggle-switch {% if business.has_pos %}on{% endif %}" id="sw-has_pos"></div>
     </div>
-    {% endfor %}
-    <div id="module-msg" style="display:none;font-size:11px;color:var(--mint);margin-top:4px">✓ Saved</div>
+    <div class="toggle-row" onclick="doToggle('has_inventory')">
+      <div><div class="toggle-label">Inventory Tracking</div><div class="toggle-desc">Track stock. Auto-update from supplier invoices.</div></div>
+      <div class="toggle-switch {% if business.has_inventory %}on{% endif %}" id="sw-has_inventory"></div>
+    </div>
+    <div class="toggle-row" onclick="doToggle('has_payroll')">
+      <div><div class="toggle-label">Payroll & HR</div><div class="toggle-desc">Employee management, visas, salaries.</div></div>
+      <div class="toggle-switch {% if business.has_payroll %}on{% endif %}" id="sw-has_payroll"></div>
+    </div>
+    <div class="toggle-row" onclick="doToggle('has_full_accounting')">
+      <div><div class="toggle-label">Full Accounting Mode</div><div class="toggle-desc">Complete CoA, trial balance. For companies.</div></div>
+      <div class="toggle-switch {% if business.has_full_accounting %}on{% endif %}" id="sw-has_full_accounting"></div>
+    </div>
   </div>
 
   <!-- My Businesses -->
@@ -200,29 +190,42 @@
 {% endblock %}
 
 {% block scripts %}
+<style>
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:7px;margin-bottom:8px;border:1px solid var(--border);cursor:pointer;user-select:none;transition:border-color .15s}
+.toggle-row:hover{border-color:var(--border2)}
+.toggle-label{font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px}
+.toggle-desc{font-size:11px;color:var(--text3)}
+.toggle-switch{width:40px;height:22px;border-radius:22px;background:var(--border2);position:relative;flex-shrink:0;margin-left:14px;transition:background .25s}
+.toggle-switch.on{background:var(--mint)}
+.toggle-switch::after{content:'';position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform .25s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.toggle-switch.on::after{transform:translateX(18px)}
+</style>
 <script>
-var pendingToggles = {};
+var toggleState = {
+  has_pos: {{ 'true' if business.has_pos else 'false' }},
+  has_inventory: {{ 'true' if business.has_inventory else 'false' }},
+  has_payroll: {{ 'true' if business.has_payroll else 'false' }},
+  has_full_accounting: {{ 'true' if business.has_full_accounting else 'false' }},
+  is_tax_registered: {{ 'true' if business.is_tax_registered else 'false' }},
+  collect_tax_on_sales: {{ 'true' if business.collect_tax_on_sales else 'false' }},
+};
 
-function toggleField(key, value, toggleId, spanId, knobId) {
-  spanId = spanId || ('span-' + key);
-  knobId = knobId || ('knob-' + key);
-  var span = document.getElementById(spanId);
-  var knob = document.getElementById(knobId);
-  if (span) span.style.background = value ? 'var(--mint)' : 'var(--border2)';
-  if (knob) knob.style.transform = value ? 'translateX(18px)' : 'translateX(0)';
-  var data = {}; data[key] = value;
+function doToggle(key) {
+  toggleState[key] = !toggleState[key];
+  var sw = document.getElementById('sw-' + key);
+  if (sw) {
+    if (toggleState[key]) sw.classList.add('on');
+    else sw.classList.remove('on');
+  }
+  var data = {}; data[key] = toggleState[key];
   fetch('/api/business/settings', {
     method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
   }).then(r => r.json()).then(res => {
-    if (res.ok) {
-      showMsg('✓ Saved');
-    } else {
-      showMsg('Error: ' + (res.error || 'Unknown'), true);
-    }
-  }).catch(function() {
-    showMsg('Connection error', true);
-  });
+    showMsg(res.ok ? '✓ ' + key.replace(/_/g,' ') + ' ' + (toggleState[key] ? 'enabled' : 'disabled') : 'Error: ' + res.error, !res.ok);
+  }).catch(() => showMsg('Connection error', true));
 }
+
+// toggleField replaced by doToggle
 
 function uploadLogo(input) {
   if (!input.files.length) return;
