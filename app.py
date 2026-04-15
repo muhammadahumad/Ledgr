@@ -44,6 +44,50 @@ BUSINESS_TYPES = {
     'ngo':            {'name':'NGO / Non-Profit','accounting':'standard'},
     'other':          {'name':'Other',          'accounting':'simple'},
 }
+
+INDUSTRY_TYPES = {
+    'general':      {'name':'General Business',    'service_charge':False, 'expiry_tracking':False, 'archetype':'general'},
+    'hospitality':  {'name':'Hospitality / F&B',   'service_charge':True,  'expiry_tracking':False, 'archetype':'hospitality'},
+    'retail':       {'name':'Retail / Grocery',     'service_charge':False, 'expiry_tracking':False, 'archetype':'retail'},
+    'healthcare':   {'name':'Healthcare / Pharmacy','service_charge':False, 'expiry_tracking':True,  'archetype':'healthcare'},
+    'construction': {'name':'Construction / Trade', 'service_charge':False, 'expiry_tracking':False, 'archetype':'construction'},
+    'professional': {'name':'Professional Services','service_charge':False, 'expiry_tracking':False, 'archetype':'professional'},
+    'education':    {'name':'Education',            'service_charge':False, 'expiry_tracking':False, 'archetype':'education'},
+    'logistics':    {'name':'Logistics / Delivery', 'service_charge':False, 'expiry_tracking':False, 'archetype':'logistics'},
+}
+
+# Industry-specific Chart of Accounts additions
+INDUSTRY_COA = {
+    'hospitality': [
+        ('2120', 'Service Charge Payable', 'LIABILITY'),
+        ('4010', 'Food & Beverage Revenue', 'REVENUE'),
+        ('4020', 'Service Charge Collected', 'REVENUE'),
+        ('5010', 'Food & Beverage Cost', 'EXPENSE'),
+        ('5020', 'Kitchen Supplies', 'EXPENSE'),
+    ],
+    'healthcare': [
+        ('1210', 'Inventory - Medicine', 'ASSET'),
+        ('1220', 'Inventory - Medical Supplies', 'ASSET'),
+        ('4030', 'Dispensing Revenue', 'REVENUE'),
+        ('4040', 'Consultation Revenue', 'REVENUE'),
+        ('5030', 'Medicine Purchases', 'EXPENSE'),
+    ],
+    'retail': [
+        ('1230', 'Inventory - Goods for Resale', 'ASSET'),
+        ('4050', 'Retail Sales Revenue', 'REVENUE'),
+        ('5040', 'Purchases - Goods for Resale', 'EXPENSE'),
+        ('5050', 'Shrinkage & Write-offs', 'EXPENSE'),
+    ],
+    'construction': [
+        ('1240', 'Construction Materials', 'ASSET'),
+        ('1250', 'Work in Progress', 'ASSET'),
+        ('4060', 'Contract Revenue', 'REVENUE'),
+        ('5060', 'Materials Cost', 'EXPENSE'),
+        ('5070', 'Subcontractor Costs', 'EXPENSE'),
+        ('5080', 'Equipment Rental', 'EXPENSE'),
+    ],
+}
+
 PLANS = {
     'free':    {'name':'Free',    'price':0, 'uploads':10,   'businesses':1},
     'pro':     {'name':'Pro',     'price':15,'uploads':500,  'businesses':10},
@@ -106,10 +150,15 @@ class Business(db.Model):
     invoice_counter = db.Column(db.Integer, default=0)
     quote_counter = db.Column(db.Integer, default=0)
     # Module toggles
+    industry_type = db.Column(db.String(30), default='general')
     has_inventory = db.Column(db.Boolean, default=False)
     has_payroll = db.Column(db.Boolean, default=False)
     has_pos = db.Column(db.Boolean, default=True)
     has_full_accounting = db.Column(db.Boolean, default=False)
+    has_service_charge = db.Column(db.Boolean, default=False)
+    service_charge_rate = db.Column(db.Numeric(5,4), default=0.10)
+    has_expiry_tracking = db.Column(db.Boolean, default=False)
+    has_multi_location = db.Column(db.Boolean, default=False)
     # Tax settings
     is_tax_registered = db.Column(db.Boolean, default=False)
     collect_tax_on_sales = db.Column(db.Boolean, default=False)
@@ -119,6 +168,7 @@ class Business(db.Model):
     def btype(self): return BUSINESS_TYPES.get(self.business_type, BUSINESS_TYPES['sole_proprietor'])
     def btype_name(self): return self.btype()['name']
     def btype_accounting(self): return self.btype()['accounting']
+    def industry(self): return INDUSTRY_TYPES.get(self.industry_type or 'general', INDUSTRY_TYPES['general'])
     def display_name(self): return self.legal_name or self.name
     def full_address(self):
         parts = [p for p in [self.address_line1, self.address_line2, self.city, self.country] if p]
@@ -320,9 +370,12 @@ class POSSale(db.Model):
     note = db.Column(db.String(200))
     category = db.Column(db.String(50), default='Sale')
     is_credit = db.Column(db.Boolean, default=False)
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
+    service_charge = db.Column(db.Numeric(12,2), default=0)
     journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     customer = db.relationship('Customer', backref='sales')
+    location = db.relationship('Location', backref='sales')
 
 class Employee(db.Model):
     __tablename__ = 'employees'
@@ -442,6 +495,32 @@ class BankTransaction(db.Model):
     journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+
+
+class Location(db.Model):
+    """Branch / Outlet / Warehouse"""
+    __tablename__ = 'locations'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    name = db.Column(db.String(100), nullable=False)  # e.g. "Male Branch"
+    address = db.Column(db.Text)
+    is_warehouse = db.Column(db.Boolean, default=False)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='locations')
+    products = db.relationship('ProductLocation', backref='location', lazy=True)
+
+
+class ProductLocation(db.Model):
+    """Stock level per product per location — no shared inventory between branches"""
+    __tablename__ = 'product_locations'
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey('inventory.id'), nullable=False)
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
+    stock_quantity = db.Column(db.Numeric(12,2), default=0)
+    reorder_level = db.Column(db.Integer, default=10)
+    product = db.relationship('Product', backref='location_stock')
+
 with app.app_context():
     try:
         db.create_all()
@@ -521,11 +600,20 @@ def current_business():
             return b
     return None
 
-def create_default_coa(business_id):
+def create_default_coa(business_id, industry_type='general'):
+    # Standard accounts
     for acct_type, accounts in DEFAULT_COA.items():
         for code, name in accounts:
             if not Account.query.filter_by(business_id=business_id, code=code).first():
                 db.session.add(Account(business_id=business_id, code=code, name=name, account_type=acct_type))
+    # Industry-specific accounts
+    industry_accounts = INDUSTRY_COA.get(industry_type, [])
+    for code, name, acct_type in industry_accounts:
+        if not Account.query.filter_by(business_id=business_id, code=code).first():
+            db.session.add(Account(business_id=business_id, code=code, name=name, account_type=acct_type))
+    # Create default location
+    if not Location.query.filter_by(business_id=business_id).first():
+        db.session.add(Location(business_id=business_id, name='Main Branch', is_warehouse=False))
     db.session.commit()
 
 def get_account(business_id, code):
@@ -650,8 +738,13 @@ def register():
             return render_template('register.html', regions=TAX_RULES, business_types=BUSINESS_TYPES)
         tax = TAX_RULES.get(region, TAX_RULES['MV'])
         bt  = BUSINESS_TYPES.get(btype, BUSINESS_TYPES['sole_proprietor'])
+        industry = request.form.get('industry_type', 'general')
+        ind = INDUSTRY_TYPES.get(industry, INDUSTRY_TYPES['general'])
         business = Business(name=bname, region=region, base_currency=tax['currency'],
-                            business_type=btype, has_full_accounting=bt['accounting']=='full', has_pos=True)
+                            business_type=btype, has_full_accounting=bt['accounting']=='full',
+                            has_pos=True, industry_type=industry,
+                            has_service_charge=ind['service_charge'],
+                            has_expiry_tracking=ind['expiry_tracking'])
         db.session.add(business)
         db.session.flush()
         user = User(name=name, email=email, business_id=business.id, role='owner')
@@ -660,7 +753,7 @@ def register():
         db.session.flush()
         db.session.add(UserBusiness(user_id=user.id, business_id=business.id, role='owner'))
         db.session.commit()
-        create_default_coa(business.id)
+        create_default_coa(business.id, industry)
         session.permanent = True
         session['user_id'] = user.id
         session['business_id'] = business.id
@@ -725,7 +818,7 @@ def chart_of_accounts():
     user = current_user(); business = current_business()
     accounts = Account.query.filter_by(business_id=business.id, is_active=True).order_by(Account.code).all()
     if not accounts:
-        create_default_coa(business.id)
+        create_default_coa(business.id, industry)
         accounts = Account.query.filter_by(business_id=business.id, is_active=True).order_by(Account.code).all()
     grouped = {}
     for a in accounts:
@@ -858,6 +951,143 @@ def api_business_logo():
     return "", 404
 
 
+
+
+# ── Locations & Branches ──────────────────────────────────────────────────────
+
+@app.route("/locations")
+@business_required
+def locations():
+    user = current_user(); business = current_business()
+    locs = Location.query.filter_by(business_id=business.id, is_active=True).order_by(Location.name).all()
+    return render_template("locations.html", user=user, business=business,
+                           locations=locs, tax=business.tax_rules())
+
+
+@app.route("/api/location/add", methods=["POST"])
+@login_required
+def api_location_add():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    name = data.get("name","").strip()
+    if not name: return jsonify({"ok":False,"error":"Location name required"})
+    loc = Location(business_id=business.id, name=name,
+                   address=data.get("address",""),
+                   is_warehouse=data.get("is_warehouse",False))
+    db.session.add(loc)
+    db.session.commit()
+    return jsonify({"ok":True,"location_id":loc.id,"name":loc.name})
+
+
+@app.route("/api/location/<int:loc_id>/delete", methods=["POST"])
+@login_required
+def api_location_delete(loc_id):
+    business, err = api_business_guard()
+    if err: return err
+    loc = Location.query.filter_by(id=loc_id, business_id=business.id).first()
+    if not loc: return jsonify({"ok":False,"error":"Not found"})
+    # Check if it has sales
+    sale_count = POSSale.query.filter_by(location_id=loc_id).count()
+    if sale_count > 0:
+        return jsonify({"ok":False,"error":"Cannot delete — this location has sales records"})
+    loc.is_active = False
+    db.session.commit()
+    return jsonify({"ok":True})
+
+
+@app.route("/api/location/<int:loc_id>/stock")
+@login_required
+def api_location_stock(loc_id):
+    business, err = api_business_guard()
+    if err: return jsonify([])
+    loc = Location.query.filter_by(id=loc_id, business_id=business.id).first()
+    if not loc: return jsonify([])
+    stock = ProductLocation.query.filter_by(location_id=loc_id).all()
+    return jsonify([{
+        "product_id": s.product_id,
+        "product_name": s.product.name if s.product else "Unknown",
+        "stock_quantity": float(s.stock_quantity),
+        "reorder_level": s.reorder_level,
+        "low_stock": float(s.stock_quantity) <= s.reorder_level
+    } for s in stock])
+
+
+@app.route("/api/location/transfer", methods=["POST"])
+@login_required
+def api_location_transfer():
+    """Inter-branch stock transfer"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    from_loc_id = data.get("from_location_id")
+    to_loc_id = data.get("to_location_id")
+    product_id = data.get("product_id")
+    qty = float(data.get("quantity", 0))
+    if qty <= 0: return jsonify({"ok":False,"error":"Quantity must be greater than zero"})
+    if from_loc_id == to_loc_id: return jsonify({"ok":False,"error":"Cannot transfer to same location"})
+
+    from_stock = ProductLocation.query.filter_by(
+        product_id=product_id, location_id=from_loc_id).first()
+    if not from_stock or float(from_stock.stock_quantity) < qty:
+        return jsonify({"ok":False,"error":"Insufficient stock at source location"})
+
+    to_stock = ProductLocation.query.filter_by(
+        product_id=product_id, location_id=to_loc_id).first()
+    if not to_stock:
+        to_stock = ProductLocation(product_id=product_id, location_id=to_loc_id, stock_quantity=0)
+        db.session.add(to_stock)
+
+    from_stock.stock_quantity = float(from_stock.stock_quantity) - qty
+    to_stock.stock_quantity = float(to_stock.stock_quantity) + qty
+
+    # Post journal entry for transfer
+    product = Product.query.get(product_id)
+    try:
+        post_journal(business.id, user.id,
+                    "Stock Transfer: " + (product.name if product else str(product_id)),
+                    "TRF-" + str(from_loc_id) + "-" + str(to_loc_id),
+                    "TRANSFER",
+                    [{"account_code":"1200","debit":0,"credit":0,"description":"Inter-branch transfer"}])
+    except Exception as e:
+        print("Transfer journal error: " + str(e))
+
+    db.session.commit()
+    from_loc = Location.query.get(from_loc_id)
+    to_loc = Location.query.get(to_loc_id)
+    return jsonify({"ok":True,
+                    "message": str(qty) + " units transferred from " +
+                               (from_loc.name if from_loc else "?") + " to " +
+                               (to_loc.name if to_loc else "?")})
+
+
+# ── Service Charge (Hospitality only) ─────────────────────────────────────────
+
+@app.route("/api/business/industry", methods=["POST"])
+@login_required
+def api_business_industry():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    industry = data.get("industry_type","general")
+    ind = INDUSTRY_TYPES.get(industry, INDUSTRY_TYPES["general"])
+    business.industry_type = industry
+    # Apply industry defaults — only set what makes sense
+    business.has_service_charge = ind["service_charge"]
+    business.has_expiry_tracking = ind["expiry_tracking"]
+    # Add industry CoA accounts if missing
+    for code, name, acct_type in INDUSTRY_COA.get(industry, []):
+        if not Account.query.filter_by(business_id=business.id, code=code).first():
+            db.session.add(Account(business_id=business.id, code=code,
+                                   name=name, account_type=acct_type))
+    db.session.commit()
+    return jsonify({"ok":True,"industry":ind["name"],
+                    "service_charge":ind["service_charge"],
+                    "expiry_tracking":ind["expiry_tracking"]})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -891,13 +1121,18 @@ def add_business():
             return redirect(url_for('settings'))
         tax = TAX_RULES.get(region, TAX_RULES['MV'])
         bt  = BUSINESS_TYPES.get(btype, BUSINESS_TYPES['sole_proprietor'])
+        industry = request.form.get('industry_type', 'general')
+        ind = INDUSTRY_TYPES.get(industry, INDUSTRY_TYPES['general'])
         business = Business(name=bname, region=region, base_currency=tax['currency'],
-                            business_type=btype, has_full_accounting=bt['accounting']=='full', has_pos=True)
+                            business_type=btype, has_full_accounting=bt['accounting']=='full',
+                            has_pos=True, industry_type=industry,
+                            has_service_charge=ind['service_charge'],
+                            has_expiry_tracking=ind['expiry_tracking'])
         db.session.add(business)
         db.session.flush()
         db.session.add(UserBusiness(user_id=user.id, business_id=business.id, role='owner'))
         db.session.commit()
-        create_default_coa(business.id)
+        create_default_coa(business.id, industry)
         session['business_id'] = business.id
         session['business_name'] = bname
         flash(f'{bname} workspace created!','success')
