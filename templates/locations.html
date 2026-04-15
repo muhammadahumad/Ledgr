@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Locations — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Locations & Branches</div>
+    <div class="page-sub">{{ locations|length }} active locations · Each branch has its own inventory</div>
+  </div>
+  <button class="btn btn-primary" onclick="openModal('add-loc-modal')">+ Add Location</button>
+</div>
+
+<div class="content">
+
+  {% if not business.has_multi_location and locations|length <= 1 %}
+  <div class="alert alert-info" style="margin-bottom:14px">
+    <div style="font-weight:500;margin-bottom:4px">Single Location Mode</div>
+    <div style="font-size:11px">You are operating from one location. When you grow to multiple branches, enable Multi-Location in Settings. Each branch will have its own inventory — no shared stock between outlets.</div>
+  </div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-bottom:14px">
+    {% for loc in locations %}
+    <div class="card" style="border-color:rgba(16,185,129,.2);padding:16px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+        <div>
+          <div style="font-weight:600;font-size:14px;color:var(--text)">
+            {% if loc.is_warehouse %}🏭{% else %}🏪{% endif %} {{ loc.name }}
+          </div>
+          {% if loc.address %}
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">{{ loc.address }}</div>
+          {% endif %}
+        </div>
+        <span class="badge badge-{% if loc.is_warehouse %}blue{% else %}green{% endif %}">
+          {% if loc.is_warehouse %}Warehouse{% else %}Branch{% endif %}
+        </span>
+      </div>
+
+      <!-- Stock summary for this location -->
+      <div id="stock-{{ loc.id }}" style="margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text3)">Loading stock...</div>
+      </div>
+
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="viewStock({{ loc.id }}, '{{ loc.name }}')">View Stock</button>
+        <button class="btn btn-sm" onclick="openTransfer({{ loc.id }}, '{{ loc.name }}')">Transfer Stock</button>
+        {% if locations|length > 1 %}
+        <button class="btn btn-sm" style="color:var(--red);margin-left:auto" onclick="deleteLocation({{ loc.id }}, '{{ loc.name }}')">Delete</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <!-- Add location card -->
+    <div class="card" style="border:2px dashed var(--border2);display:flex;align-items:center;justify-content:center;min-height:140px;cursor:pointer;transition:border-color .15s" onclick="openModal('add-loc-modal')" onmouseover="this.style.borderColor='var(--mint)'" onmouseout="this.style.borderColor='var(--border2)'">
+      <div style="text-align:center;color:var(--text3)">
+        <div style="font-size:28px;margin-bottom:6px">+</div>
+        <div style="font-size:12px;font-weight:500">Add Branch or Warehouse</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stock detail card (shown when viewing a location) -->
+  <div id="stock-detail-card" style="display:none" class="card">
+    <div class="card-title" id="stock-detail-title">Stock at Branch</div>
+    <div id="stock-detail-body"></div>
+  </div>
+</div>
+
+<!-- Add Location Modal -->
+<div id="add-loc-modal" class="modal-overlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-title">Add Location <button class="modal-close" onclick="closeModal('add-loc-modal')">×</button></div>
+    <div class="field-group"><div class="field-label">Location Name *</div><input class="field-input" id="l-name" placeholder="Main Branch, Male' Outlet, Hulhumale Branch..."></div>
+    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="l-address" placeholder="Full address"></div>
+    <div class="toggle-row" onclick="toggleWarehouse()" style="margin-bottom:12px">
+      <div><div class="toggle-label">Warehouse / Storage</div><div class="toggle-desc">This is a storage or distribution point, not a customer-facing outlet.</div></div>
+      <div class="toggle-switch" id="sw-warehouse"></div>
+    </div>
+    <input type="hidden" id="l-warehouse" value="false">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="addLocation()">Add Location</button>
+      <button class="btn" onclick="closeModal('add-loc-modal')">Cancel</button>
+    </div>
+    <div id="l-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
+<!-- Transfer Stock Modal -->
+<div id="transfer-modal" class="modal-overlay">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-title">Transfer Stock <button class="modal-close" onclick="closeModal('transfer-modal')">×</button></div>
+    <div class="field-group">
+      <div class="field-label">From</div>
+      <p id="t-from-name" style="color:var(--mint);font-weight:500;font-size:13px"></p>
+      <input type="hidden" id="t-from-id">
+    </div>
+    <div class="field-group">
+      <div class="field-label">To Location</div>
+      <select class="select-input" id="t-to-id">
+        {% for loc in locations %}
+        <option value="{{ loc.id }}">{{ loc.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Product</div>
+      <select class="select-input" id="t-product-id">
+        <option value="">Select product...</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Quantity to Transfer</div>
+      <input class="field-input" type="number" id="t-qty" step="0.01" placeholder="0" min="0.01">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="doTransfer()">Transfer</button>
+      <button class="btn" onclick="closeModal('transfer-modal')">Cancel</button>
+    </div>
+    <div id="t-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var isWarehouse = false;
+
+function toggleWarehouse() {
+  isWarehouse = !isWarehouse;
+  document.getElementById('l-warehouse').value = isWarehouse;
+  var sw = document.getElementById('sw-warehouse');
+  if (isWarehouse) sw.classList.add('on'); else sw.classList.remove('on');
+}
+
+function addLocation() {
+  var name = document.getElementById('l-name').value.trim();
+  if (!name) { alert('Location name required'); return; }
+  fetch('/api/location/add', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name:name, address:document.getElementById('l-address').value, is_warehouse:isWarehouse})
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) { location.reload(); }
+    else { var m=document.getElementById('l-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)'; }
+  });
+}
+
+function viewStock(locId, locName) {
+  document.getElementById('stock-detail-card').style.display = 'block';
+  document.getElementById('stock-detail-title').textContent = 'Stock at ' + locName;
+  document.getElementById('stock-detail-body').innerHTML = '<div style="color:var(--text3);font-size:12px">Loading...</div>';
+  fetch('/api/location/' + locId + '/stock').then(r=>r.json()).then(items=>{
+    if (!items.length) {
+      document.getElementById('stock-detail-body').innerHTML = '<div style="color:var(--text3);font-size:12px;padding:10px 0">No stock recorded at this location. Stock is updated when sales are made or inventory is allocated here.</div>';
+      return;
+    }
+    var html = '<table class="table"><thead><tr><th>Product</th><th style="text-align:right">Qty</th><th style="text-align:right">Reorder Level</th><th>Status</th></tr></thead><tbody>';
+    items.forEach(function(item) {
+      html += '<tr><td style="color:var(--text);font-weight:500">' + esc(item.product_name) + '</td>' +
+              '<td style="text-align:right;font-family:var(--mono);color:' + (item.low_stock?'var(--red)':'var(--mint)') + '">' + item.stock_quantity + '</td>' +
+              '<td style="text-align:right;font-family:var(--mono);color:var(--text3)">' + item.reorder_level + '</td>' +
+              '<td><span class="badge badge-' + (item.low_stock?'red':'green') + '">' + (item.low_stock?'Low Stock':'OK') + '</span></td></tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('stock-detail-body').innerHTML = html;
+    document.getElementById('stock-detail-card').scrollIntoView({behavior:'smooth'});
+  });
+}
+
+function openTransfer(fromId, fromName) {
+  document.getElementById('t-from-id').value = fromId;
+  document.getElementById('t-from-name').textContent = fromName;
+  // Load products at this location
+  fetch('/api/location/' + fromId + '/stock').then(r=>r.json()).then(items=>{
+    var sel = document.getElementById('t-product-id');
+    sel.innerHTML = '<option value="">Select product...</option>';
+    items.forEach(function(item) {
+      sel.innerHTML += '<option value="' + item.product_id + '">' + esc(item.product_name) + ' (' + item.stock_quantity + ' available)</option>';
+    });
+  });
+  openModal('transfer-modal');
+}
+
+function doTransfer() {
+  var fromId = document.getElementById('t-from-id').value;
+  var toId = document.getElementById('t-to-id').value;
+  var productId = document.getElementById('t-product-id').value;
+  var qty = parseFloat(document.getElementById('t-qty').value);
+  if (!productId) { alert('Select a product'); return; }
+  if (!qty || qty <= 0) { alert('Enter a valid quantity'); return; }
+  fetch('/api/location/transfer', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({from_location_id:parseInt(fromId), to_location_id:parseInt(toId), product_id:parseInt(productId), quantity:qty})
+  }).then(r=>r.json()).then(res=>{
+    var m = document.getElementById('t-msg');
+    m.style.display = 'block';
+    if (res.ok) { m.style.color='var(--mint)';m.textContent='✓ '+res.message;setTimeout(()=>location.reload(),1500); }
+    else { m.style.color='var(--red)';m.textContent='Error: '+res.error; }
+  });
+}
+
+function deleteLocation(id, name) {
+  if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+  fetch('/api/location/' + id + '/delete', {method:'POST'}).then(r=>r.json()).then(res=>{
+    if (res.ok) location.reload();
+    else alert('Error: ' + res.error);
+  });
+}
+
+// Load stock summaries for each location card
+{% for loc in locations %}
+fetch('/api/location/{{ loc.id }}/stock').then(r=>r.json()).then(items=>{
+  var el = document.getElementById('stock-{{ loc.id }}');
+  if (!items.length) { el.innerHTML='<div style="font-size:11px;color:var(--text3)">No stock recorded yet</div>'; return; }
+  var lowCount = items.filter(function(i){return i.low_stock;}).length;
+  el.innerHTML = '<div style="font-size:11px;color:var(--text3)">' + items.length + ' products' +
+    (lowCount>0?'<span style="color:var(--red);margin-left:6px">⚠ '+lowCount+' low stock</span>':'') + '</div>';
+});
+{% endfor %}
+</script>
+{% endblock %}
