@@ -78,7 +78,7 @@
       {% endfor %}
     </div>
     <div class="alert alert-info" style="margin-top:10px;font-size:11px">
-      <div>{{ tax.name }} {{ tax.tax_name }} threshold: <strong>{{ tax.currency }} {{ "{:,.0f}".format(TAX_THRESHOLDS[business.region]['amount']) }}</strong> annual revenue. Below this threshold, tax registration is optional.</div>
+      <div>{{ tax.name }} {{ tax.tax_name }} threshold: <strong>{{ tax.currency }} {{ "{:,.0f}".format(threshold_info.get("amount", 0)) }}</strong> annual revenue. Below this threshold, tax registration is optional.</div>
     </div>
   </div>
 
