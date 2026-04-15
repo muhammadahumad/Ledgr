@@ -1409,12 +1409,12 @@ def accountant_portal():
         revenue = db.session.query(sqlfunc.sum(LedgerEntry.amount)).filter(
             LedgerEntry.business_id == b.id,
             LedgerEntry.entry_type == "REVENUE",
-            LedgerEntry.created_at >= thirty_days_ago
+            LedgerEntry.timestamp >= thirty_days_ago
         ).scalar() or 0
         expenses = db.session.query(sqlfunc.sum(LedgerEntry.amount)).filter(
             LedgerEntry.business_id == b.id,
             LedgerEntry.entry_type == "EXPENSE",
-            LedgerEntry.created_at >= thirty_days_ago
+            LedgerEntry.timestamp >= thirty_days_ago
         ).scalar() or 0
         pending_docs = Document.query.filter_by(
             business_id=b.id, status="PENDING").count()
