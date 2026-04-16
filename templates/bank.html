@@ -164,8 +164,14 @@ function postAllTransactions(){
   if(!stmtExtracted)return;
   var rows=document.querySelectorAll('#stmt-body tr');
   var txns=(stmtExtracted.transactions||[]).map(function(t,i){
-    var row=rows[i]; var sel=row?row.querySelector('select'):null; var cb=document.getElementById('st-'+i);
-    return{...t,category:sel?sel.value:t.category,include:cb?cb.checked:true};
+    var catSel=document.getElementById('cat-'+i);
+    var glSel=document.getElementById('gl-'+i);
+    var cb=document.getElementById('st-'+i);
+    return Object.assign({},t,{
+      category:catSel?catSel.value:t.category,
+      account_code:glSel?glSel.value:null,
+      include:cb?cb.checked:true
+    });
   });
   var btn=document.querySelector('[onclick="postAllTransactions()"]');
   btn.disabled=true;btn.textContent='Posting...';
