@@ -2082,18 +2082,27 @@ def api_pos_receipt():
 @login_required
 def api_customer_add():
     user = current_user()
+    business, err = api_business_guard()
+    if err: return err
     data = request.get_json()
     name = data.get('name','').strip()
     if not name: return jsonify({'ok':False,'error':'Name is required'})
     if data.get('phone'):
-        existing = Customer.query.filter_by(business_id=business.id, phone=data.get('phone')).first() if data.get('phone') else None
-        if existing: return jsonify({'ok':False,'error':'Customer with this phone exists','customer_id':existing.id,'name':existing.name})
-    c = Customer(business_id=current_business().id, name=name, phone=data.get('phone',''),
-                 email=data.get('email',''), notes=data.get('notes',''),
-                 is_vip=data.get('is_vip',False), credit_limit=float(data.get('credit_limit',0)))
-    db.session.add(c)
-    db.session.commit()
-    return jsonify({'ok':True,'customer_id':c.id,'name':c.name})
+        existing = Customer.query.filter_by(business_id=business.id, phone=data.get('phone')).first()
+        if existing: return jsonify({'ok':False,'error':'Customer with this phone already exists','customer_id':existing.id,'name':existing.name})
+    try:
+        c = Customer(business_id=business.id, name=name,
+                     phone=data.get('phone',''), email=data.get('email',''),
+                     notes=data.get('notes',''), is_vip=data.get('is_vip',False),
+                     customer_type=data.get('customer_type','individual'),
+                     tax_id=data.get('tax_id',''),
+                     registration_number=data.get('registration_number',''))
+        db.session.add(c)
+        db.session.commit()
+        return jsonify({'ok':True,'customer_id':c.id,'name':c.name})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'ok':False,'error':str(e)})
 
 @app.route('/api/customer/search')
 @login_required
@@ -2554,6 +2563,38 @@ def api_bank_upload_statement():
         return jsonify({"ok":False,"error":"Connection timeout. Bank statements can take up to 2 minutes — please try again."})
     except Exception as e:
         return jsonify({"ok":False,"error":"Processing error: " + str(e)[:100]})
+
+
+@app.route("/api/bank/auto-create-account", methods=["POST"])
+@login_required
+def api_bank_auto_create():
+    """Auto-create bank account from statement details with user approval"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    extracted = data.get("extracted", {})
+    bank_name = extracted.get("bank_name", "Bank Account")
+    account_name = extracted.get("account_name", business.display_name())
+    account_number = extracted.get("account_number", "")
+    currency = extracted.get("currency", business.base_currency)
+    opening_balance = float(extracted.get("opening_balance", 0))
+    existing = None
+    if account_number:
+        existing = BankAccount.query.filter_by(
+            business_id=business.id, account_number=account_number).first()
+    if existing:
+        return jsonify({"ok":True,"account_id":existing.id,"created":False,
+                        "message":"Using existing account: " + existing.account_name})
+    acct = BankAccount(business_id=business.id, bank_name=bank_name,
+                       account_name=account_name, account_number=account_number,
+                       currency=currency, opening_balance=opening_balance,
+                       current_balance=opening_balance)
+    db.session.add(acct)
+    db.session.commit()
+    return jsonify({"ok":True,"account_id":acct.id,"created":True,
+                    "account_name":account_name,"bank_name":bank_name,
+                    "currency":currency,"opening_balance":opening_balance,
+                    "message":"Bank account created: " + bank_name + " — " + account_name})
 
 
 @app.route("/api/bank/post-transactions", methods=["POST"])
