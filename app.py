@@ -247,6 +247,9 @@ class Document(db.Model):
     raw_ai_data = db.Column(db.Text)
     status = db.Column(db.String(20), default='PENDING')
     ledger_posted = db.Column(db.Boolean, default=False)
+    posted_to_account_id = db.Column(db.Integer, db.ForeignKey('accounts.id'), nullable=True)
+    posted_to_account_name = db.Column(db.String(100))  # Cached for display
+    payment_status = db.Column(db.String(20), default='UNPAID')  # UNPAID, PAID, PARTIAL
     file_data = db.Column(db.Text)  # base64 stored soft copy
     file_type = db.Column(db.String(30))  # image/jpeg, application/pdf
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -354,6 +357,7 @@ class Supplier(db.Model):
     total_purchases = db.Column(db.Numeric(12,2), default=0)
     is_active = db.Column(db.Boolean, default=True)
     auto_detected = db.Column(db.Boolean, default=False)  # True if added from upload
+    has_transactions = db.Column(db.Boolean, default=False)  # Prevent hard delete if True
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     business = db.relationship('Business', backref='suppliers')
 
@@ -535,6 +539,17 @@ def login_required(f):
         if 'user_id' not in session: return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated
+
+@app.context_processor
+def inject_globals():
+    """Inject today's date and current business into all templates"""
+    from datetime import date
+    ctx = {'today': date.today().strftime('%Y-%m-%d'), 'today_date': date.today()}
+    if 'user_id' in session:
+        b = current_business()
+        if b:
+            ctx['current_biz'] = b
+    return ctx
 
 def business_required(f):
     """Ensures a valid business is selected — redirects to add_business if not"""
@@ -1588,6 +1603,152 @@ def api_fta_201():
 
 
 
+
+@app.route("/suppliers")
+@business_required
+def suppliers():
+    user = current_user(); business = current_business()
+    try:
+        supplier_list = Supplier.query.filter_by(
+            business_id=business.id, is_active=True
+        ).order_by(Supplier.total_purchases.desc()).all()
+    except Exception as e:
+        print("Suppliers error: " + str(e))
+        supplier_list = []
+    return render_template("suppliers.html", user=user, business=business,
+                           suppliers=supplier_list, tax=business.tax_rules())
+
+
+
+
+# ── Manual Journal Entry ──────────────────────────────────────────────────────
+
+@app.route("/api/journal/manual", methods=["POST"])
+@login_required
+def api_manual_journal():
+    """Professional manual journal entry with debit/credit validation"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    lines = data.get("lines", [])
+    memo = data.get("memo", "Manual Journal Entry").strip()
+    ref = data.get("ref", "").strip()
+    if not lines:
+        return jsonify({"ok":False,"error":"No lines provided"})
+    # Validate balance
+    total_debit = sum(float(l.get("debit",0)) for l in lines)
+    total_credit = sum(float(l.get("credit",0)) for l in lines)
+    if abs(total_debit - total_credit) > 0.01:
+        return jsonify({"ok":False,
+                        "error":f"Journal does not balance. Debits: {total_debit:.2f}, Credits: {total_credit:.2f}. Difference: {abs(total_debit-total_credit):.2f}"})
+    try:
+        je = post_journal(business.id, user.id, memo, ref or "MANUAL", "MANUAL", lines)
+        return jsonify({"ok":True,"journal_entry_id":je.id,
+                        "message":f"Manual journal posted — {memo}",
+                        "total_debit":total_debit,"total_credit":total_credit})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/journal/<int:je_id>/void", methods=["POST"])
+@login_required
+def api_journal_void(je_id):
+    """Void a journal entry by creating a reversal — maintains audit trail"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    je = JournalEntry.query.filter_by(id=je_id, business_id=business.id).first()
+    if not je:
+        return jsonify({"ok":False,"error":"Journal entry not found"})
+    if je.is_void:
+        return jsonify({"ok":False,"error":"Already voided"})
+    # Check authority — only owner/accountant can void
+    ub = UserBusiness.query.filter_by(user_id=user.id, business_id=business.id).first()
+    if ub and ub.role not in ['owner','accountant']:
+        return jsonify({"ok":False,"error":"Only owner or accountant can void journal entries"})
+    # Create reversal entry
+    orig_lines = JournalLine.query.filter_by(journal_entry_id=je_id).all()
+    reversal_lines = [{"account_code":l.account.code if l.account else "6900",
+                       "debit":float(l.credit),"credit":float(l.debit),
+                       "description":"VOID: " + (l.description or "")} for l in orig_lines]
+    try:
+        post_journal(business.id, user.id, "VOID: " + je.description,
+                    "VOID-" + str(je_id), "VOID", reversal_lines)
+        je.is_void = True
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Journal entry voided with reversal"})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/account/add", methods=["POST"])
+@login_required
+def api_account_add():
+    """Add a custom account to Chart of Accounts"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    code = data.get("code","").strip()
+    name = data.get("name","").strip()
+    acct_type = data.get("account_type","EXPENSE")
+    if not code or not name:
+        return jsonify({"ok":False,"error":"Code and name required"})
+    existing = Account.query.filter_by(business_id=business.id, code=code).first()
+    if existing:
+        return jsonify({"ok":False,"error":f"Account code {code} already exists: {existing.name}"})
+    acct = Account(business_id=business.id, code=code, name=name,
+                   account_type=acct_type, is_active=True)
+    db.session.add(acct)
+    db.session.commit()
+    return jsonify({"ok":True,"account_id":acct.id,"code":code,"name":name})
+
+
+@app.route("/api/account/<int:acct_id>/edit", methods=["POST"])
+@login_required
+def api_account_edit(acct_id):
+    """Edit a custom account"""
+    business, err = api_business_guard()
+    if err: return err
+    acct = Account.query.filter_by(id=acct_id, business_id=business.id).first()
+    if not acct: return jsonify({"ok":False,"error":"Account not found"})
+    data = request.get_json()
+    if data.get("name"): acct.name = data["name"]
+    if data.get("account_type"): acct.account_type = data["account_type"]
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Account updated"})
+
+
+@app.route("/api/bill/<int:doc_id>/mark-paid", methods=["POST"])
+@login_required
+def api_bill_mark_paid(doc_id):
+    """Mark a bill as paid — debits AP, credits Cash/Bank"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
+    if not doc: return jsonify({"ok":False,"error":"Bill not found"})
+    if doc.payment_status == "PAID":
+        return jsonify({"ok":False,"error":"Already marked as paid"})
+    data = request.get_json() or {}
+    payment_method = data.get("payment_method","Cash")
+    bank_code = "1010" if payment_method == "Bank" else "1000"
+    total = float(doc.total_amount or 0)
+    try:
+        post_journal(business.id, user.id,
+                    "Payment: " + (doc.vendor_name or "Supplier"),
+                    "PAY-" + str(doc.id), "PAYMENT",
+                    [{"account_code":"2000","debit":total,"credit":0,"description":"AP Settlement"},
+                     {"account_code":bank_code,"debit":0,"credit":total,"description":"Payment"}])
+        doc.payment_status = "PAID"
+        doc.status = "PAID"
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Bill marked as paid — Accounts Payable cleared"})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -1644,10 +1805,23 @@ def add_business():
 def switch_business(business_id):
     user = current_user()
     ub = UserBusiness.query.filter_by(user_id=user.id, business_id=business_id).first()
+    if not ub:
+        # Legacy: check direct business ownership
+        b = Business.query.get(business_id)
+        if b and (b.id == user.business_id):
+            ub_new = UserBusiness(user_id=user.id, business_id=business_id, role='owner')
+            db.session.add(ub_new)
+            try: db.session.commit()
+            except: db.session.rollback()
+            ub = ub_new
     if ub:
-        session['business_id'] = business_id
+        session.permanent = True
+        session['business_id'] = int(business_id)
         session['business_name'] = ub.business.name
-        flash(f'Switched to {ub.business.name}','success')
+        session.modified = True
+        flash('Switched to ' + ub.business.name, 'success')
+    else:
+        flash('Access denied to this business', 'error')
     return redirect(url_for('dashboard'))
 
 # ── API: Upload & AI ──────────────────────────────────────────────────────────
@@ -1701,6 +1875,28 @@ def api_upload():
                                    amount=total, tax_amount=tax_amt, currency=extracted.get('currency',business.base_currency),
                                    description=f"{extracted.get('doc_type','BILL')} — {extracted.get('vendor_name','')}",
                                    category=extracted.get('category','Other')))
+        # Auto-post BILLS to Accounts Payable (2100) — not Revenue
+        # Scanned bills are LIABILITIES until paid, never Revenue
+        if doc.doc_type in ['BILL', 'RECEIPT', 'EXPENSE']:
+            try:
+                # Determine expense account from category
+                cat_map = {'Office Supplies':'5400','Utilities':'5300','Travel':'5700',
+                           'Meals':'5800','Professional Services':'5600',
+                           'Inventory Purchase':'1200','Payroll':'5100',
+                           'Tax Payment':'6200','Other':'6900'}
+                expense_code = cat_map.get(extracted.get('category','Other'),'6900')
+                expense_acct = get_account(business.id, expense_code) or get_account(business.id, '6900')
+                ap_acct = get_account(business.id, '2000')  # Accounts Payable
+                if expense_acct and ap_acct:
+                    doc.posted_to_account_id = expense_acct.id
+                    doc.posted_to_account_name = expense_acct.name
+                doc.payment_status = 'UNPAID'
+                doc.status = 'POSTED_UNPAID'
+            except Exception as e:
+                print("AP posting note: " + str(e))
+                doc.status = 'PROCESSED'
+        else:
+            doc.status = 'PROCESSED'
         doc.ledger_posted = True
         db.session.commit()
         return jsonify({'ok':True,'document_id':doc.id,'extracted':extracted,
