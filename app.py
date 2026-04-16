@@ -2518,7 +2518,9 @@ def api_bank_add_account():
 @app.route("/api/bank/upload-statement", methods=["POST"])
 @login_required
 def api_bank_upload_statement():
-    user = current_user(); business = current_business()
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
     if not ANTHROPIC_KEY: return jsonify({"ok":False,"error":"AI not configured"})
     data = request.get_json()
     file_b64 = data.get("file","")
