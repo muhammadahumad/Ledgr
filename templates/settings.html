@@ -1,183 +1,76 @@
 {% extends "base.html" %}
 {% block title %}Settings — LEDGR{% endblock %}
 {% block content %}
-<style>
-.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:8px;margin-bottom:8px;border:1px solid var(--border);cursor:pointer;user-select:none;transition:border-color .15s}
-.toggle-row:hover{border-color:var(--mint)}
-.toggle-label{font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px}
-.toggle-desc{font-size:11px;color:var(--text3);line-height:1.4}
-.toggle-switch{width:42px;height:24px;border-radius:24px;background:var(--border2);position:relative;flex-shrink:0;margin-left:16px;transition:background .25s}
-.toggle-switch.on{background:var(--mint)}
-.toggle-switch::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:3px;left:3px;transition:transform .25s;box-shadow:0 1px 4px rgba(0,0,0,.3)}
-.toggle-switch.on::after{transform:translateX(18px)}
-.section-title{font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:16px 0 8px}
-</style>
+<div class="topbar"><div><div class="page-title">Settings</div><div class="page-sub">Business profile · Modules · Account</div></div></div>
+<div class="content" style="max-width:720px">
 
-<div class="topbar">
-  <div>
-    <div class="page-title">Settings</div>
-    <div class="page-sub">Business profile · Tax · Modules · Account</div>
-  </div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <span id="save-status" style="display:none;font-size:12px;font-weight:500;color:var(--mint)"></span>
-    <button class="btn btn-primary" onclick="saveAll()">Save All Changes</button>
-  </div>
-</div>
-
-<div class="content" style="max-width:780px">
-
-  <!-- Business Identity -->
   <div class="card">
-    <div class="card-title">Business Identity & Branding</div>
-    <div style="display:flex;gap:20px;align-items:flex-start;margin-bottom:16px">
-      <div>
-        <div id="logo-wrap" onclick="document.getElementById('logo-file').click()" style="width:80px;height:80px;border-radius:10px;border:2px dashed var(--border2);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;background:var(--bg);transition:border-color .15s" onmouseover="this.style.borderColor='var(--mint)'" onmouseout="this.style.borderColor='var(--border2)'">
-          {% if business.logo_data %}
-          <img src="/api/business/logo?t={{ business.id }}" style="width:100%;height:100%;object-fit:contain" id="logo-img">
-          {% else %}
-          <div style="text-align:center;font-size:10px;color:var(--text3);line-height:1.3" id="logo-placeholder">Click to<br>add logo</div>
-          {% endif %}
+    <div class="card-title">Business profile</div>
+    <div class="field-row">
+      <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.name }}</p></div>
+      <div><div class="field-label">Type</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.btype()["name"] }}</p></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Region</div><p style="color:var(--mint);font-size:13px;padding:4px 0">{{ tax.name }}</p></div>
+      <div><div class="field-label">Currency</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.base_currency }}</p></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Tax Authority</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ tax.authority }} · {{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</p></div>
+      <div><div class="field-label">Business Tax ID</div><input class="field-input" id="tax-id" value="{{ business.tax_id or '' }}" placeholder="Business registration number" onblur="saveField('tax_id',this.value)"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Module settings</div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:14px">Enable only what your business needs. Changes apply immediately.</p>
+    {% set toggles = [
+      ('has_pos','Point of Sale (POS)','Record sales in seconds. Barber shops, takeaways, cafes, any cash business.'),
+      ('has_inventory','Inventory Tracking','Auto-update stock from supplier invoices. Grocery shops, cafes, retail, construction.'),
+      ('has_payroll','Payroll & HR','Track employees, salaries, visa and work permit expiry.'),
+      ('has_full_accounting','Full Accounting Mode','Trial balance, detailed CoA, advanced journal entries. For Limited Companies.'),
+    ] %}
+    {% for field, label, desc in toggles %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">
+      <div style="flex:1;padding-right:16px">
+        <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px">{{ label }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
+        <input type="checkbox" id="toggle-{{ field }}" {% if val %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
+        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-{{ field }}"></span>
+        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-{{ field }}"></span>
+      </label>
+    </div>
+    {% endfor %}
+
+    <!-- Tax Registration -->
+    <div style="padding:12px;background:var(--bg);border-radius:8px;border:1px solid {% if business.is_tax_registered %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:{% if business.is_tax_registered %}12px{% else %}0{% endif %}">
+        <div style="flex:1;padding-right:16px">
+          <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px">Tax Registration ({{ tax.tax_name }}/{{ tax.authority }})</div>
+          <div style="font-size:11px;color:var(--text3)">Activates {{ tax.tax_name }} on POS receipts and reports. Enable after registering with {{ tax.authority }}.</div>
         </div>
-        <input type="file" id="logo-file" accept="image/png,image/jpeg,image/gif,image/webp" style="display:none" onchange="uploadLogo(this)">
-        <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">PNG/JPG/GIF</div>
+        <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
+          <input type="checkbox" id="toggle-is_tax_registered" {% if business.is_tax_registered %}checked{% endif %} onchange="toggleModule('is_tax_registered',this.checked)" style="opacity:0;width:0;height:0">
+          <span onclick="document.getElementById('toggle-is_tax_registered').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business.is_tax_registered %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-is_tax_registered"></span>
+          <span onclick="document.getElementById('toggle-is_tax_registered').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business.is_tax_registered %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-is_tax_registered"></span>
+        </label>
       </div>
-      <div style="flex:1">
-        <div class="field-row">
-          <div><div class="field-label">Trading Name *</div><input class="field-input" id="f-name" value="{{ business.name }}"></div>
-          <div><div class="field-label">Full Legal Name</div><input class="field-input" id="f-legal-name" value="{{ business.legal_name or '' }}" placeholder="e.g. Maldives Cafe Pvt Ltd"></div>
-        </div>
-        <div class="field-row">
-          <div><div class="field-label">Business Type</div><p style="color:var(--text2);font-size:12px;padding:6px 0">{{ business.btype_name() }}</p></div>
-          <div><div class="field-label">Registration Number</div><input class="field-input" id="f-reg" value="{{ business.registration_number or '' }}" placeholder="C-XXXXXX / BRN"></div>
-        </div>
-      </div>
+      {% if business.is_tax_registered %}
+      <div><div class="field-label">{{ tax.authority }} Registration Number</div>
+      <input class="field-input" id="tax-reg-num" value="{{ business.tax_registration_number or '' }}" placeholder="{{ tax.tin_format }}" style="max-width:280px" onblur="saveField('tax_registration_number',this.value)"></div>
+      {% endif %}
     </div>
-    <div class="field-row">
-      <div><div class="field-label">Business Phone</div><input class="field-input" id="f-phone" value="{{ business.phone or '' }}" placeholder="+960 XXX XXXX"></div>
-      <div><div class="field-label">Business Email</div><input class="field-input" id="f-email" value="{{ business.email or '' }}" placeholder="info@business.com"></div>
-    </div>
-    <div class="field-group"><div class="field-label">Website</div><input class="field-input" id="f-website" value="{{ business.website or '' }}" placeholder="https://"></div>
+    <div id="module-msg" style="display:none;margin-top:10px;font-size:11px;color:var(--mint)">✓ Settings saved</div>
   </div>
 
-  <!-- Registered Address -->
   <div class="card">
-    <div class="card-title">Registered Address</div>
-    <div class="field-group"><div class="field-label">Address Line 1</div><input class="field-input" id="f-addr1" value="{{ business.address_line1 or '' }}" placeholder="Street / Building / Floor"></div>
-    <div class="field-group"><div class="field-label">Address Line 2</div><input class="field-input" id="f-addr2" value="{{ business.address_line2 or '' }}" placeholder="Area / Island / District"></div>
-    <div class="field-row">
-      <div><div class="field-label">City / Atoll</div><input class="field-input" id="f-city" value="{{ business.city or '' }}" placeholder="Male'"></div>
-      <div><div class="field-label">Country</div><input class="field-input" id="f-country" value="{{ business.country or tax.name }}" placeholder="{{ tax.name }}"></div>
-    </div>
-  </div>
-
-  <!-- Tax & Compliance -->
-  <div class="card">
-    <div class="card-title">Tax & Compliance — {{ tax.authority }}</div>
-    <div class="field-row">
-      <div><div class="field-label">Tax ID / TIN</div><input class="field-input" id="f-tax-id" value="{{ business.tax_id or '' }}" placeholder="{{ tax.tin_format }}"></div>
-      <div><div class="field-label">{{ tax.tax_name }} Registration Number</div><input class="field-input" id="f-tax-reg" value="{{ business.tax_registration_number or '' }}" placeholder="GST/VAT reg number"></div>
-    </div>
-    <div class="alert alert-info" style="font-size:11px;margin-bottom:12px">
-      {{ tax.name }} {{ tax.tax_name }} registration threshold: <strong>{{ tax.currency }} {{ "{:,.0f}".format(threshold_info.get("amount",0)) }}</strong> annual revenue.
-      Below this threshold, tax registration is optional. You choose when to register — LEDGR will help you transition smoothly.
-    </div>
-    <div class="toggle-row" onclick="doToggle('is_tax_registered')">
-      <div><div class="toggle-label">{{ tax.tax_name }} Registered with {{ tax.authority }}</div><div class="toggle-desc">Business is officially registered. Enables tax fields on invoices and reports.</div></div>
-      <div class="toggle-switch {% if business.is_tax_registered %}on{% endif %}" id="sw-is_tax_registered"></div>
-    </div>
-    <div class="toggle-row" onclick="doToggle('collect_tax_on_sales')">
-      <div><div class="toggle-label">Collect {{ tax.tax_name }} on Sales</div><div class="toggle-desc">Add {{ tax.tax_name }} to POS receipts and invoices. Only enable after registration.</div></div>
-      <div class="toggle-switch {% if business.collect_tax_on_sales %}on{% endif %}" id="sw-collect_tax_on_sales"></div>
-    </div>
-  </div>
-
-  <!-- Bank Details -->
-  <div class="card">
-    <div class="card-title">Bank Details <span style="font-size:11px;color:var(--text3);font-weight:400">— Appears on invoices</span></div>
-    <div class="field-row">
-      <div><div class="field-label">Bank Name</div><input class="field-input" id="f-bank-name" value="{{ business.bank_name or '' }}" placeholder="Bank of Maldives"></div>
-      <div><div class="field-label">Account Name</div><input class="field-input" id="f-bank-acct-name" value="{{ business.bank_account_name or '' }}" placeholder="Business Name"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Account Number</div><input class="field-input" id="f-bank-acct-num" value="{{ business.bank_account_number or '' }}" placeholder="XXXXXXXXXXXX"></div>
-      <div><div class="field-label">SWIFT / BIC</div><input class="field-input" id="f-swift" value="{{ business.bank_swift or '' }}" placeholder="BMLIMVMV"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Primary Currency</div><p style="color:var(--mint);font-size:13px;font-weight:600;padding:6px 0">{{ business.base_currency }}</p></div>
-      <div>
-        <div class="field-label">Secondary Currency (e.g. USD)</div>
-        <select class="select-input" id="f-sec-currency">
-          <option value="">None</option>
-          {% for c in ['USD','EUR','GBP','AED','SGD','CNY','INR','PKR','LKR'] %}
-          <option value="{{ c }}" {% if business.secondary_currency==c %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-  </div>
-
-  <!-- Invoice & Quote Settings -->
-  <div class="card">
-    <div class="card-title">Invoice & Quote Settings</div>
-    <div class="field-row">
-      <div><div class="field-label">Invoice Prefix</div><input class="field-input" id="f-inv-prefix" value="{{ business.invoice_prefix or 'INV' }}" maxlength="8" placeholder="INV"></div>
-      <div><div class="field-label">Quote Prefix</div><input class="field-input" id="f-quo-prefix" value="{{ business.quote_prefix or 'QUO' }}" maxlength="8" placeholder="QUO"></div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Default Payment Terms / Invoice Notes</div>
-      <textarea class="field-input" id="f-inv-notes" rows="3" placeholder="e.g. Payment due within 30 days. Bank transfer to account above. Thank you for your business.">{{ business.invoice_notes or '' }}</textarea>
-    </div>
-  </div>
-
-  <!-- Modules -->
-  <div class="card">
-    <div class="card-title">Business Modules & Industry</div>
-    <p style="font-size:11px;color:var(--text3);margin-bottom:12px">Select your industry to apply the right accounting setup. Enable only modules your business needs.</p>
-    <div id="module-status" style="display:none;font-size:11px;margin-bottom:8px"></div>
-    <div class="field-group" style="margin-bottom:14px">
-      <div class="field-label">Industry Type</div>
-      <select class="select-input" id="f-industry" onchange="changeIndustry(this.value)">
-        <option value="general" {% if business.industry_type=='general' %}selected{% endif %}>General Business</option>
-        <option value="hospitality" {% if business.industry_type=='hospitality' %}selected{% endif %}>Hospitality / F&B (Cafe, Restaurant, Guesthouse)</option>
-        <option value="retail" {% if business.industry_type=='retail' %}selected{% endif %}>Retail / Grocery</option>
-        <option value="healthcare" {% if business.industry_type=='healthcare' %}selected{% endif %}>Healthcare / Pharmacy</option>
-        <option value="construction" {% if business.industry_type=='construction' %}selected{% endif %}>Construction / Trade</option>
-        <option value="professional" {% if business.industry_type=='professional' %}selected{% endif %}>Professional Services</option>
-        <option value="education" {% if business.industry_type=='education' %}selected{% endif %}>Education</option>
-        <option value="logistics" {% if business.industry_type=='logistics' %}selected{% endif %}>Logistics / Delivery</option>
-      </select>
-      <div id="industry-note" style="font-size:11px;color:var(--text3);margin-top:4px">
-        {% if business.industry_type=='hospitality' %}Service charge enabled. Industry-specific accounts added to CoA.
-        {% elif business.industry_type=='healthcare' %}Expiry tracking enabled. Medicine inventory accounts added to CoA.
-        {% else %}Standard accounting setup.{% endif %}
-      </div>
-    </div>
-    <div class="toggle-row" onclick="doToggle('has_pos')">
-      <div><div class="toggle-label">Point of Sale (POS)</div><div class="toggle-desc">Record sales instantly. For retail, cafes, barbers, restaurants, pharmacies.</div></div>
-      <div class="toggle-switch {% if business.has_pos %}on{% endif %}" id="sw-has_pos"></div>
-    </div>
-    <div class="toggle-row" onclick="doToggle('has_inventory')">
-      <div><div class="toggle-label">Inventory Tracking</div><div class="toggle-desc">Track stock levels. Auto-update from supplier invoices. For shops, pharmacies, cafes.</div></div>
-      <div class="toggle-switch {% if business.has_inventory %}on{% endif %}" id="sw-has_inventory"></div>
-    </div>
-    <div class="toggle-row" onclick="doToggle('has_payroll')">
-      <div><div class="toggle-label">Payroll & HR</div><div class="toggle-desc">Manage employees, salaries, visa and work permit tracking.</div></div>
-      <div class="toggle-switch {% if business.has_payroll %}on{% endif %}" id="sw-has_payroll"></div>
-    </div>
-    <div class="toggle-row" onclick="doToggle('has_full_accounting')">
-      <div><div class="toggle-label">Full Accounting Mode</div><div class="toggle-desc">Complete Chart of Accounts, trial balance, advanced journal. For Limited Companies.</div></div>
-      <div class="toggle-switch {% if business.has_full_accounting %}on{% endif %}" id="sw-has_full_accounting"></div>
-    </div>
-  </div>
-
-  <!-- My Businesses -->
-  <div class="card">
-    <div class="card-title">My Businesses</div>
+    <div class="card-title">My businesses</div>
     {% for ub in user_businesses %}
     <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:6px;border:1px solid {% if ub.business_id==business.id %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
       <div>
         <div style="font-weight:500;font-size:13px;color:var(--text)">{{ ub.business.name }}</div>
-        <div style="font-size:11px;color:var(--text3)">{{ ub.business.btype_name() }} · {{ ub.business.tax_rules().name }} · {{ ub.role.title() }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ ub.business.btype()["name"] }} · {{ ub.business.tax_rules()["name"] }} · {{ ub.role.title() }}</div>
       </div>
       {% if ub.business_id==business.id %}
         <span class="badge badge-green">Active</span>
@@ -189,24 +82,22 @@
     <a href="/business/add" class="btn" style="margin-top:4px">+ Add another business</a>
   </div>
 
-  <!-- My Account -->
   <div class="card">
-    <div class="card-title">My Account</div>
+    <div class="card-title">Account</div>
     <div class="field-row">
       <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.name }}</p></div>
       <div><div class="field-label">Email</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.email }}</p></div>
     </div>
     <div class="field-row">
-      <div><div class="field-label">Current Plan</div><p style="padding:4px 0"><span class="badge badge-{% if user.plan=='business' %}green{% elif user.plan=='pro' %}blue{% else %}gray{% endif %}">{{ user.plan|upper }}</span></p></div>
+      <div><div class="field-label">Plan</div><p style="padding:4px 0"><span class="badge badge-{% if user.plan=='business' %}green{% elif user.plan=='pro' %}blue{% else %}gray{% endif %}">{{ user.plan|upper }}</span></p></div>
       <div><div class="field-label">Uploads this month</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.uploads_this_month or 0 }}</p></div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px">
-      {% for pk,pname,pprice,puploads,pbiz in [('free','Free',0,'10 uploads','1 business'),('pro','Pro',15,'500 uploads','10 businesses'),('business','Business',35,'Unlimited','Unlimited')] %}
-      <div style="border:1px solid {% if user.plan==pk %}rgba(16,185,129,.5){% else %}var(--border){% endif %};border-radius:8px;padding:14px;text-align:center;background:{% if user.plan==pk %}var(--mint-dim){% else %}var(--bg){% endif %}">
-        <div style="font-weight:700;color:var(--text);margin-bottom:4px">{{ pname }}</div>
-        <div style="font-size:20px;font-weight:700;color:var(--mint);margin-bottom:2px">${{ pprice }}</div>
-        <div style="font-size:10px;color:var(--text3);margin-bottom:2px">{{ puploads }}</div>
-        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">{{ pbiz }}</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
+      {% for pk,pv in [('free',{'name':'Free','price':0,'uploads':10}),('pro',{'name':'Pro','price':15,'uploads':500}),('business',{'name':'Business','price':35,'uploads':'∞'})] %}
+      <div style="border:1px solid {% if user.plan==pk %}rgba(16,185,129,.4){% else %}var(--border){% endif %};border-radius:8px;padding:14px;text-align:center">
+        <div style="font-weight:600;margin-bottom:3px;color:var(--text)">{{ pv.name }}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--mint);margin-bottom:3px">${{ pv.price }}</div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">{{ pv.uploads }} uploads/mo</div>
         {% if user.plan==pk %}
           <span class="badge badge-green">Current</span>
         {% else %}
@@ -229,163 +120,17 @@
 
 {% block scripts %}
 <script>
-// ── Toggle state from server ───────────────────────────────────────────────────
-var toggleState = {
-  has_pos: {{ 'true' if business.has_pos else 'false' }},
-  has_inventory: {{ 'true' if business.has_inventory else 'false' }},
-  has_payroll: {{ 'true' if business.has_payroll else 'false' }},
-  has_full_accounting: {{ 'true' if business.has_full_accounting else 'false' }},
-  has_service_charge: {{ 'true' if business.has_service_charge else 'false' }},
-  has_multi_location: {{ 'true' if business.has_multi_location else 'false' }},
-  is_tax_registered: {{ 'true' if business.is_tax_registered else 'false' }},
-  collect_tax_on_sales: {{ 'true' if business.collect_tax_on_sales else 'false' }},
-};
-
-function changeIndustry(industry) {
-  var notes = {
-    'hospitality': 'Service charge enabled. F&B revenue and cost accounts added to CoA.',
-    'healthcare': 'Expiry tracking enabled. Medicine inventory accounts added to CoA.',
-    'retail': 'Retail inventory accounts added to CoA.',
-    'construction': 'Contract revenue and materials accounts added to CoA.',
-    'general': 'Standard accounting setup.',
-    'professional': 'Standard accounting setup.',
-    'education': 'Standard accounting setup.',
-    'logistics': 'Standard accounting setup.',
-  };
-  document.getElementById('industry-note').textContent = notes[industry] || '';
-  fetch('/api/business/industry', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({industry_type: industry})
-  }).then(r=>r.json()).then(res=>{
-    if (res.ok) { showStatus('✓ Industry updated — ' + res.industry, false); setTimeout(()=>location.reload(),1500); }
-    else showStatus('Error: ' + res.error, true);
+function toggleModule(key, value){
+  var data={};data[key]=value;
+  var span=document.getElementById('span-'+key),knob=document.getElementById('knob-'+key);
+  if(span){span.style.background=value?'var(--mint)':'var(--border2)';}
+  if(knob){knob.style.transform=value?'translateX(20px)':'translateX(0)';}
+  fetch('/api/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(res=>{
+    if(res.ok){var msg=document.getElementById('module-msg');msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
+    if(key==='is_tax_registered')setTimeout(()=>location.reload(),500);}
   });
 }
-
-// ── Toggle a module ────────────────────────────────────────────────────────────
-function doToggle(key) {
-  toggleState[key] = !toggleState[key];
-  var sw = document.getElementById('sw-' + key);
-  if (sw) {
-    if (toggleState[key]) sw.classList.add('on');
-    else sw.classList.remove('on');
-  }
-  var data = {}; data[key] = toggleState[key];
-  fetch('/api/business/settings', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(data)
-  }).then(function(r) { return r.json(); }).then(function(res) {
-    if (res.ok) {
-      showStatus('✓ ' + (toggleState[key] ? 'Enabled' : 'Disabled'), false);
-    } else {
-      // Revert on error
-      toggleState[key] = !toggleState[key];
-      if (sw) { if (toggleState[key]) sw.classList.add('on'); else sw.classList.remove('on'); }
-      showStatus('Error: ' + (res.error || 'Failed'), true);
-    }
-  }).catch(function() {
-    showStatus('Connection error', true);
-  });
-}
-
-// ── Save all profile fields ────────────────────────────────────────────────────
-function saveAll() {
-  var btn = document.querySelector('[onclick="saveAll()"]');
-  btn.disabled = true;
-  btn.textContent = 'Saving...';
-
-  var payload = {
-    name: val('f-name'),
-    legal_name: val('f-legal-name'),
-    registration_number: val('f-reg'),
-    phone: val('f-phone'),
-    email: val('f-email'),
-    website: val('f-website'),
-    address_line1: val('f-addr1'),
-    address_line2: val('f-addr2'),
-    city: val('f-city'),
-    country: val('f-country'),
-    tax_id: val('f-tax-id'),
-    tax_registration_number: val('f-tax-reg'),
-    bank_name: val('f-bank-name'),
-    bank_account_name: val('f-bank-acct-name'),
-    bank_account_number: val('f-bank-acct-num'),
-    bank_swift: val('f-swift'),
-    secondary_currency: val('f-sec-currency'),
-    invoice_prefix: val('f-inv-prefix'),
-    quote_prefix: val('f-quo-prefix'),
-    invoice_notes: val('f-inv-notes'),
-  };
-
-  fetch('/api/business/profile', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  }).then(function(r) { return r.json(); }).then(function(res) {
-    btn.disabled = false;
-    btn.textContent = 'Save All Changes';
-    if (res.ok) {
-      showStatus('✓ All settings saved!', false);
-      setTimeout(function() { location.reload(); }, 1500);
-    } else {
-      showStatus('Error: ' + (res.error || 'Failed to save'), true);
-    }
-  }).catch(function() {
-    btn.disabled = false;
-    btn.textContent = 'Save All Changes';
-    showStatus('Connection error — please try again', true);
-  });
-}
-
-// ── Logo upload ────────────────────────────────────────────────────────────────
-function uploadLogo(input) {
-  if (!input.files.length) return;
-  var file = input.files[0];
-  if (file.size > 2 * 1024 * 1024) { showStatus('Logo must be under 2MB', true); return; }
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var b64 = e.target.result.split(',')[1];
-    // Show preview immediately
-    var wrap = document.getElementById('logo-wrap');
-    wrap.innerHTML = '<img src="' + e.target.result + '" style="width:100%;height:100%;object-fit:contain">';
-    fetch('/api/business/profile', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({logo_data: b64, logo_type: file.type})
-    }).then(function(r) { return r.json(); }).then(function(res) {
-      showStatus(res.ok ? '✓ Logo saved!' : 'Logo save failed', !res.ok);
-    });
-  };
-  reader.readAsDataURL(file);
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-function val(id) {
-  var el = document.getElementById(id);
-  return el ? el.value : '';
-}
-
-function showStatus(msg, isError) {
-  var el = document.getElementById('save-status');
-  if (el) {
-    el.style.display = 'inline-block';
-    el.style.color = isError ? 'var(--red)' : 'var(--mint)';
-    el.textContent = msg;
-    setTimeout(function() { el.style.display = 'none'; }, 3000);
-  }
-}
-
-function requestUpgrade(plan) {
-  fetch('/api/request-upgrade', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({plan: plan})
-  }).then(function(r) { return r.json(); }).then(function(res) {
-    var m = document.getElementById('upgrade-msg');
-    m.style.display = 'block';
-    m.textContent = res.message || 'Request sent!';
-  });
-}
+function saveField(key,value){var data={};data[key]=value;fetch('/api/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+function requestUpgrade(plan){fetch('/api/request-upgrade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:plan})}).then(r=>r.json()).then(res=>{var m=document.getElementById('upgrade-msg');m.style.display='block';m.textContent=res.message||'Request sent!';});}
 </script>
 {% endblock %}
