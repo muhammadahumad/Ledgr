@@ -2526,52 +2526,73 @@ def api_bank_upload_statement():
     file_b64 = data.get("file","")
     media_type = data.get("media_type","image/jpeg")
     bank_account_id = data.get("bank_account_id")
+    page_number = int(data.get("page_number", 1))
+    total_pages = int(data.get("total_pages", 1))
     tax = business.tax_rules()
     currency = tax["currency"]
     region_name = tax["name"]
+
+    page_note = ""
+    if total_pages > 1:
+        page_note = "This is page " + str(page_number) + " of " + str(total_pages) + ". "
+    json_template = '{"account_name":"","account_number":"","bank_name":"","statement_period":"","opening_balance":0.00,"closing_balance":0.00,"currency":"' + currency + '","transactions":[{"date":"YYYY-MM-DD","description":"","reference":"","debit":0.00,"credit":0.00,"balance":0.00,"category":"Other"}]}'
     prompt = (
-        "You are LEDGR AI analysing a bank statement for a " + region_name + " business. "
-        "This may be a multi-page statement covering several months. "
-        "Extract ALL transactions from ALL pages. Do not skip any transactions. "
-        "Return ONLY valid JSON with no other text: "
-        "{\"account_name\":\"\",\"account_number\":\"\",\"bank_name\":\"\","
-        "\"statement_period\":\"\",\"opening_balance\":0.00,\"closing_balance\":0.00,"
-        "\"currency\":\"" + currency + "\","
-        "\"transactions\":[{\"date\":\"YYYY-MM-DD\",\"description\":\"\","
-        "\"reference\":\"\",\"debit\":0.00,\"credit\":0.00,\"balance\":0.00,"
-        "\"category\":\"Other\"}]} "
-        "Rules: debit=money out, credit=money in. Zero for amounts not present. "
-        "Categories: Sales Revenue, Salary Payment, Rent, Utilities, Supplier Payment, "
-        "Tax Payment, Bank Charges, Transfer, Other. "
-        "If the statement is too long for one response, extract as many transactions as possible "
-        "starting from the earliest date."
+        "You are a precise accounting data extractor for a " + region_name + " business. "
+        + page_note
+        + "Extract EVERY transaction from this bank statement. "
+        + "Return ONLY valid JSON matching this structure exactly: "
+        + json_template
+        + " Rules: debit=money out, credit=money in, use 0.00 not null. "
+        + "Date format YYYY-MM-DD. "
+        + "Categories: Sales Revenue, Salary Payment, Rent, Utilities, Supplier Payment, Tax Payment, Bank Charges, Transfer, Other."
     )
+
     content = ({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":file_b64}}
-               if media_type=="application/pdf" else
+               if media_type == "application/pdf" else
                {"type":"image","source":{"type":"base64","media_type":media_type,"data":file_b64}})
+
     try:
-        body = json.dumps({"model":"claude-sonnet-4-6","max_tokens":8192,
-                           "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]}).encode()
-        req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body,
-                                     headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"})
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        body = json.dumps({
+            "model":"claude-sonnet-4-6",
+            "max_tokens":8000,
+            "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages", data=body,
+            headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"}
+        )
+        with urllib.request.urlopen(req, timeout=150) as resp:
             result = json.loads(resp.read())
-            text = result["content"][0]["text"]
-            # Try to find JSON in response
-            m = re.search(r"\{[\s\S]*\}", text)
-            if not m:
-                return jsonify({"ok":False,"error":"AI could not read this bank statement. Please ensure the image is clear and well-lit."})
+            text = result["content"][0]["text"].strip()
+            # Extract JSON — find outermost { }
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start == -1 or end == 0:
+                return jsonify({"ok":False,"error":"AI could not extract transactions. Check the document is a clear bank statement."})
             try:
-                extracted = json.loads(m.group())
+                extracted = json.loads(text[start:end])
             except json.JSONDecodeError:
-                return jsonify({"ok":False,"error":"Could not parse bank statement data. Try uploading a clearer image."})
+                # Try to fix truncated JSON
+                try:
+                    partial = text[start:]
+                    # Count open arrays and close them
+                    extracted = json.loads(partial + "]}}")
+                except:
+                    return jsonify({"ok":False,"error":"Statement parsing failed. Try uploading fewer pages at once."})
         txn_count = len(extracted.get("transactions",[]))
-        return jsonify({"ok":True,"extracted":extracted,"bank_account_id":bank_account_id,
-                        "message":str(txn_count) + " transactions extracted from statement"})
-    except urllib.error.URLError as e:
-        return jsonify({"ok":False,"error":"Connection timeout. Bank statements can take up to 2 minutes — please try again."})
+        return jsonify({
+            "ok":True,
+            "extracted":extracted,
+            "bank_account_id":bank_account_id,
+            "page_number":page_number,
+            "total_pages":total_pages,
+            "message":str(txn_count) + " transactions extracted"
+            + (" from page " + str(page_number) if total_pages > 1 else "")
+        })
+    except urllib.error.URLError:
+        return jsonify({"ok":False,"error":"Request timed out after 2.5 minutes. Please try with fewer pages."})
     except Exception as e:
-        return jsonify({"ok":False,"error":"Processing error: " + str(e)[:100]})
+        return jsonify({"ok":False,"error":"Processing error: " + str(e)[:150]})
 
 
 @app.route("/api/bank/auto-create-account", methods=["POST"])
