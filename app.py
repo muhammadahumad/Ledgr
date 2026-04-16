@@ -2625,6 +2625,10 @@ def api_bank_post_transactions():
             cat_code = cat_to_account.get(txn.get("category","Other"),"6900")
             try: txn_date = datetime.strptime(txn["date"],"%Y-%m-%d").date()
             except: txn_date = date.today()
+            # Use user-selected GL account if provided, otherwise use category mapping
+            user_gl = txn.get("account_code")
+            if user_gl:
+                cat_code = user_gl
             if debit > 0:
                 lines = [{"account_code":cat_code,"debit":debit,"credit":0},{"account_code":"1010","debit":0,"credit":debit}]
                 et = "BANK_DEBIT"
