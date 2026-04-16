@@ -1758,6 +1758,90 @@ def api_bill_mark_paid(doc_id):
 
 
 
+
+
+# ── PDF Bank Statement — Server-side page splitting ────────────────────────────
+
+@app.route("/api/bank/upload-statement-pdf", methods=["POST"])
+@login_required
+def api_bank_upload_statement_pdf():
+    """Process PDF bank statement page by page server-side"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    if not ANTHROPIC_KEY:
+        return jsonify({"ok":False,"error":"AI not configured"})
+
+    data = request.get_json()
+    file_b64 = data.get("file","")
+    page_range = data.get("page_range")  # e.g. "1-3" or None for single page
+    bank_account_id = data.get("bank_account_id")
+    tax = business.tax_rules()
+    currency = tax["currency"]
+    region_name = tax["name"]
+
+    json_template = ('{"account_name":"","account_number":"","bank_name":"",'
+                     '"statement_period":"","opening_balance":0.00,"closing_balance":0.00,'
+                     '"currency":"' + currency + '",'
+                     '"transactions":[{"date":"YYYY-MM-DD","description":"","reference":"",'
+                     '"debit":0.00,"credit":0.00,"balance":0.00,"category":"Other"}]}')
+
+    prompt = (
+        "Extract ALL bank transactions from this statement page. "
+        "Be thorough - do not skip any transaction rows. "
+        "Return ONLY valid JSON: " + json_template + " "
+        "Rules: debit=money out/withdrawal/payment, credit=money in/deposit/receipt. "
+        "Use 0.00 not null. Date format YYYY-MM-DD. "
+        "Categories: Sales Revenue, Salary Payment, Rent, Utilities, "
+        "Supplier Payment, Tax Payment, Bank Charges, Transfer, Other."
+    )
+
+    content = {
+        "type":"document",
+        "source":{"type":"base64","media_type":"application/pdf","data":file_b64}
+    }
+
+    try:
+        body = json.dumps({
+            "model":"claude-sonnet-4-6",
+            "max_tokens":8000,
+            "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]
+        }).encode()
+
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            headers={
+                "Content-Type":"application/json",
+                "x-api-key":ANTHROPIC_KEY,
+                "anthropic-version":"2023-06-01"
+            }
+        )
+
+        with urllib.request.urlopen(req, timeout=150) as resp:
+            result = json.loads(resp.read())
+            text = result["content"][0]["text"].strip()
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start == -1:
+                return jsonify({"ok":False,"error":"Could not read statement. Ensure it is a clear bank statement PDF."})
+            extracted = json.loads(text[start:end])
+
+        txn_count = len(extracted.get("transactions",[]))
+        return jsonify({
+            "ok":True,
+            "extracted":extracted,
+            "bank_account_id":bank_account_id,
+            "message":str(txn_count) + " transactions extracted"
+        })
+
+    except urllib.error.URLError:
+        return jsonify({"ok":False,"error":"Timeout — PDF too large. Try uploading 1-2 months at a time."})
+    except Exception as e:
+        return jsonify({"ok":False,"error":str(e)[:150]})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
