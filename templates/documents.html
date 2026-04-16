@@ -18,7 +18,7 @@
     <div class="card-title">{{ docs|length }} documents {% if doc_type %}· {{ doc_type }}{% endif %}</div>
     {% if docs %}
     <table class="table">
-      <thead><tr><th>Date</th><th>Type</th><th>Vendor/Source</th><th>Invoice #</th><th style="text-align:right">Amount</th><th>Tax</th><th>Status</th><th>File</th><th></th></tr></thead>
+      <thead><tr><th>Date</th><th>Type</th><th>Vendor/Source</th><th>Invoice #</th><th style="text-align:right">Amount</th><th>Tax</th><th>Account Head</th><th>Payment</th><th>File</th><th></th></tr></thead>
       <tbody>
       {% for doc in docs %}
       <tr>
@@ -29,8 +29,23 @@
         <td style="text-align:right;font-family:var(--mono);font-weight:500">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
         <td style="color:var(--amber);font-family:var(--mono);font-size:11px">{% if doc.tax_amount > 0 %}{{ "%.2f"|format(doc.tax_amount) }}{% else %}—{% endif %}</td>
         <td><span class="badge badge-{% if doc.status=='PROCESSED' %}green{% else %}amber{% endif %}">{{ doc.status }}</span></td>
+        <td style="color:var(--text3);font-size:11px">{{ doc.posted_to_account_name or '—' }}</td>
+        <td>
+          {% if doc.doc_type in ['BILL','EXPENSE'] %}
+            {% if doc.payment_status == 'PAID' %}
+              <span class="badge badge-green">Paid</span>
+            {% else %}
+              <span class="badge badge-amber">Unpaid</span>
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
         <td>{% if doc.file_data %}<span class="badge badge-blue" style="font-size:10px">Saved</span>{% else %}<span style="color:var(--text3);font-size:11px">—</span>{% endif %}</td>
-        <td><a href="/documents/{{ doc.id }}" class="btn btn-sm">View</a></td>
+        <td style="display:flex;gap:4px">
+          <a href="/documents/{{ doc.id }}" class="btn btn-sm">View</a>
+          {% if doc.doc_type in ['BILL','EXPENSE'] and doc.payment_status != 'PAID' %}
+          <button class="btn btn-sm btn-primary" onclick="markBillPaid({{ doc.id }})">Mark Paid</button>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
       </tbody>
@@ -101,4 +116,5 @@
 {% block scripts %}<script>
 function calcTotal(){var s=parseFloat(document.getElementById('m-sub').value)||0,t=parseFloat(document.getElementById('m-tax').value)||0;document.getElementById('m-total').value=(s+t).toFixed(2);}
 function saveManual(){var vendor=document.getElementById('m-vendor').value.trim();if(!vendor){alert('Vendor name required');return;}fetch('/api/document/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_type:document.getElementById('m-type').value,category:document.getElementById('m-cat').value,vendor_name:vendor,vendor_tax_id:document.getElementById('m-taxid').value,invoice_number:document.getElementById('m-invno').value,invoice_date:document.getElementById('m-date').value,due_date:document.getElementById('m-due').value,currency:document.getElementById('m-currency').value,subtotal:parseFloat(document.getElementById('m-sub').value)||0,tax_amount:parseFloat(document.getElementById('m-tax').value)||0,total_amount:parseFloat(document.getElementById('m-total').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok){closeModal('manual-entry-modal');location.reload();}else{var m=document.getElementById('m-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
+function markBillPaid(id){if(!confirm('Mark this bill as paid? This will clear Accounts Payable and post a payment entry.'))return;var method=prompt('Payment method (Cash or Bank):','Cash');if(!method)return;fetch('/api/bill/'+id+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payment_method:method})}).then(r=>r.json()).then(res=>{if(res.ok){alert('✓ '+res.message);location.reload();}else alert('Error: '+res.error);});}
 </script>{% endblock %}

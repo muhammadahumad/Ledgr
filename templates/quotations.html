@@ -47,6 +47,9 @@
           {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
         </select>
       </div>
+      <div><div class="field-label">Quote Date</div><input class="field-input" type="date" id="q-date" value="{{ today }}"></div>
+      </div>
+      <div class="field-row">
       <div><div class="field-label">Valid Until</div><input class="field-input" type="date" id="q-valid"></div>
     </div>
     <div class="field-label" style="margin-bottom:6px">Line Items *</div>
