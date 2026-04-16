@@ -627,20 +627,24 @@ def current_business():
     return None
 
 def create_default_coa(business_id, industry_type='general'):
-    # Standard accounts
-    for acct_type, accounts in DEFAULT_COA.items():
-        for code, name in accounts:
+    try:
+        # Standard accounts
+        for acct_type, accounts in DEFAULT_COA.items():
+            for code, name in accounts:
+                if not Account.query.filter_by(business_id=business_id, code=code).first():
+                    db.session.add(Account(business_id=business_id, code=code, name=name, account_type=acct_type))
+        # Industry-specific accounts
+        industry_accounts = INDUSTRY_COA.get(industry_type or 'general', [])
+        for code, name, acct_type in industry_accounts:
             if not Account.query.filter_by(business_id=business_id, code=code).first():
                 db.session.add(Account(business_id=business_id, code=code, name=name, account_type=acct_type))
-    # Industry-specific accounts
-    industry_accounts = INDUSTRY_COA.get(industry_type, [])
-    for code, name, acct_type in industry_accounts:
-        if not Account.query.filter_by(business_id=business_id, code=code).first():
-            db.session.add(Account(business_id=business_id, code=code, name=name, account_type=acct_type))
-    # Create default location
-    if not Location.query.filter_by(business_id=business_id).first():
-        db.session.add(Location(business_id=business_id, name='Main Branch', is_warehouse=False))
-    db.session.commit()
+        # Create default location if none exists
+        if not Location.query.filter_by(business_id=business_id).first():
+            db.session.add(Location(business_id=business_id, name='Main Branch', is_warehouse=False))
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        print("CoA creation error: " + str(e))
 
 def get_account(business_id, code):
     return Account.query.filter_by(business_id=business_id, code=code, is_active=True).first()
@@ -2048,7 +2052,7 @@ def api_customer_add():
     name = data.get('name','').strip()
     if not name: return jsonify({'ok':False,'error':'Name is required'})
     if data.get('phone'):
-        existing = Customer.query.filter_by(business_id=user.business_id, phone=data.get('phone')).first()
+        existing = Customer.query.filter_by(business_id=business.id, phone=data.get('phone')).first() if data.get('phone') else None
         if existing: return jsonify({'ok':False,'error':'Customer with this phone exists','customer_id':existing.id,'name':existing.name})
     c = Customer(business_id=current_business().id, name=name, phone=data.get('phone',''),
                  email=data.get('email',''), notes=data.get('notes',''),
@@ -2277,7 +2281,8 @@ def documents():
     if doc_type: query = query.filter_by(doc_type=doc_type)
     docs = query.order_by(Document.created_at.desc()).all()
     return render_template("documents.html", user=user, business=business,
-                           docs=docs, tax=business.tax_rules(), doc_type=doc_type)
+                           docs=docs, tax=business.tax_rules(), doc_type=doc_type,
+                           plan=user.get_plan())
 
 
 @app.route("/documents/<int:doc_id>")
@@ -2497,16 +2502,24 @@ def api_bank_upload_statement():
                            "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]}).encode()
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body,
                                      headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"})
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             result = json.loads(resp.read())
             text = result["content"][0]["text"]
+            # Try to find JSON in response
             m = re.search(r"\{[\s\S]*\}", text)
-            if not m: return jsonify({"ok":False,"error":"Could not parse bank statement"})
-            extracted = json.loads(m.group())
+            if not m:
+                return jsonify({"ok":False,"error":"AI could not read this bank statement. Please ensure the image is clear and well-lit."})
+            try:
+                extracted = json.loads(m.group())
+            except json.JSONDecodeError:
+                return jsonify({"ok":False,"error":"Could not parse bank statement data. Try uploading a clearer image."})
+        txn_count = len(extracted.get("transactions",[]))
         return jsonify({"ok":True,"extracted":extracted,"bank_account_id":bank_account_id,
-                        "message":str(len(extracted.get("transactions",[]))) + " transactions extracted"})
+                        "message":str(txn_count) + " transactions extracted from statement"})
+    except urllib.error.URLError as e:
+        return jsonify({"ok":False,"error":"Connection timeout. Bank statements can take up to 2 minutes — please try again."})
     except Exception as e:
-        return jsonify({"ok":False,"error":str(e)})
+        return jsonify({"ok":False,"error":"Processing error: " + str(e)[:100]})
 
 
 @app.route("/api/bank/post-transactions", methods=["POST"])
