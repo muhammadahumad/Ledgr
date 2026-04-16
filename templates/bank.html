@@ -81,10 +81,17 @@
     <div class="upload-zone" id="stmt-drop" onclick="document.getElementById('stmt-file').click()" ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropStmt(event)" style="margin-bottom:12px">
       <div style="font-size:28px;margin-bottom:8px;opacity:.5">🏦</div>
       <div style="font-weight:500;color:var(--text2);margin-bottom:4px">Drop bank statement here</div>
-      <div style="font-size:11px;color:var(--text3)">JPG · PNG · PDF — scanned or downloaded statements</div>
+      <div style="font-size:11px;color:var(--text3)">PDF recommended for multi-page statements · JPG or PNG for single page scans</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Multi-month statements supported · AI extracts all transactions</div>
     </div>
     <input type="file" id="stmt-file" accept="image/*,application/pdf" style="display:none" onchange="handleStmt(this)">
-    <div id="stmt-processing" style="display:none" class="status-bar status-processing"><div class="spinner"></div><span>AI is reading your bank statement...</span></div>
+    <div id="stmt-processing" style="display:none" class="status-bar status-processing">
+      <div class="spinner"></div>
+      <div>
+        <div>AI is reading your bank statement...</div>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px">Multi-page statements can take up to 2 minutes. Please wait.</div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -132,7 +139,12 @@ function processStmt(file){
 }
 function showStmtResult(data){
   document.getElementById('stmt-result').style.display='block';
-  document.getElementById('stmt-summary').textContent=data.bank_name+' · '+data.account_name+' · '+data.statement_period+' · Opening: '+data.currency+' '+fmt(data.opening_balance)+' → Closing: '+data.currency+' '+fmt(data.closing_balance);
+  var txnCount=(data.transactions||[]).length;
+  document.getElementById('stmt-summary').innerHTML=
+    '<strong>'+esc(data.bank_name||'Bank')+'</strong> · '+(data.account_name||'')+'<br>'+
+    'Period: '+(data.statement_period||'—')+' · <strong>'+txnCount+' transactions extracted</strong><br>'+
+    'Opening: '+data.currency+' '+fmt(data.opening_balance)+' → Closing: '+data.currency+' '+fmt(data.closing_balance)+
+    (txnCount<10?'<div style="color:var(--amber);font-size:11px;margin-top:4px">⚠ Only '+txnCount+' transactions found. If your statement has more pages, try splitting into smaller PDF files and uploading separately.</div>':'');
   var tbody=document.getElementById('stmt-body'); tbody.innerHTML='';
   (data.transactions||[]).forEach(function(t,i){
     var opts=CAT_OPTIONS.map(c=>'<option'+(c===t.category?' selected':'')+'>'+c+'</option>').join('');
