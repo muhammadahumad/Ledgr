@@ -134,7 +134,12 @@
       </div>
     </div>
     <div class="doc-type-box">
-      <div class="doc-type">{{ doc_type }}</div>
+      {% if tax.rtl %}
+      <div class="doc-type" style="direction:rtl;text-align:right">{{ tax.invoice_title_ar }}</div>
+      <div style="font-size:14px;font-weight:600;color:#64748b;text-align:right">{{ doc_type }}</div>
+      {% else %}
+      <div class="doc-type">{% if doc_type=='INVOICE' and tax.invoice_title %}{{ tax.invoice_title }}{% else %}{{ doc_type }}{% endif %}</div>
+      {% endif %}
       <div class="doc-number">{{ invoice.invoice_number or invoice.quote_number }}</div>
       <div class="doc-date">
         Date: {{ (invoice.invoice_date or invoice.quote_date).strftime('%d %b %Y') if (invoice.invoice_date or invoice.quote_date) else '—' }}
@@ -169,7 +174,10 @@
       <div class="address-detail">
         {% if invoice.customer.email %}{{ invoice.customer.email }}<br>{% endif %}
         {% if invoice.customer.phone %}{{ invoice.customer.phone }}<br>{% endif %}
-        {% if invoice.customer.address %}{{ invoice.customer.address }}{% endif %}
+        {% if invoice.customer.address %}{{ invoice.customer.address }}<br>{% endif %}
+        {% if tax.requires_dual_tin and invoice.customer.tax_id %}
+        <strong>TIN / TRN: {{ invoice.customer.tax_id }}</strong>
+        {% endif %}
       </div>
       {% else %}
       <div class="address-name" style="color:#94a3b8">Walk-in Customer</div>

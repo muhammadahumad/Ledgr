@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+{% block title %}Compliance Reports — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Compliance & Tax Reports</div>
+    <div class="page-sub">{{ tax.authority }} · {{ tax.name }} · {{ tax.currency }}</div>
+  </div>
+</div>
+
+<div class="content">
+
+  {% if business.region == 'MV' %}
+  <!-- MIRA G1 — Maldives -->
+  <div class="card">
+    <div class="card-title">MIRA G1 Tax Return Mirror
+      <span class="badge badge-green">Maldives</span>
+    </div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">
+      Standard GST 8% on general sales · T-GST 17% on tourism services · Due 28th of following month
+    </p>
+    <div style="display:flex;gap:8px;margin-bottom:14px">
+      <button class="btn btn-sm btn-primary" onclick="loadG1('monthly')">Current Month</button>
+      <button class="btn btn-sm" onclick="loadG1('quarterly')">Current Quarter</button>
+    </div>
+    <div id="g1-result" style="display:none">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div class="card" style="padding:14px;background:var(--bg)">
+          <div style="font-size:10px;color:var(--mint);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Output Tax</div>
+          <div class="summary-row2"><span>Box 1 — Standard Sales (8%)</span><span id="g1-box1" class="mono"></span></div>
+          <div class="summary-row2"><span>Box 2 — Tourism Sales (17%)</span><span id="g1-box2" class="mono"></span></div>
+          <div class="summary-row2" style="font-weight:600;border-top:1px solid var(--border);padding-top:6px;margin-top:4px"><span>Box 3 — Total Output Tax</span><span id="g1-box3" class="mono" style="color:var(--mint)"></span></div>
+          <div class="summary-row2"><span>Box 4 — Standard GST (8%)</span><span id="g1-box4" class="mono"></span></div>
+          <div class="summary-row2"><span>Box 5 — T-GST (17%)</span><span id="g1-box5" class="mono"></span></div>
+        </div>
+        <div class="card" style="padding:14px;background:var(--bg)">
+          <div style="font-size:10px;color:var(--mint);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Input Tax & Net</div>
+          <div class="summary-row2"><span>Box 6 — Total Purchases</span><span id="g1-box6" class="mono"></span></div>
+          <div class="summary-row2"><span>Box 7 — Input Tax Claimable</span><span id="g1-box7" class="mono"></span></div>
+          <div class="summary-row2" style="font-weight:700;border-top:1px solid var(--border);padding-top:6px;margin-top:4px;color:var(--amber)"><span>Box 8 — Net Tax Payable</span><span id="g1-box8" class="mono"></span></div>
+        </div>
+      </div>
+      <div id="g1-period" style="font-size:11px;color:var(--text3)"></div>
+    </div>
+  </div>
+
+  {% elif business.region == 'PK' %}
+  <!-- FBR Annex-C — Pakistan -->
+  <div class="card">
+    <div class="card-title">FBR Annex-C Sales Export
+      <span class="badge badge-blue">Pakistan</span>
+    </div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">
+      Sales Tax 18% general · 25% luxury goods · Monthly filing required · SRO 288 compliance
+    </p>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-weight:500">Annex-C includes:</div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.8">
+        Buyer NTN · Buyer Name · STRN · Invoice Number · Invoice Date · HS Code · Value · Sales Tax Rate · Sales Tax Amount · Total Value
+      </div>
+    </div>
+    <a href="/api/reports/fbr-annex-c" class="btn btn-primary">⬇ Download Annex-C CSV</a>
+  </div>
+
+  {% elif business.region == 'AE' %}
+  <!-- FTA Form 201 — UAE -->
+  <div class="card">
+    <div class="card-title">FTA VAT Return — Form 201
+      <span class="badge badge-blue">UAE</span>
+    </div>
+    <p style="font-size:12px;color:var(--text3);margin-bottom:14px">
+      VAT 5% · Quarterly filing · 7-year data retention · EIS e-invoicing from July 2026
+    </p>
+    <button class="btn btn-sm btn-primary" onclick="loadFTA201()" style="margin-bottom:14px">Load Current Quarter</button>
+    <div id="fta-result" style="display:none">
+      <div class="card" style="padding:14px;background:var(--bg)">
+        <div class="summary-row2"><span>1a — Standard Rated Supplies</span><span id="fta-1a" class="mono"></span></div>
+        <div class="summary-row2"><span>1b — VAT on Standard Rated</span><span id="fta-1b" class="mono" style="color:var(--mint)"></span></div>
+        <div class="summary-row2"><span>2 — Zero Rated Supplies</span><span id="fta-2" class="mono"></span></div>
+        <div class="summary-row2"><span>3 — Exempt Supplies</span><span id="fta-3" class="mono"></span></div>
+        <div class="summary-row2"><span>4 — Total Supplies</span><span id="fta-4" class="mono"></span></div>
+        <div class="summary-row2" style="font-weight:700;border-top:1px solid var(--border);padding-top:6px;margin-top:4px;color:var(--amber)"><span>Net VAT Due</span><span id="fta-net" class="mono"></span></div>
+        <div id="fta-period" style="font-size:11px;color:var(--text3);margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+
+  {% elif business.region == 'SA' %}
+  <!-- ZATCA — Saudi Arabia -->
+  <div class="card">
+    <div class="card-title">ZATCA VAT Compliance
+      <span class="badge badge-amber">Saudi Arabia</span>
+    </div>
+    <div class="alert alert-warn" style="margin-bottom:14px">
+      <div style="font-weight:500;margin-bottom:4px">ZATCA Phase 2 — Action Required by June 2026</div>
+      <div style="font-size:11px">Phase 2 Integration requires CSID cryptographic stamp registration with ZATCA. Contact your ZATCA-approved solution provider to obtain your CSID before the deadline.</div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.8">
+      <div>✓ VAT Rate: 15%</div>
+      <div>✓ Bilingual invoices: Arabic + English</div>
+      <div>✓ Dual TIN display on invoices</div>
+      <div>⏳ UUID + cryptographic stamp: Requires CSID from ZATCA</div>
+      <div>⏳ XML/PDF-A3 format: Coming Q2 2026</div>
+    </div>
+  </div>
+
+  {% elif business.region == 'OM' %}
+  <!-- Tax Oman -->
+  <div class="card">
+    <div class="card-title">Tax Oman VAT Compliance
+      <span class="badge badge-blue">Oman</span>
+    </div>
+    <div class="alert alert-info" style="margin-bottom:14px">
+      <div style="font-weight:500;margin-bottom:4px">Fawtara Project — August 2026</div>
+      <div style="font-size:11px">Oman mandates structured e-invoicing via Peppol 5-Corner Model from August 2026. LEDGR will update automatically before the deadline.</div>
+    </div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.8">
+      <div>✓ VAT Rate: 5%</div>
+      <div>✓ Bilingual invoices: Arabic + English</div>
+      <div>✓ RCM (Reverse Charge Mechanism) tracking</div>
+      <div>⏳ Peppol XML integration: Coming August 2026</div>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="card">
+    <div class="card-title">Compliance Reports</div>
+    <p style="font-size:12px;color:var(--text3)">Country-specific compliance reports are available for Maldives (MIRA G1), UAE (FTA 201), Pakistan (FBR Annex-C), Saudi Arabia (ZATCA), and Oman (Tax Oman). Your current region ({{ tax.name }}) compliance reports are coming soon.</p>
+  </div>
+  {% endif %}
+
+  <!-- Universal Tax Summary -->
+  <div class="card">
+    <div class="card-title">Universal Tax Summary</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
+      <div class="stat-card"><div class="stat-label">Tax Collected (Month)</div><div class="stat-value" id="tax-collected">—</div></div>
+      <div class="stat-card"><div class="stat-label">Input Tax (Month)</div><div class="stat-value" id="tax-input">—</div></div>
+      <div class="stat-card"><div class="stat-label">Net Payable</div><div class="stat-value" id="tax-net" style="color:var(--amber)">—</div></div>
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn btn-sm" onclick="loadTaxSummary()">Load Tax Summary</button>
+    </div>
+  </div>
+
+</div>
+
+<style>
+.summary-row2{display:flex;justify-content:space-between;padding:5px 0;font-size:12px;border-bottom:1px solid var(--border)}
+.summary-row2:last-child{border-bottom:none}
+.mono{font-family:var(--mono);font-weight:500}
+</style>
+{% endblock %}
+
+{% block scripts %}<script>
+var CUR = '{{ tax.currency }}';
+
+function loadG1(period) {
+  fetch('/api/reports/mira-g1?period=' + period)
+    .then(r=>r.json()).then(res=>{
+      if (!res.ok) { alert(res.error); return; }
+      var g = res.g1;
+      document.getElementById('g1-result').style.display = 'block';
+      document.getElementById('g1-box1').textContent = CUR + ' ' + fmt(g.box1_standard_sales);
+      document.getElementById('g1-box2').textContent = CUR + ' ' + fmt(g.box2_tourism_sales);
+      document.getElementById('g1-box3').textContent = CUR + ' ' + fmt(g.box3_total_output_tax);
+      document.getElementById('g1-box4').textContent = CUR + ' ' + fmt(g.box4_standard_tax_8pct);
+      document.getElementById('g1-box5').textContent = CUR + ' ' + fmt(g.box5_tourism_tax_17pct);
+      document.getElementById('g1-box6').textContent = CUR + ' ' + fmt(g.box6_total_purchases);
+      document.getElementById('g1-box7').textContent = CUR + ' ' + fmt(g.box7_input_tax_claimable);
+      document.getElementById('g1-box8').textContent = CUR + ' ' + fmt(g.box8_net_tax_payable);
+      document.getElementById('g1-period').textContent = 'Period: ' + res.period.start + ' to ' + res.period.end + ' · Filing deadline: ' + g.filing_deadline;
+    });
+}
+
+function loadFTA201() {
+  fetch('/api/reports/fta-201')
+    .then(r=>r.json()).then(res=>{
+      if (!res.ok) { alert(res.error); return; }
+      var f = res.form_201;
+      document.getElementById('fta-result').style.display = 'block';
+      document.getElementById('fta-1a').textContent = CUR + ' ' + fmt(f['1a_standard_rated_supplies']);
+      document.getElementById('fta-1b').textContent = CUR + ' ' + fmt(f['1b_vat_on_standard_rated']);
+      document.getElementById('fta-2').textContent = CUR + ' ' + fmt(f['2_zero_rated_supplies']);
+      document.getElementById('fta-3').textContent = CUR + ' ' + fmt(f['3_exempt_supplies']);
+      document.getElementById('fta-4').textContent = CUR + ' ' + fmt(f['4_total_supplies']);
+      document.getElementById('fta-net').textContent = CUR + ' ' + fmt(f.net_vat_due);
+      document.getElementById('fta-period').textContent = 'Quarter: ' + f.quarter + ' · Due: ' + f.filing_deadline;
+    });
+}
+
+function loadTaxSummary() {
+  fetch('/api/reports/mira-g1?period=monthly')
+    .then(r=>r.json()).then(res=>{
+      if (res.ok) {
+        document.getElementById('tax-collected').textContent = CUR + ' ' + fmt(res.g1.box3_total_output_tax);
+        document.getElementById('tax-input').textContent = CUR + ' ' + fmt(res.g1.box7_input_tax_claimable);
+        document.getElementById('tax-net').textContent = CUR + ' ' + fmt(res.g1.box8_net_tax_payable);
+      }
+    }).catch(function(){
+      document.getElementById('tax-collected').textContent = '—';
+    });
+}
+</script>{% endblock %}
