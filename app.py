@@ -2529,19 +2529,26 @@ def api_bank_upload_statement():
     region_name = tax["name"]
     prompt = (
         "You are LEDGR AI analysing a bank statement for a " + region_name + " business. "
-        "Extract ALL transactions. Return ONLY valid JSON: "
-        "{\"account_name\":\"\",\"account_number\":\"\",\"bank_name\":\"\",\"statement_period\":\"\","
-        "\"opening_balance\":0.00,\"closing_balance\":0.00,\"currency\":\"" + currency + "\","
-        "\"transactions\":[{\"date\":\"YYYY-MM-DD\",\"description\":\"\",\"reference\":\"\","
-        "\"debit\":0.00,\"credit\":0.00,\"balance\":0.00,\"category\":\"Other\"}]} "
-        "debit=money out, credit=money in. "
-        "category: Sales Revenue, Salary Payment, Rent, Utilities, Supplier Payment, Tax Payment, Bank Charges, Transfer, Other"
+        "This may be a multi-page statement covering several months. "
+        "Extract ALL transactions from ALL pages. Do not skip any transactions. "
+        "Return ONLY valid JSON with no other text: "
+        "{\"account_name\":\"\",\"account_number\":\"\",\"bank_name\":\"\","
+        "\"statement_period\":\"\",\"opening_balance\":0.00,\"closing_balance\":0.00,"
+        "\"currency\":\"" + currency + "\","
+        "\"transactions\":[{\"date\":\"YYYY-MM-DD\",\"description\":\"\","
+        "\"reference\":\"\",\"debit\":0.00,\"credit\":0.00,\"balance\":0.00,"
+        "\"category\":\"Other\"}]} "
+        "Rules: debit=money out, credit=money in. Zero for amounts not present. "
+        "Categories: Sales Revenue, Salary Payment, Rent, Utilities, Supplier Payment, "
+        "Tax Payment, Bank Charges, Transfer, Other. "
+        "If the statement is too long for one response, extract as many transactions as possible "
+        "starting from the earliest date."
     )
     content = ({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":file_b64}}
                if media_type=="application/pdf" else
                {"type":"image","source":{"type":"base64","media_type":media_type,"data":file_b64}})
     try:
-        body = json.dumps({"model":"claude-sonnet-4-6","max_tokens":4096,
+        body = json.dumps({"model":"claude-sonnet-4-6","max_tokens":8192,
                            "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]}).encode()
         req = urllib.request.Request("https://api.anthropic.com/v1/messages", data=body,
                                      headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,"anthropic-version":"2023-06-01"})
