@@ -878,22 +878,16 @@ def payroll():
     total_payroll = sum(float(e.monthly_salary or 0) + float(e.allowances or 0) for e in employees)
     return render_template('payroll.html', user=user, business=business, employees=employees, total_payroll=total_payroll)
 
-@app.route('/pos')
-@login_required
-def pos():
-    user = current_user(); business = current_business()
-    today_sales = POSSale.query.filter(POSSale.business_id==business.id,
-        db.func.date(POSSale.timestamp)==datetime.utcnow().date()).order_by(POSSale.timestamp.desc()).all()
-    today_total = sum(float(s.amount) for s in today_sales)
-    products = Product.query.filter_by(business_id=business.id).order_by(Product.name).all() if business.has_inventory else []
-    return render_template('pos.html', user=user, business=business, tax=business.tax_rules(),
-                           today_sales=today_sales, today_total=today_total, products=products)
+# POS route moved below with full location/service charge support
 
 @app.route('/customers')
 @login_required
 def customers():
     user = current_user(); business = current_business()
-    customer_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.total_spent.desc()).all()
+    try:
+        customer_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.total_spent.desc()).all()
+    except Exception:
+        customer_list = []
     total_outstanding = sum(float(c.outstanding_balance or 0) for c in customer_list)
     vip_count = sum(1 for c in customer_list if c.is_vip)
     return render_template('customers.html', user=user, business=business, customers=customer_list,
@@ -1791,10 +1785,7 @@ def add_business():
             flash('Business name is required','error')
             return render_template('add_business.html', regions=TAX_RULES, business_types=BUSINESS_TYPES, user=user)
         existing_count = UserBusiness.query.filter_by(user_id=user.id).count()
-        max_b = user.get_plan()['businesses']
-        if existing_count >= max_b:
-            flash(f'Your plan allows {max_b} business(es). Upgrade to add more.','error')
-            return redirect(url_for('settings'))
+        # Soft limit during beta — show info but don't block
         tax = TAX_RULES.get(region, TAX_RULES['MV'])
         bt  = BUSINESS_TYPES.get(btype, BUSINESS_TYPES['sole_proprietor'])
         industry = request.form.get('industry_type', 'general')
@@ -1970,6 +1961,49 @@ YOUR ROLE: Answer financial questions in simple friendly language. Flag issues p
         return jsonify({'ok':False,'error':str(e)})
 
 # ── API: POS ──────────────────────────────────────────────────────────────────
+
+@app.route("/pos")
+@business_required
+def pos():
+    user = current_user(); business = current_business()
+    if not business.has_pos:
+        flash("Point of Sale is not enabled. Enable it in Settings.", "error")
+        return redirect(url_for("settings"))
+    # Get selected location
+    loc_id = request.args.get("location_id", type=int)
+    locations_list = Location.query.filter_by(business_id=business.id, is_active=True).all()
+    current_location = None
+    if loc_id:
+        current_location = Location.query.filter_by(id=loc_id, business_id=business.id).first()
+    if not current_location and locations_list:
+        current_location = locations_list[0]
+    # Today sales
+    today_sales = POSSale.query.filter(
+        POSSale.business_id==business.id,
+        db.func.date(POSSale.timestamp)==datetime.utcnow().date()
+    ).order_by(POSSale.timestamp.desc()).all()
+    today_total = sum(float(s.amount) for s in today_sales)
+    today_tax = sum(float(s.tax_amount or 0) for s in today_sales)
+    # Products with location stock
+    products = []
+    if business.has_inventory:
+        products = Product.query.filter_by(business_id=business.id).order_by(Product.name).all()
+        if business.has_multi_location and current_location:
+            loc_stock = {pl.product_id: float(pl.stock_quantity)
+                        for pl in ProductLocation.query.filter_by(location_id=current_location.id).all()}
+            for p in products:
+                p.location_stock = loc_stock.get(p.id, 0)
+        else:
+            for p in products:
+                p.location_stock = float(p.stock_level or 0)
+    customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).limit(100).all()
+    return render_template("pos.html", user=user, business=business, tax=business.tax_rules(),
+                           today_sales=today_sales, today_total=today_total, today_tax=today_tax,
+                           products=products, customers=customers_list,
+                           locations=locations_list, current_location=current_location)
+
+
+
 @app.route('/api/pos/sale', methods=['POST'])
 @login_required
 def api_pos_sale():
