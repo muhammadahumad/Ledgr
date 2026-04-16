@@ -132,7 +132,7 @@ function processStmt(file){
       if(res.ok){
         stmtExtracted=res.extracted;
         showStmtResult(res.extracted);
-      } else { alert('Error: '+res.error); }
+      } else { alert('Error: '+(res.error||'Upload failed. Please try again.')); }
     });
   };
   reader.readAsDataURL(file);
