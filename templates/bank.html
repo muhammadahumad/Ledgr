@@ -1,6 +1,6 @@
 {% extends "base.html" %}{% block title %}Bank — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
-  <div><div class="page-title">Bank Accounts & Statements</div><div class="page-sub">Upload statements · Reconcile transactions</div></div>
+  <div><div class="page-title">Bank Accounts & Statements</div><div class="page-sub">Upload statements · Review transactions · Post to ledger</div></div>
   <div style="display:flex;gap:8px">
     <button class="btn btn-primary" onclick="openModal('upload-stmt-modal')">↑ Upload Statement</button>
     <button class="btn" onclick="openModal('add-bank-modal')">+ Add Bank Account</button>
@@ -14,7 +14,7 @@
     <div class="stat-card" style="border-color:rgba(16,185,129,.2)">
       <div class="stat-label">{{ acct.bank_name }}</div>
       <div class="stat-value" style="font-size:18px">{{ acct.currency }} {{ "%.2f"|format(acct.current_balance) }}</div>
-      <div class="stat-sub">{{ acct.account_name }} · {{ acct.account_number[-4:] if acct.account_number else '****' }}</div>
+      <div class="stat-sub">{{ acct.account_name }}{% if acct.account_number %} · ****{{ acct.account_number[-4:] }}{% endif %}</div>
       <a href="/bank/reconcile/{{ acct.id }}" style="font-size:11px;color:var(--mint);text-decoration:none;margin-top:4px;display:inline-block">Reconcile →</a>
     </div>
     {% endfor %}
@@ -24,16 +24,29 @@
   <!-- Statement Upload Result -->
   <div id="stmt-result" style="display:none">
     <div class="card" style="border-color:rgba(16,185,129,.3)">
-      <div class="card-title" style="color:var(--mint)">Statement Extracted — Review & Post</div>
-      <div id="stmt-summary" style="font-size:12px;color:var(--text2);margin-bottom:12px"></div>
-      <div style="overflow-x:auto;max-height:400px;overflow-y:auto">
+      <div class="card-title" style="color:var(--mint)">Review Transactions Before Posting
+        <span class="badge badge-green" id="txn-count-badge"></span>
+      </div>
+      <div id="stmt-summary" style="font-size:12px;color:var(--text2);margin-bottom:8px"></div>
+      <div class="alert alert-info" style="font-size:11px;margin-bottom:10px">
+        Review each transaction. Change the <strong>GL Account</strong> if the auto-assignment is wrong. Uncheck any you do not want to post.
+      </div>
+      <div style="overflow-x:auto;max-height:450px;overflow-y:auto">
         <table class="table" id="stmt-table">
-          <thead><tr><th style="width:30px"></th><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th></tr></thead>
+          <thead><tr>
+            <th style="width:28px"><input type="checkbox" id="check-all" checked onchange="toggleAll(this.checked)" style="accent-color:var(--mint)"></th>
+            <th>Date</th>
+            <th>Description</th>
+            <th>GL Account</th>
+            <th>Category</th>
+            <th style="text-align:right">Debit</th>
+            <th style="text-align:right">Credit</th>
+          </tr></thead>
           <tbody id="stmt-body"></tbody>
         </table>
       </div>
       <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn-primary" onclick="postAllTransactions()">Post All to Journal & Ledger</button>
+        <button class="btn btn-primary" onclick="postAllTransactions()" id="post-btn">Post Selected to Ledger & Journal</button>
         <button class="btn" onclick="document.getElementById('stmt-result').style.display='none'">Cancel</button>
       </div>
       <div id="post-msg" style="margin-top:8px;font-size:12px;display:none"></div>
@@ -44,14 +57,13 @@
   <div class="card">
     <div class="card-title">Bank Transactions <span class="badge badge-green">{{ recent_txns|length }}</span></div>
     {% if recent_txns %}
-    <table class="table"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th><th>Status</th></tr></thead><tbody>
+    <table class="table"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th>Status</th></tr></thead><tbody>
     {% for t in recent_txns %}<tr>
       <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ t.txn_date.strftime('%d %b %Y') if t.txn_date else '—' }}</td>
       <td style="color:var(--text)">{{ t.description or '—' }}</td>
-      <td style="color:var(--text3)">{{ t.category or '—' }}</td>
+      <td style="color:var(--text3);font-size:11px">{{ t.category or '—' }}</td>
       <td style="text-align:right;color:var(--red);font-family:var(--mono)">{% if t.debit > 0 %}{{ "%.2f"|format(t.debit) }}{% endif %}</td>
       <td style="text-align:right;color:var(--mint);font-family:var(--mono)">{% if t.credit > 0 %}{{ "%.2f"|format(t.credit) }}{% endif %}</td>
-      <td style="text-align:right;font-family:var(--mono)">{{ "%.2f"|format(t.balance) }}</td>
       <td><span class="badge badge-{% if t.is_reconciled %}green{% else %}amber{% endif %}">{% if t.is_reconciled %}Posted{% else %}Pending{% endif %}</span></td>
     </tr>{% endfor %}
     </tbody></table>
@@ -71,33 +83,39 @@
     <div class="modal-title">Upload Bank Statement <button class="modal-close" onclick="closeModal('upload-stmt-modal')">×</button></div>
     {% if bank_accounts %}
     <div class="field-group">
-      <div class="field-label">Bank Account (optional)</div>
+      <div class="field-label">Bank Account (optional — will auto-detect from statement)</div>
       <select class="select-input" id="stmt-account">
-        <option value="">Select bank account...</option>
+        <option value="">Auto-detect from statement</option>
         {% for acct in bank_accounts %}<option value="{{ acct.id }}">{{ acct.bank_name }} — {{ acct.account_name }}</option>{% endfor %}
       </select>
     </div>
     {% endif %}
-    <div class="upload-zone" id="stmt-drop" onclick="document.getElementById('stmt-file').click()" ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropStmtDrop(event)" style="margin-bottom:8px">
+    <!-- Upload zone -->
+    <div class="upload-zone" id="stmt-drop"
+      onclick="document.getElementById('stmt-file').click()"
+      ondragover="event.preventDefault()"
+      ondrop="handleDrop(event)"
+      style="margin-bottom:8px;cursor:pointer">
       <div style="font-size:28px;margin-bottom:6px;opacity:.5">🏦</div>
-      <div style="font-weight:500;color:var(--text2);margin-bottom:3px">Click or drop bank statement files</div>
-      <div style="font-size:11px;color:var(--text3)">Select multiple images (one per page) or a single PDF</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:3px">Click to select files</div>
+      <div style="font-size:11px;color:var(--text3)">Single PDF  ·  Single image  ·  Multiple images (one per page)</div>
     </div>
-    <input type="file" id="stmt-file" accept="image/*,application/pdf" multiple style="display:none" onchange="handleStmtFiles(this)">
-    <div id="files-preview" style="display:none;margin-bottom:10px">
-      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Files selected:</div>
-      <div id="files-list" style="font-size:12px;color:var(--mint)"></div>
+    <input type="file" id="stmt-file" accept="image/*,application/pdf" multiple style="display:none" onchange="onFilesSelected(this.files)">
+    <!-- Files preview -->
+    <div id="files-preview" style="display:none;margin-bottom:10px;padding:10px;background:var(--bg);border-radius:7px;border:1px solid var(--border)">
+      <div id="files-list" style="font-size:12px;color:var(--mint);margin-bottom:8px"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="startUpload()">Extract All Transactions →</button>
     </div>
-    <div class="alert alert-info" style="font-size:11px;margin-bottom:10px">
-      <strong>Tip:</strong> For multi-page statements, scan each page as a separate JPG and select all at once. The system will process each page and combine all transactions.
-    </div>
-    <button class="btn btn-primary" id="start-upload-btn" style="display:none;width:100%" onclick="startMultiUpload()">Extract Transactions</button>
-    <div id="stmt-processing" style="display:none;margin-top:10px" class="status-bar status-processing">
-      <div class="spinner"></div>
-      <div>
-        <div id="processing-text">AI is reading your bank statement...</div>
-        <div id="processing-progress" style="font-size:10px;color:var(--text3);margin-top:2px"></div>
+    <!-- Progress -->
+    <div id="upload-progress" style="display:none;padding:12px;background:var(--bg);border-radius:7px;border:1px solid var(--border)">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+        <div class="spinner"></div>
+        <div id="progress-text" style="font-size:12px;color:var(--text2)">Starting...</div>
       </div>
+      <div id="progress-bar-wrap" style="background:var(--border);border-radius:4px;height:4px">
+        <div id="progress-bar" style="background:var(--mint);height:4px;border-radius:4px;width:0%;transition:width .3s"></div>
+      </div>
+      <div id="progress-detail" style="font-size:11px;color:var(--text3);margin-top:4px"></div>
     </div>
   </div>
 </div>
@@ -107,141 +125,277 @@
   <div class="modal">
     <div class="modal-title">Add Bank Account <button class="modal-close" onclick="closeModal('add-bank-modal')">×</button></div>
     <div class="field-row">
-      <div><div class="field-label">Bank Name *</div><input class="field-input" id="b-bank" placeholder="BML, HSBC..."></div>
+      <div><div class="field-label">Bank Name *</div><input class="field-input" id="b-bank" placeholder="BML, HSBC, MCB..."></div>
       <div><div class="field-label">Account Name *</div><input class="field-input" id="b-name" placeholder="Business Current Account"></div>
     </div>
     <div class="field-row">
       <div><div class="field-label">Account Number</div><input class="field-input" id="b-num" placeholder="XXXXXXXXXXXX"></div>
-      <div><div class="field-label">Opening Balance</div><input class="field-input" type="number" id="b-bal" step="0.01" placeholder="0.00"></div>
+      <div><div class="field-label">Currency</div>
+        <select class="select-input" id="b-curr">
+          {% for c in ['MVR','USD','AED','PKR','SAR','OMR','INR','LKR'] %}
+          <option value="{{ c }}" {% if c==business.base_currency %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
+    <div class="field-group"><div class="field-label">Opening Balance</div><input class="field-input" type="number" id="b-bal" step="0.01" placeholder="0.00"></div>
     <div style="display:flex;gap:8px;margin-top:4px">
       <button class="btn btn-primary" onclick="addBankAcct()">Add Account</button>
       <button class="btn" onclick="closeModal('add-bank-modal')">Cancel</button>
     </div>
+    <div id="b-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
 {% endblock %}
-{% block scripts %}<script>
-var stmtExtracted=null, stmtAccountId=null, selectedFiles=[];
-var CAT_OPTIONS=['Sales Revenue','Salary Payment','Rent','Utilities','Supplier Payment','Tax Payment','Bank Charges','Transfer','Other'];
-function ev(e,on){e.preventDefault();document.getElementById('stmt-drop').classList.toggle('drag',on);}
-function dropStmtDrop(e){e.preventDefault();document.getElementById('stmt-drop').classList.remove('drag');if(e.dataTransfer.files.length)setFiles(e.dataTransfer.files);}
-function handleStmtFiles(input){if(input.files.length)setFiles(input.files);}
-function setFiles(files){
-  selectedFiles=Array.from(files);
-  var listEl=document.getElementById('files-list');
-  listEl.innerHTML=selectedFiles.map(function(f,i){return (i+1)+'. '+f.name+' ('+Math.round(f.size/1024)+'KB)';}).join('<br>');
-  document.getElementById('files-preview').style.display='block';
-  document.getElementById('start-upload-btn').style.display='block';
+
+{% block scripts %}
+<script>
+// ── GL Account options ────────────────────────────────────────────────────────
+var GL_ACCOUNTS = [
+  ['1000','Cash on Hand'],['1010','Bank — Primary'],['1020','Bank — Secondary'],
+  ['1100','Accounts Receivable'],['1200','Inventory'],
+  ['2000','Accounts Payable'],['2210','Tax Payable'],['2120','Service Charge Payable'],
+  ['4000','Sales Revenue'],['4010','F&B Revenue'],
+  ['5100','Payroll Expense'],['5200','Rent Expense'],['5300','Utilities'],
+  ['5400','Office Supplies'],['5600','Professional Services'],
+  ['5900','Bank Charges'],['6200','Tax Payment'],['6900','Other Expense']
+];
+var CAT_OPTIONS = ['Sales Revenue','Salary Payment','Rent','Utilities',
+  'Supplier Payment','Tax Payment','Bank Charges','Transfer','Other'];
+var CAT_TO_GL = {
+  'Sales Revenue':'4000','Salary Payment':'5100','Rent':'5200',
+  'Utilities':'5300','Supplier Payment':'2000','Tax Payment':'6200',
+  'Bank Charges':'5900','Transfer':'1010','Other':'6900'
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+var selectedFiles = [];
+var allExtracted = {transactions:[], bank_name:'', account_name:'', account_number:'', currency:'', opening_balance:0, closing_balance:0};
+var stmtAccountId = null;
+
+// ── File selection ─────────────────────────────────────────────────────────────
+function onFilesSelected(files) {
+  selectedFiles = Array.from(files);
+  if (!selectedFiles.length) return;
+  var listEl = document.getElementById('files-list');
+  listEl.innerHTML = selectedFiles.map(function(f,i) {
+    return '<div>📄 ' + f.name + ' (' + Math.round(f.size/1024) + ' KB)</div>';
+  }).join('');
+  document.getElementById('files-preview').style.display = 'block';
 }
-function readFileAsB64(file){return new Promise(function(res,rej){var r=new FileReader();r.onload=function(e){res({b64:e.target.result.split(',')[1],type:file.type||'image/jpeg',name:file.name});};r.onerror=rej;r.readAsDataURL(file);});}
-function startMultiUpload(){
-  if(!selectedFiles.length){alert('Select files first');return;}
-  stmtAccountId=document.getElementById('stmt-account')?.value||null;
-  document.getElementById('start-upload-btn').style.display='none';
-  document.getElementById('stmt-processing').style.display='flex';
-  var allTransactions=[];
-  var stmtMeta={};
-  var total=selectedFiles.length;
-  function processNext(idx){
-    if(idx>=total){
-      // All done — combine and show
-      document.getElementById('stmt-processing').style.display='none';
-      if(!stmtMeta.transactions) stmtMeta.transactions=[];
-      stmtMeta.transactions=allTransactions;
-      closeModal('upload-stmt-modal');
-      // Check bank account
-      if(!stmtAccountId && stmtMeta){
-        var ext=stmtMeta;
-        var msg='Bank detected:
 
-Bank: '+(ext.bank_name||'Unknown')+'
-Account: '+(ext.account_name||'Unknown')+'
-Currency: '+(ext.currency||'MVR')+'
+function handleDrop(e) {
+  e.preventDefault();
+  if (e.dataTransfer.files.length) onFilesSelected(e.dataTransfer.files);
+}
 
-Create this bank account in LEDGR?';
-        if(confirm(msg)){
-          fetch('/api/bank/auto-create-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({extracted:ext})}).then(function(r){return r.json();}).then(function(acctRes){if(acctRes.ok){stmtAccountId=acctRes.account_id;alert('✓ '+acctRes.message);}showStmtResult(stmtMeta);});
-        } else { showStmtResult(stmtMeta); }
-      } else { showStmtResult(stmtMeta); }
-      return;
-    }
-    document.getElementById('processing-text').textContent='Processing page '+(idx+1)+' of '+total+'...';
-    document.getElementById('processing-progress').textContent=allTransactions.length+' transactions found so far';
-    readFileAsB64(selectedFiles[idx]).then(function(fd){
-      fetch('/api/bank/upload-statement',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({file:fd.b64,media_type:fd.type,bank_account_id:stmtAccountId,page_number:idx+1,total_pages:total})
-      }).then(function(r){return r.json();}).then(function(res){
-        if(res.ok&&res.extracted){
-          if(idx===0) stmtMeta=res.extracted;
-          var txns=res.extracted.transactions||[];
-          allTransactions=allTransactions.concat(txns);
-          processNext(idx+1);
-        } else {
-          document.getElementById('stmt-processing').style.display='none';
-          alert('Error on page '+(idx+1)+': '+(res.error||'Unknown error'));
-        }
-      }).catch(function(){
-        document.getElementById('stmt-processing').style.display='none';
-        alert('Connection error on page '+(idx+1)+'. Try again.');
-      });
-    });
+// ── Upload & extract ──────────────────────────────────────────────────────────
+function readFileAsB64(file) {
+  return new Promise(function(resolve, reject) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      resolve({ b64: e.target.result.split(',')[1], type: file.type || 'image/jpeg', name: file.name });
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function startUpload() {
+  if (!selectedFiles.length) { alert('No files selected'); return; }
+  stmtAccountId = document.getElementById('stmt-account') ? document.getElementById('stmt-account').value : null;
+  document.getElementById('files-preview').style.display = 'none';
+  document.getElementById('upload-progress').style.display = 'block';
+  allExtracted = { transactions:[], bank_name:'', account_name:'', account_number:'', currency:'{{ business.base_currency }}', opening_balance:0, closing_balance:0 };
+  processPage(0);
+}
+
+function processPage(idx) {
+  var total = selectedFiles.length;
+  if (idx >= total) {
+    // All pages done
+    document.getElementById('upload-progress').style.display = 'none';
+    closeModal('upload-stmt-modal');
+    handleAutoCreateBank();
+    return;
   }
-  processNext(0);
-}
-function processStmt(file){ setFiles([file]); }
-function handleStmt(input){ handleStmtFiles(input); }
-      if(res.ok){
-        stmtExtracted=res.extracted;
-        showStmtResult(res.extracted);
-      } else { alert('Error: '+(res.error||'Upload failed. Please try again.')); }
+  var pct = Math.round((idx / total) * 100);
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-text').textContent = 'Reading page ' + (idx+1) + ' of ' + total + '...';
+  document.getElementById('progress-detail').textContent = allExtracted.transactions.length + ' transactions found so far';
+
+  readFileAsB64(selectedFiles[idx]).then(function(fd) {
+    fetch('/api/bank/upload-statement', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        file: fd.b64,
+        media_type: fd.type,
+        bank_account_id: stmtAccountId,
+        page_number: idx + 1,
+        total_pages: total
+      })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(res) {
+      if (res.ok && res.extracted) {
+        // Capture metadata from first page
+        if (idx === 0) {
+          allExtracted.bank_name = res.extracted.bank_name || '';
+          allExtracted.account_name = res.extracted.account_name || '';
+          allExtracted.account_number = res.extracted.account_number || '';
+          allExtracted.currency = res.extracted.currency || allExtracted.currency;
+          allExtracted.opening_balance = res.extracted.opening_balance || 0;
+          allExtracted.statement_period = res.extracted.statement_period || '';
+        }
+        // Always update closing balance to latest page
+        allExtracted.closing_balance = res.extracted.closing_balance || allExtracted.closing_balance;
+        // Merge transactions
+        var newTxns = res.extracted.transactions || [];
+        allExtracted.transactions = allExtracted.transactions.concat(newTxns);
+        processPage(idx + 1);
+      } else {
+        document.getElementById('upload-progress').style.display = 'none';
+        document.getElementById('files-preview').style.display = 'block';
+        alert('Error on page ' + (idx+1) + ': ' + (res.error || 'Unknown error'));
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('upload-progress').style.display = 'none';
+      document.getElementById('files-preview').style.display = 'block';
+      alert('Connection error on page ' + (idx+1) + '. Please try again.');
     });
-  };
-  reader.readAsDataURL(file);
+  });
 }
-function showStmtResult(data){
-  document.getElementById('stmt-result').style.display='block';
-  var txnCount=(data.transactions||[]).length;
-  document.getElementById('stmt-summary').innerHTML=
-    '<strong>'+esc(data.bank_name||'Bank')+'</strong> · '+(data.account_name||'')+'<br>'+
-    'Period: '+(data.statement_period||'—')+' · <strong>'+txnCount+' transactions extracted</strong><br>'+
-    'Opening: '+data.currency+' '+fmt(data.opening_balance)+' → Closing: '+data.currency+' '+fmt(data.closing_balance)+
-    (txnCount<10?'<div style="color:var(--amber);font-size:11px;margin-top:4px">⚠ Only '+txnCount+' transactions found. If your statement has more pages, try splitting into smaller PDF files and uploading separately.</div>':'');
-  var tbody=document.getElementById('stmt-body'); tbody.innerHTML='';
-  (data.transactions||[]).forEach(function(t,i){
-    var opts=CAT_OPTIONS.map(c=>'<option'+(c===t.category?' selected':'')+'>'+c+'</option>').join('');
-    var tr=document.createElement('tr');
-    tr.innerHTML='<td><input type="checkbox" id="st-'+i+'" checked style="accent-color:var(--mint)"></td>'
-      +'<td style="font-size:11px;font-family:var(--mono)">'+esc(t.date||'')+'</td>'
-      +'<td style="color:var(--text)">'+esc(t.description||'')+'</td>'
-      +'<td><select style="font-size:11px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text)">'+opts+'</select></td>'
-      +'<td style="text-align:right;color:var(--red);font-family:var(--mono);font-size:11px">'+(t.debit>0?fmt(t.debit):'')+'</td>'
-      +'<td style="text-align:right;color:var(--mint);font-family:var(--mono);font-size:11px">'+(t.credit>0?fmt(t.credit):'')+'</td>'
-      +'<td style="text-align:right;font-family:var(--mono);font-size:11px">'+fmt(t.balance)+'</td>';
+
+function handleAutoCreateBank() {
+  if (!stmtAccountId && allExtracted.bank_name) {
+    var msg = 'Bank account detected:\n\n' +
+      'Bank: ' + allExtracted.bank_name + '\n' +
+      'Account: ' + allExtracted.account_name + '\n' +
+      'Currency: ' + allExtracted.currency + '\n' +
+      'Opening Balance: ' + allExtracted.currency + ' ' + allExtracted.opening_balance + '\n\n' +
+      'Create this bank account in LEDGR?';
+    if (confirm(msg)) {
+      fetch('/api/bank/auto-create-account', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ extracted: allExtracted })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(res) {
+        if (res.ok) { stmtAccountId = res.account_id; }
+        showStmtResult(allExtracted);
+      });
+    } else {
+      showStmtResult(allExtracted);
+    }
+  } else {
+    showStmtResult(allExtracted);
+  }
+}
+
+// ── Show results ──────────────────────────────────────────────────────────────
+function showStmtResult(data) {
+  document.getElementById('stmt-result').style.display = 'block';
+  var txns = data.transactions || [];
+  document.getElementById('txn-count-badge').textContent = txns.length + ' transactions';
+  document.getElementById('stmt-summary').innerHTML =
+    '<strong>' + esc(data.bank_name || 'Bank') + '</strong>' +
+    (data.account_name ? ' · ' + esc(data.account_name) : '') +
+    (data.statement_period ? ' · ' + esc(data.statement_period) : '') +
+    '<br>Opening: ' + (data.currency||'') + ' ' + fmt(data.opening_balance) +
+    ' → Closing: ' + (data.currency||'') + ' ' + fmt(data.closing_balance);
+
+  var tbody = document.getElementById('stmt-body');
+  tbody.innerHTML = '';
+  txns.forEach(function(t, i) {
+    var defaultGL = CAT_TO_GL[t.category] || '6900';
+    var glOpts = GL_ACCOUNTS.map(function(a) {
+      return '<option value="' + a[0] + '"' + (a[0] === defaultGL ? ' selected' : '') + '>' + a[0] + ' — ' + a[1] + '</option>';
+    }).join('');
+    var catOpts = CAT_OPTIONS.map(function(c) {
+      return '<option' + (c === t.category ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="checkbox" id="st-' + i + '" checked style="accent-color:var(--mint)"></td>' +
+      '<td style="font-size:11px;font-family:var(--mono);white-space:nowrap">' + esc(t.date || '') + '</td>' +
+      '<td style="color:var(--text);font-size:12px;max-width:200px">' + esc(t.description || '') + '</td>' +
+      '<td><select id="gl-' + i + '" style="font-size:11px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--mint);font-family:var(--mono);width:160px">' + glOpts + '</select></td>' +
+      '<td><select id="cat-' + i + '" style="font-size:11px;padding:2px 4px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);width:120px">' + catOpts + '</select></td>' +
+      '<td style="text-align:right;color:var(--red);font-family:var(--mono);font-size:11px">' + (t.debit > 0 ? fmt(t.debit) : '') + '</td>' +
+      '<td style="text-align:right;color:var(--mint);font-family:var(--mono);font-size:11px">' + (t.credit > 0 ? fmt(t.credit) : '') + '</td>';
     tbody.appendChild(tr);
   });
-  document.getElementById('stmt-result').scrollIntoView({behavior:'smooth'});
+  document.getElementById('stmt-result').scrollIntoView({ behavior: 'smooth' });
 }
-function postAllTransactions(){
-  if(!stmtExtracted)return;
-  var rows=document.querySelectorAll('#stmt-body tr');
-  var txns=(stmtExtracted.transactions||[]).map(function(t,i){
-    var catSel=document.getElementById('cat-'+i);
-    var glSel=document.getElementById('gl-'+i);
-    var cb=document.getElementById('st-'+i);
-    return Object.assign({},t,{
-      category:catSel?catSel.value:t.category,
-      account_code:glSel?glSel.value:null,
-      include:cb?cb.checked:true
+
+function toggleAll(checked) {
+  var txns = allExtracted.transactions || [];
+  txns.forEach(function(t, i) {
+    var cb = document.getElementById('st-' + i);
+    if (cb) cb.checked = checked;
+  });
+}
+
+// ── Post transactions ─────────────────────────────────────────────────────────
+function postAllTransactions() {
+  var txns = (allExtracted.transactions || []).map(function(t, i) {
+    var glSel = document.getElementById('gl-' + i);
+    var catSel = document.getElementById('cat-' + i);
+    var cb = document.getElementById('st-' + i);
+    return Object.assign({}, t, {
+      account_code: glSel ? glSel.value : null,
+      category: catSel ? catSel.value : t.category,
+      include: cb ? cb.checked : true
     });
   });
-  var btn=document.querySelector('[onclick="postAllTransactions()"]');
-  btn.disabled=true;btn.textContent='Posting...';
-  fetch('/api/bank/post-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transactions:txns,bank_account_id:stmtAccountId})}).then(r=>r.json()).then(res=>{
-    var msg=document.getElementById('post-msg');msg.style.display='block';
-    if(res.ok){msg.style.color='var(--mint)';msg.textContent='✓ '+res.message;setTimeout(()=>location.reload(),2000);}
-    else{msg.style.color='var(--red)';msg.textContent='Error: '+res.error;btn.disabled=false;btn.textContent='Post All';}
+  var selected = txns.filter(function(t) { return t.include; });
+  if (!selected.length) { alert('No transactions selected'); return; }
+  var btn = document.getElementById('post-btn');
+  btn.disabled = true; btn.textContent = 'Posting ' + selected.length + ' transactions...';
+  fetch('/api/bank/post-transactions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ transactions: txns, bank_account_id: stmtAccountId })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    var msg = document.getElementById('post-msg');
+    msg.style.display = 'block';
+    if (res.ok) {
+      msg.style.color = 'var(--mint)';
+      msg.textContent = '✓ ' + res.message;
+      setTimeout(function() { location.reload(); }, 2000);
+    } else {
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'Error: ' + (res.error || 'Unknown');
+      btn.disabled = false; btn.textContent = 'Post Selected to Ledger & Journal';
+    }
   });
 }
-function addBankAcct(){var bank=document.getElementById('b-bank').value.trim(),name=document.getElementById('b-name').value.trim();if(!bank||!name){alert('Bank name and account name required');return;}fetch('/api/bank/add-account',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bank_name:bank,account_name:name,account_number:document.getElementById('b-num').value,opening_balance:parseFloat(document.getElementById('b-bal').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok){closeModal('add-bank-modal');location.reload();}});}
-</script>{% endblock %}
+
+// ── Add bank account ──────────────────────────────────────────────────────────
+function addBankAcct() {
+  var bank = document.getElementById('b-bank').value.trim();
+  var name = document.getElementById('b-name').value.trim();
+  if (!bank || !name) { alert('Bank name and account name required'); return; }
+  fetch('/api/bank/add-account', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      bank_name: bank, account_name: name,
+      account_number: document.getElementById('b-num').value,
+      currency: document.getElementById('b-curr').value,
+      opening_balance: parseFloat(document.getElementById('b-bal').value) || 0
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.ok) { closeModal('add-bank-modal'); location.reload(); }
+    else { var m = document.getElementById('b-msg'); m.textContent = 'Error: ' + res.error; m.style.display = 'block'; m.style.color = 'var(--red)'; }
+  });
+}
+</script>
+{% endblock %}
