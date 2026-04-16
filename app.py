@@ -1448,6 +1448,146 @@ def accountant_switch(business_id):
 
 
 
+
+
+# ── Compliance Reports ────────────────────────────────────────────────────────
+
+@app.route("/reports/compliance")
+@business_required
+def compliance_reports():
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    return render_template("compliance.html", user=user, business=business, tax=tax)
+
+
+@app.route("/api/reports/mira-g1")
+@login_required
+def api_mira_g1():
+    """MIRA G1 Tax Return Mirror — Maldives only"""
+    business, err = api_business_guard()
+    if err: return err
+    if business.region != "MV":
+        return jsonify({"ok":False,"error":"MIRA G1 is for Maldives businesses only"})
+    period = request.args.get("period","monthly")
+    from datetime import date
+    today = date.today()
+    if period == "monthly":
+        start = date(today.year, today.month, 1)
+        end = today
+    else:
+        q = (today.month - 1) // 3
+        start = date(today.year, q*3+1, 1)
+        end = today
+    # Get ledger entries
+    entries = LedgerEntry.query.filter(
+        LedgerEntry.business_id==business.id,
+        LedgerEntry.timestamp>=datetime.combine(start, datetime.min.time()),
+        LedgerEntry.timestamp<=datetime.combine(end, datetime.max.time())
+    ).all()
+    # Separate standard GST (8%) and T-GST (17%) sales
+    standard_sales = sum(float(e.amount) for e in entries if e.entry_type=="REVENUE" and e.category!="Tourism")
+    tourism_sales = sum(float(e.amount) for e in entries if e.entry_type=="REVENUE" and e.category=="Tourism")
+    standard_tax = round(standard_sales * 0.08 / 1.08, 2)
+    tourism_tax = round(tourism_sales * 0.17 / 1.17, 2)
+    total_purchases = sum(float(e.amount) for e in entries if e.entry_type=="EXPENSE")
+    input_tax = sum(float(e.tax_amount or 0) for e in entries if e.entry_type=="EXPENSE")
+    net_tax = round(standard_tax + tourism_tax - input_tax, 2)
+    return jsonify({"ok":True,"period":{"start":str(start),"end":str(end),"type":period},
+        "g1":{
+            "box1_standard_sales":round(standard_sales,2),
+            "box2_tourism_sales":round(tourism_sales,2),
+            "box3_total_output_tax":round(standard_tax+tourism_tax,2),
+            "box4_standard_tax_8pct":standard_tax,
+            "box5_tourism_tax_17pct":tourism_tax,
+            "box6_total_purchases":round(total_purchases,2),
+            "box7_input_tax_claimable":round(input_tax,2),
+            "box8_net_tax_payable":net_tax,
+            "currency":"MVR",
+            "filing_deadline":"28th of following month"
+        }})
+
+
+@app.route("/api/reports/fbr-annex-c")
+@login_required
+def api_fbr_annex_c():
+    """FBR Annex-C Sales Export — Pakistan only"""
+    business, err = api_business_guard()
+    if err: return err
+    if business.region != "PK":
+        return jsonify({"ok":False,"error":"FBR Annex-C is for Pakistan businesses only"})
+    # Get invoices for current month
+    from datetime import date
+    today = date.today()
+    start = date(today.year, today.month, 1)
+    invoices = Invoice.query.filter(
+        Invoice.business_id==business.id,
+        Invoice.invoice_date>=start
+    ).all()
+    rows = []
+    for inv in invoices:
+        rows.append({
+            "sr_no": inv.id,
+            "buyer_name": inv.customer.name if inv.customer else "Walk-in",
+            "buyer_ntn": inv.customer.tax_id if inv.customer and hasattr(inv.customer,'tax_id') else "",
+            "buyer_strn": "",
+            "invoice_no": inv.invoice_number or "",
+            "invoice_date": str(inv.invoice_date) if inv.invoice_date else "",
+            "hs_code": "",
+            "value_excl_tax": float(inv.subtotal or 0),
+            "sales_tax_rate": 18,
+            "sales_tax_amount": float(inv.tax_amount or 0),
+            "total_value": float(inv.total_amount or 0),
+            "currency": inv.currency
+        })
+    # Generate CSV
+    import io, csv
+    output = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+    csv_content = output.getvalue()
+    from flask import Response
+    return Response(csv_content, mimetype="text/csv",
+                   headers={"Content-Disposition":"attachment;filename=FBR_AnnexC_"+str(today)+".csv"})
+
+
+@app.route("/api/reports/fta-201")
+@login_required
+def api_fta_201():
+    """UAE FTA Form 201 Summary"""
+    business, err = api_business_guard()
+    if err: return err
+    if business.region != "AE":
+        return jsonify({"ok":False,"error":"FTA Form 201 is for UAE businesses only"})
+    from datetime import date
+    today = date.today()
+    q = (today.month - 1) // 3
+    start = date(today.year, q*3+1, 1)
+    entries = LedgerEntry.query.filter(
+        LedgerEntry.business_id==business.id,
+        LedgerEntry.timestamp>=datetime.combine(start, datetime.min.time()),
+        LedgerEntry.entry_type=="REVENUE"
+    ).all()
+    total_sales = sum(float(e.amount) for e in entries)
+    total_tax = sum(float(e.tax_amount or 0) for e in entries)
+    standard_rated = total_sales
+    return jsonify({"ok":True,
+        "form_201":{
+            "quarter":f"Q{q+1} {today.year}",
+            "1a_standard_rated_supplies":round(standard_rated,2),
+            "1b_vat_on_standard_rated":round(total_tax,2),
+            "2_zero_rated_supplies":0,
+            "3_exempt_supplies":0,
+            "4_total_supplies":round(total_sales,2),
+            "10_recoverable_vat":0,
+            "net_vat_due":round(total_tax,2),
+            "currency":"AED",
+            "filing_deadline":"28th of month following quarter end"
+        }})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
