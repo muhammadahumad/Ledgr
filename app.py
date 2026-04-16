@@ -13,6 +13,17 @@ if db_url.startswith('postgres://'): db_url = db_url.replace('postgres://', 'pos
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
+
+@app.template_filter('from_json')
+def from_json_filter(value):
+    """Parse JSON string in templates"""
+    try:
+        import json as _json
+        if isinstance(value, str):
+            return _json.loads(value)
+        return value
+    except:
+        return {}
 db = SQLAlchemy(app)
 
 ANTHROPIC_KEY = os.environ.get('ANTHROPIC_KEY', '')
