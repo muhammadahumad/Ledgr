@@ -216,7 +216,9 @@ a:hover{text-decoration:underline}
     {% if messages %}
     <div style="padding:12px 24px 0">
       {% for cat, msg in messages %}
+      {% if 'plan allows' not in msg and 'Upgrade to add' not in msg %}
       <div class="alert alert-{{ 'success' if cat=='success' else 'error' if cat=='error' else 'info' }}">{{ msg }}</div>
+      {% endif %}
       {% endfor %}
     </div>
     {% endif %}
