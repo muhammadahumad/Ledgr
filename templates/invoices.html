@@ -52,7 +52,37 @@
 {% endblock %}
 {% block scripts %}<script>
 var invItems=[];
-function addInvItem(){var i=invItems.length;invItems.push({desc:'',qty:1,price:0,total:0});var div=document.createElement('div');div.id='inv-item-'+i;div.style.cssText='display:grid;grid-template-columns:2fr 80px 100px 100px 30px;gap:6px;margin-bottom:6px;align-items:center';div.innerHTML='<input class="field-input" placeholder="Description" oninput="updateItem('+i+',\'desc\',this.value)" style="font-size:11px"><input class="field-input" type="number" value="1" min="1" oninput="updateItem('+i+',\'qty\',this.value)" style="font-size:11px"><input class="field-input" type="number" step="0.01" placeholder="Price" oninput="updateItem('+i+',\'price\',this.value)" style="font-size:11px"><span id="inv-line-'+i+'" style="font-family:var(--mono);font-size:12px;color:var(--mint);text-align:right">0.00</span><button onclick="removeItem('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>';document.getElementById('inv-items').appendChild(div);updateTotal();}
+// Build product options for invoice lines
+var PRODUCTS = [{% for p in products %}{id:'{{ p.id }}',name:'{{ p.name|replace("'","\'") }}',price:{{ p.unit_price }}}{% if not loop.last %},{% endif %}{% endfor %}];
+function addInvItem(productId, productName, productPrice){
+  var i=invItems.length;
+  invItems.push({desc:productName||'',qty:1,price:productPrice||0,total:productPrice||0});
+  var div=document.createElement('div');
+  div.id='inv-item-'+i;
+  div.style.cssText='display:grid;grid-template-columns:2fr 80px 100px 100px 30px;gap:6px;margin-bottom:6px;align-items:center';
+  var prodSelect='';
+  if(PRODUCTS.length>0){
+    prodSelect='<select onchange="pickProduct('+i+',this)" style="font-size:10px;padding:2px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text3);margin-bottom:2px;width:100%"><option value="">Pick product or type...</option>'+PRODUCTS.map(function(p){return '<option value="'+p.id+'" data-price="'+p.price+'">'+p.name+'</option>';}).join('')+'</select>';
+  }
+  div.innerHTML=prodSelect+'<input class="field-input" placeholder="Description" value="'+(productName||'')+'" oninput="updateItem('+i+',\'desc\',this.value)" style="font-size:11px"><input class="field-input" type="number" value="1" min="1" oninput="updateItem('+i+',\'qty\',this.value)" style="font-size:11px"><input class="field-input" type="number" step="0.01" placeholder="Price" value="'+(productPrice||'')+'" oninput="updateItem('+i+',\'price\',this.value)" style="font-size:11px"><span id="inv-line-'+i+'" style="font-family:var(--mono);font-size:12px;color:var(--mint);text-align:right">'+(productPrice||0).toFixed(2)+'</span><button onclick="removeItem('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>';
+  document.getElementById('inv-items').appendChild(div);
+  updateTotal();
+}
+function pickProduct(i,sel){
+  var opt=sel.options[sel.selectedIndex];
+  var price=parseFloat(opt.dataset.price||0);
+  var name=opt.text;
+  if(!opt.value)return;
+  updateItem(i,'desc',name);
+  updateItem(i,'price',price);
+  // Update visible inputs
+  var row=document.getElementById('inv-item-'+i);
+  if(row){
+    var inputs=row.querySelectorAll('input');
+    inputs[0].value=name;
+    inputs[1].value=price;
+  }
+}
 function removeItem(i){invItems[i]=null;var el=document.getElementById('inv-item-'+i);if(el)el.remove();updateTotal();}
 function updateItem(i,k,v){if(!invItems[i])return;invItems[i][k]=k==='desc'?v:parseFloat(v)||0;invItems[i].total=invItems[i].qty*invItems[i].price;var el=document.getElementById('inv-line-'+i);if(el)el.textContent=fmt(invItems[i].total);updateTotal();}
 function updateTotal(){var t=invItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('inv-total').textContent='Total: '+t.toFixed(2);}
