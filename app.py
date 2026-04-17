@@ -2951,27 +2951,6 @@ def api_inventory_from_upload():
 # ── API: Employees ────────────────────────────────────────────────────────────
 @app.route('/api/employee/add', methods=['POST'])
 @login_required
-def api_employee_add():
-    user = current_user(); business = current_business()
-    data = request.get_json()
-    def pd(d):
-        try: return datetime.strptime(d,'%Y-%m-%d').date() if d else None
-        except: return None
-    e = Employee(business_id=business.id, full_name=data.get('full_name',''),
-                 employee_id=data.get('employee_id',''), position=data.get('position',''),
-                 department=data.get('department',''), nationality=data.get('nationality',''),
-                 id_card_number=data.get('id_card_number',''), passport_number=data.get('passport_number',''),
-                 visa_number=data.get('visa_number',''), visa_expiry=pd(data.get('visa_expiry')),
-                 work_permit_number=data.get('work_permit_number',''), work_permit_expiry=pd(data.get('work_permit_expiry')),
-                 phone=data.get('phone',''), email=data.get('email',''),
-                 monthly_salary=float(data.get('monthly_salary',0)), allowances=float(data.get('allowances',0)),
-                 currency=business.base_currency, employment_type=data.get('employment_type','Full-time'),
-                 joined_date=pd(data.get('joined_date')), contract_end_date=pd(data.get('contract_end_date')))
-    db.session.add(e)
-    db.session.commit()
-    return jsonify({'ok':True,'employee_id':e.id,'message':'Employee added'})
-
-# ── API: Settings & Business ──────────────────────────────────────────────────
 @app.route('/api/business/settings', methods=['POST'])
 @login_required
 def api_business_settings():
