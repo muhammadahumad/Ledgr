@@ -1,0 +1,75 @@
+{% extends "base.html" %}{% block title %}Statement — {{ customer.name }}{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Statement of Account</div><div class="page-sub">{{ customer.name }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button onclick="window.print()" class="btn">🖨 Print / PDF</button>
+    <a href="/customers" class="btn">← Customers</a>
+  </div>
+</div>
+<div class="content">
+<div class="card" id="print-area" style="max-width:720px;margin:0 auto">
+  <div style="text-align:center;border-bottom:2px solid var(--border);padding-bottom:14px;margin-bottom:18px">
+    {% if business.logo_data %}<img src="/api/business/logo" style="height:45px;object-fit:contain;margin:0 auto 8px;display:block"><br>{% endif %}
+    <div style="font-size:16px;font-weight:700">{{ business.display_name() }}</div>
+    {% if business.is_tax_registered %}<div style="font-size:11px;color:var(--text3)">{{ tax.tax_name }} Reg: {{ business.tax_registration_number or '—' }}</div>{% endif %}
+    <div style="font-size:13px;font-weight:600;margin-top:8px">STATEMENT OF ACCOUNT</div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;font-size:12px">
+    <div>
+      <div style="font-weight:600;color:var(--text3);font-size:10px;text-transform:uppercase;margin-bottom:4px">Statement To</div>
+      <div style="font-weight:600;color:var(--text)">{{ customer.name }}</div>
+      {% if customer.tax_id %}<div style="color:var(--text2)">TIN: {{ customer.tax_id }}</div>{% endif %}
+      {% if customer.phone %}<div style="color:var(--text2)">{{ customer.phone }}</div>{% endif %}
+      {% if customer.email %}<div style="color:var(--text2)">{{ customer.email }}</div>{% endif %}
+    </div>
+    <div style="text-align:right">
+      <div style="font-weight:600;color:var(--text3);font-size:10px;text-transform:uppercase;margin-bottom:4px">Statement Date</div>
+      <div style="font-weight:600;color:var(--text)">{{ today }}</div>
+      <div style="margin-top:8px;font-size:11px;color:var(--text2)">{{ business.address_line1 or '' }}</div>
+      {% if business.phone %}<div style="font-size:11px;color:var(--text2)">{{ business.phone }}</div>{% endif %}
+    </div>
+  </div>
+  <table class="table" style="font-size:12px">
+    <thead><tr>
+      <th>Date</th><th>Type</th><th>Reference</th>
+      <th style="text-align:right">Debit</th><th style="text-align:right">Credit</th>
+      <th style="text-align:right">Balance</th><th>Status</th>
+    </tr></thead>
+    <tbody>
+    {% for line in lines %}
+    <tr>
+      <td style="font-family:var(--mono);font-size:11px">{{ line.date.strftime('%d %b %Y') if line.date else '—' }}</td>
+      <td><span class="badge badge-{% if line.type=='Invoice' %}blue{% else %}green{% endif %}" style="font-size:10px">{{ line.type }}</span></td>
+      <td style="font-family:var(--mono);font-size:11px">{{ line.reference }}</td>
+      <td style="text-align:right;font-family:var(--mono);color:{% if line.debit>0 %}var(--text){% else %}var(--text3){% endif %}">{% if line.debit > 0 %}{{ tax.currency }} {{ "%.2f"|format(line.debit) }}{% endif %}</td>
+      <td style="text-align:right;font-family:var(--mono);color:var(--mint)">{% if line.credit > 0 %}{{ tax.currency }} {{ "%.2f"|format(line.credit) }}{% endif %}</td>
+      <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ tax.currency }} {{ "%.2f"|format(line.balance) }}</td>
+      <td><span class="badge badge-{% if line.status=='PAID' %}green{% else %}amber{% endif %}" style="font-size:10px">{{ line.status }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div style="display:flex;justify-content:flex-end;margin-top:14px">
+    <div style="text-align:right">
+      <div style="display:flex;justify-content:space-between;gap:40px;font-size:12px;padding:5px 0"><span>Total Invoiced</span><span style="font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format(total_invoiced) }}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:40px;font-size:12px;padding:5px 0"><span>Total Paid</span><span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(total_paid) }}</span></div>
+      <div style="display:flex;justify-content:space-between;gap:40px;font-size:14px;font-weight:700;padding:10px 14px;background:var(--bg);border-radius:7px;border:1px solid var(--border);margin-top:6px">
+        <span>Amount Outstanding</span>
+        <span style="font-family:var(--mono);color:{% if outstanding>0 %}var(--red){% else %}var(--mint){% endif %}">{{ tax.currency }} {{ "%.2f"|format(outstanding) }}</span>
+      </div>
+    </div>
+  </div>
+  {% if business.bank_account_number %}
+  <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:7px;font-size:11px">
+    <div style="font-weight:600;color:var(--text2);margin-bottom:4px">Payment Details</div>
+    {% if business.bank_name %}<div>Bank: {{ business.bank_name }}</div>{% endif %}
+    {% if business.bank_account_name %}<div>Account Name: {{ business.bank_account_name }}</div>{% endif %}
+    <div>Account Number: {{ business.bank_account_number }}</div>
+    {% if business.bank_swift %}<div>SWIFT: {{ business.bank_swift }}</div>{% endif %}
+  </div>
+  {% endif %}
+  <div style="margin-top:16px;font-size:10px;color:var(--text3);text-align:center">Generated by LEDGR · ledgrglobal.com</div>
+</div>
+</div>
+<style>@media print{.sidebar,.topbar,.card:not(#print-area){display:none!important}}</style>
+{% endblock %}

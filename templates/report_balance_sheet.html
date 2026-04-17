@@ -1,0 +1,98 @@
+{% extends "base.html" %}{% block title %}Balance Sheet — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Balance Sheet</div><div class="page-sub">{{ business.display_name() }} · As of {{ as_of.strftime('%d %b %Y') }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button onclick="window.print()" class="btn">🖨 Print / PDF</button>
+    <a href="/reports" class="btn">← Reports</a>
+  </div>
+</div>
+<div class="content">
+  <div class="card" style="margin-bottom:14px">
+    <form method="get" style="display:flex;gap:10px;align-items:flex-end">
+      <div><div class="field-label">As of Date</div><input class="field-input" type="date" name="as_of" value="{{ as_of }}"></div>
+      <button type="submit" class="btn btn-primary">View</button>
+    </form>
+  </div>
+
+  <div class="card" id="print-area" style="max-width:720px;margin:0 auto">
+    <div style="text-align:center;border-bottom:2px solid var(--border);padding-bottom:16px;margin-bottom:20px">
+      {% if business.logo_data %}<img src="/api/business/logo" style="height:50px;object-fit:contain;margin:0 auto 8px;display:block"><br>{% endif %}
+      <div style="font-size:18px;font-weight:700;color:var(--text)">{{ business.display_name() }}</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-top:10px">BALANCE SHEET</div>
+      <div style="font-size:12px;color:var(--text2)">As at {{ as_of.strftime('%d %b %Y') }}</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <!-- ASSETS -->
+      <div>
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding:6px 0;border-bottom:2px solid var(--mint);color:var(--mint)">Assets</div>
+        {% for item in asset_items %}
+        {% if item.amount != 0 %}
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
+          <span style="color:var(--text2)">{{ item.code }} {{ item.name }}</span>
+          <span style="font-family:var(--mono)">{{ "%.2f"|format(item.amount) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid var(--border);font-weight:700;font-size:13px;margin-top:4px">
+          <span>Total Assets</span>
+          <span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(total_assets) }}</span>
+        </div>
+      </div>
+
+      <!-- LIABILITIES + EQUITY -->
+      <div>
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding:6px 0;border-bottom:2px solid var(--red);color:var(--red)">Liabilities</div>
+        {% for item in liability_items %}
+        {% if item.amount != 0 %}
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
+          <span style="color:var(--text2)">{{ item.code }} {{ item.name }}</span>
+          <span style="font-family:var(--mono)">{{ "%.2f"|format(item.amount) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-weight:600;font-size:12px">
+          <span>Total Liabilities</span>
+          <span style="font-family:var(--mono);color:var(--red)">{{ "%.2f"|format(total_liabilities) }}</span>
+        </div>
+
+        <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding:8px 0 6px;border-bottom:2px solid var(--blue);color:var(--blue);margin-top:10px">Equity</div>
+        {% for item in equity_items %}
+        {% if item.amount != 0 %}
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
+          <span style="color:var(--text2)">{{ item.code }} {{ item.name }}</span>
+          <span style="font-family:var(--mono)">{{ "%.2f"|format(item.amount) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
+          <span style="color:var(--text2)">Current Year P&L</span>
+          <span style="font-family:var(--mono);color:{% if current_year_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ "%.2f"|format(current_year_profit) }}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-weight:600;font-size:12px">
+          <span>Total Equity</span>
+          <span style="font-family:var(--mono)">{{ "%.2f"|format(total_equity) }}</span>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:7px;font-weight:700;font-size:13px;margin-top:8px;border:1px solid var(--border)">
+          <span>Total Liabilities + Equity</span>
+          <span style="font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format(total_liabilities + total_equity) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Balance check -->
+    {% set diff = total_assets - (total_liabilities + total_equity) %}
+    {% if diff|abs > 1 %}
+    <div class="alert alert-warn" style="margin-top:12px;font-size:11px">⚠ Balance sheet difference of {{ tax.currency }} {{ "%.2f"|format(diff|abs) }} — check opening balances or unposted entries</div>
+    {% else %}
+    <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--mint)">✓ Balance sheet is balanced</div>
+    {% endif %}
+
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid var(--border);font-size:10px;color:var(--text3);text-align:center">
+      Generated by LEDGR · {{ today }} · For management purposes only
+    </div>
+  </div>
+</div>
+<style>@media print{.sidebar,.topbar,.card:not(#print-area){display:none!important}}</style>
+{% endblock %}

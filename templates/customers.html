@@ -58,7 +58,7 @@
           {% if (c.outstanding_balance or 0) > 0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}
         </td>
         <td><span class="badge badge-{% if c.is_vip %}amber{% else %}gray{% endif %}">{{ 'VIP' if c.is_vip else 'Regular' }}</span></td>
-        <td><button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button></td>
+        <td><button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button> <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a></td>
       </tr>
       {% endfor %}
       </tbody>
