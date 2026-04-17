@@ -68,10 +68,10 @@
         </button>
         {% if products %}
           {% for p in products %}
-          <button onclick="addProd('{{ p.id }}','{{ p.name|replace("'","\\'") }}',{{ p.unit_price }})" style="padding:12px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;text-align:center;font-family:var(--font);{% if p.stock_level<=0 %}opacity:.4{% endif %}" onmouseover="this.style.borderColor='var(--mint)'" onmouseout="this.style.borderColor='var(--border)'">
+          <button onclick="addProd('{{ p.id }}','{{ p.name|replace("'","\\'") }}',{{ p.unit_price }})" style="padding:12px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);cursor:pointer;font-size:12px;font-weight:500;transition:all .15s;text-align:center;font-family:var(--font);{% if (p.display_stock if p.display_stock is defined else p.stock_level)|float <= 0 %}opacity:.4{% endif %}" onmouseover="this.style.borderColor='var(--mint)'" onmouseout="this.style.borderColor='var(--border)'">
             <div style="margin-bottom:4px;line-height:1.2">{{ p.name[:16] }}</div>
             <div style="color:var(--mint);font-family:var(--mono);font-size:11px;font-weight:700">{{ tax.currency }} {{ "%.2f"|format(p.unit_price) }}</div>
-            <div style="font-size:10px;color:var(--text3);margin-top:2px">{{ p.stock_level }} left</div>
+            <div style="font-size:10px;color:var(--text3);margin-top:2px">{{ (p.display_stock if p.display_stock is defined else p.stock_level)|int }} left</div>
           </button>
           {% endfor %}
         {% else %}
