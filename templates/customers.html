@@ -1,55 +1,291 @@
 {% extends "base.html" %}{% block title %}Customers — LEDGR{% endblock %}{% block content %}
-<div class="topbar"><div><div class="page-title">Customers</div><div class="page-sub">{{ customers|length }} customers · {{ vip_count }} VIP · {{ business.base_currency }} {{ "%.2f"|format(total_outstanding) }} outstanding</div></div><button class="btn btn-primary" onclick="openModal('add-cust-modal')">+ Add Customer</button></div>
+<div class="topbar">
+  <div>
+    <div class="page-title">Customers</div>
+    <div class="page-sub">{{ customers|length }} customers · {{ vip_count }} VIP · {{ business.base_currency }} {{ "%.2f"|format(total_outstanding) }} outstanding</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <input class="field-input" placeholder="Search customers..." oninput="filterRows(this.value)" style="width:200px">
+    <button class="btn btn-primary" onclick="openModal('add-cust-modal')">+ Add Customer</button>
+  </div>
+</div>
 <div class="content">
-<div class="card">
-  <div class="card-title">Customer Database <input class="field-input" id="search-input" placeholder="Search name or phone..." style="width:220px;font-size:11px;padding:4px 8px" oninput="filterRows(this.value)"></div>
-  {% if customers %}
-  <table class="table">
-    <thead><tr><th>Name</th><th>Phone</th><th>Visits</th><th>Total Spent</th><th>Outstanding</th><th>Last Visit</th><th>Status</th><th></th></tr></thead>
-    <tbody>{% for c in customers %}
-    <tr class="cust-row" data-n="{{ c.name|lower }}" data-p="{{ c.phone or '' }}">
-      <td><div style="display:flex;align-items:center;gap:8px"><div style="width:28px;height:28px;border-radius:50%;background:{% if c.is_vip %}var(--mint){% else %}var(--surface2){% endif %};display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0">{{ c.name[0].upper() }}</div><div><div style="color:var(--text);font-weight:500">{{ c.name }}</div>{% if c.email %}<div style="font-size:10px;color:var(--text3)">{{ c.email }}</div>{% endif %}</div></div></td>
-      <td style="font-family:var(--mono);font-size:11px">{{ c.phone or '—' }}</td>
-      <td>{{ c.visit_count or 0 }}</td>
-      <td style="color:var(--mint);font-family:var(--mono);font-weight:500">{{ business.base_currency }} {{ "%.2f"|format(c.total_spent) }}</td>
-      <td style="color:{% if c.outstanding_balance>0 %}var(--red){% else %}var(--text3){% endif %};font-family:var(--mono);font-weight:{% if c.outstanding_balance>0 %}600{% else %}400{% endif %}">{% if c.outstanding_balance>0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}</td>
-      <td style="color:var(--text3);font-size:11px">{{ c.last_visit.strftime('%d %b %Y') if c.last_visit else 'Never' }}</td>
-      <td>{% if c.is_vip %}<span class="badge badge-green">VIP</span>{% elif c.outstanding_balance>0 %}<span class="badge badge-red">Has Tab</span>{% else %}<span class="badge badge-gray">Regular</span>{% endif %}</td>
-      <td><button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button></td>
-    </tr>{% endfor %}
-    </tbody>
-  </table>
+  {% if not customers %}
+  <div class="card" style="text-align:center;padding:60px 0">
+    <div style="font-size:40px;margin-bottom:12px">👥</div>
+    <div style="font-weight:600;color:var(--text2);margin-bottom:6px">No customers yet</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:16px">Add customers to track purchases, manage credit and issue tax invoices</div>
+    <button class="btn btn-primary" onclick="openModal('add-cust-modal')">Add first customer</button>
+  </div>
   {% else %}
-  <div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">◎</div><div style="font-weight:500;color:var(--text2);margin-bottom:4px">No customers yet</div><div style="font-size:11px;margin-bottom:14px">Add customers to track purchases and manage credit tabs</div><button class="btn btn-primary" onclick="openModal('add-cust-modal')">Add first customer</button></div>
+  <div class="card" style="padding:0">
+    <table class="table">
+      <thead><tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Contact</th>
+        <th>Tax ID / TIN</th>
+        <th style="text-align:right">Total Spent</th>
+        <th style="text-align:right">Outstanding</th>
+        <th>Status</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for c in customers %}
+      <tr class="cust-row" data-n="{{ c.name|lower }}" data-p="{{ c.phone or '' }}">
+        <td>
+          <div style="font-weight:500;color:var(--text)">{{ c.name }}{% if c.is_vip %} <span style="color:var(--mint)">⭐</span>{% endif %}</div>
+          {% if c.email %}<div style="font-size:11px;color:var(--text3)">{{ c.email }}</div>{% endif %}
+        </td>
+        <td>
+          <span class="badge badge-{% if c.customer_type=='business' %}blue{% else %}gray{% endif %}">
+            {{ 'Business' if c.customer_type=='business' else 'Individual' }}
+          </span>
+        </td>
+        <td style="font-size:12px;color:var(--text2)">
+          {% if c.phone %}{{ c.phone }}{% endif %}
+          {% if c.city %}<div style="font-size:11px;color:var(--text3)">{{ c.city }}{% if c.country %}, {{ c.country }}{% endif %}</div>{% endif %}
+        </td>
+        <td>
+          {% if c.tax_id %}
+          <span style="font-family:var(--mono);font-size:11px;color:var(--mint)">{{ c.tax_id }}</span>
+          {% else %}
+          <span style="font-size:11px;color:var(--text3)">—</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--mint)">{{ business.base_currency }} {{ "%.2f"|format(c.total_spent or 0) }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:{% if (c.outstanding_balance or 0) > 0 %}var(--red){% else %}var(--text3){% endif %}">
+          {% if (c.outstanding_balance or 0) > 0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}
+        </td>
+        <td><span class="badge badge-{% if c.is_vip %}amber{% else %}gray{% endif %}">{{ 'VIP' if c.is_vip else 'Regular' }}</span></td>
+        <td><button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% endif %}
 </div>
-</div>
 
+<!-- Add Customer Modal -->
 <div id="add-cust-modal" class="modal-overlay">
-  <div class="modal">
+  <div class="modal" style="max-width:560px">
     <div class="modal-title">Add Customer <button class="modal-close" onclick="closeModal('add-cust-modal')">×</button></div>
-    <div class="field-row"><div><div class="field-label">Full Name *</div><input class="field-input" id="c-name" placeholder="Ahmed Hassan"></div><div><div class="field-label">Phone</div><input class="field-input" id="c-phone" placeholder="+960 7XX XXXX"></div></div>
-    <div class="field-group"><div class="field-label">Email</div><input class="field-input" id="c-email" placeholder="optional"></div>
-    <div class="field-row"><div><div class="field-label">Credit Limit</div><input class="field-input" type="number" id="c-credit" placeholder="0.00" step="0.01"></div><div style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)"><input type="checkbox" id="c-vip" style="accent-color:var(--mint);width:15px;height:15px"> Mark as VIP</label></div></div>
-    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="c-notes" placeholder="Preferences, allergies, special notes..."></div>
-    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" onclick="addCust()">Add customer</button><button class="btn" onclick="closeModal('add-cust-modal')">Cancel</button></div>
+
+    <!-- Customer type toggle -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <div id="type-individual" onclick="setType('individual')"
+        style="padding:10px 14px;border:2px solid var(--mint);background:rgba(16,185,129,.08);border-radius:8px;cursor:pointer;text-align:center">
+        <div style="font-size:18px">👤</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Individual</div>
+        <div style="font-size:10px;color:var(--text3)">Walk-in / personal</div>
+      </div>
+      <div id="type-business" onclick="setType('business')"
+        style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;text-align:center">
+        <div style="font-size:18px">🏢</div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Business</div>
+        <div style="font-size:10px;color:var(--text3)">Company / B2B</div>
+      </div>
+    </div>
+
+    <!-- Basic info -->
+    <div class="field-row">
+      <div><div class="field-label">Full Name / Company Name *</div><input class="field-input" id="c-name" placeholder="Ahmed Hassan / ABC Trading Pvt Ltd"></div>
+      <div><div class="field-label">Phone</div><input class="field-input" id="c-phone" placeholder="+960 7XX XXXX"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Email</div><input class="field-input" id="c-email" placeholder="customer@email.com"></div>
+      <div><div class="field-label">City</div><input class="field-input" id="c-city" placeholder="Male'"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Address</div><input class="field-input" id="c-address" placeholder="Street / Island / Area"></div>
+      <div><div class="field-label">Country</div>
+        <select class="select-input" id="c-country">
+          <option value="MV">Maldives</option>
+          <option value="AE">UAE</option>
+          <option value="SA">Saudi Arabia</option>
+          <option value="PK">Pakistan</option>
+          <option value="OM">Oman</option>
+          <option value="IN">India</option>
+          <option value="EG">Egypt</option>
+          <option value="ID">Indonesia</option>
+          <option value="CN">China</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Tax fields — shown for all, mandatory hint for business -->
+    <div id="tax-section" style="background:rgba(16,185,129,.05);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--mint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
+        Tax & Compliance
+        <span id="tin-mandatory-badge" style="display:none;margin-left:8px;background:var(--red);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px">MANDATORY</span>
+      </div>
+      <div class="field-row">
+        <div>
+          <div class="field-label" id="tin-label">GST TIN</div>
+          <input class="field-input" id="c-taxid" placeholder="XXXXXXXGSTXXX" style="font-family:var(--mono)">
+          <div id="tin-hint" style="font-size:10px;color:var(--text3);margin-top:3px">Required on all Maldives tax invoices</div>
+        </div>
+        <div id="regno-wrap">
+          <div class="field-label">Company Reg. No.</div>
+          <input class="field-input" id="c-regno" placeholder="C-XXXXXX" style="font-family:var(--mono)">
+        </div>
+      </div>
+    </div>
+
+    <!-- VIP + credit -->
+    <div class="field-row">
+      <div>
+        <div class="field-label">Credit Limit ({{ business.base_currency }})</div>
+        <input class="field-input" type="number" id="c-credit" placeholder="0.00" step="0.01">
+      </div>
+      <div style="display:flex;align-items:flex-end;padding-bottom:2px">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="c-vip" style="accent-color:var(--mint);width:15px;height:15px"> Mark as VIP customer
+        </label>
+      </div>
+    </div>
+    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="c-notes" placeholder="Preferences, payment terms, special instructions..."></div>
+
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-primary" onclick="addCust()">Save Customer</button>
+      <button class="btn" onclick="closeModal('add-cust-modal')">Cancel</button>
+    </div>
     <div id="c-msg" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
   </div>
 </div>
 
+<!-- View Customer Modal -->
 <div id="detail-modal" class="modal-overlay">
   <div class="modal" style="max-width:560px">
     <div class="modal-title"><span id="d-name"></span><button class="modal-close" onclick="closeModal('detail-modal')">×</button></div>
     <div id="d-content"></div>
   </div>
 </div>
+
 {% endblock %}
 {% block scripts %}<script>
-function filterRows(q){q=q.toLowerCase();document.querySelectorAll('.cust-row').forEach(r=>{r.style.display=(r.dataset.n.includes(q)||r.dataset.p.includes(q))?'':'none';});}
-function addCust(){var name=document.getElementById('c-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/customer/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,phone:document.getElementById('c-phone').value,email:document.getElementById('c-email').value,notes:document.getElementById('c-notes').value,is_vip:document.getElementById('c-vip').checked,credit_limit:parseFloat(document.getElementById('c-credit').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{document.getElementById('c-msg').textContent='Error: '+res.error;document.getElementById('c-msg').style.display='block';}});}
-function viewCust(id){fetch('/api/customer/'+id).then(r=>r.json()).then(res=>{if(!res.ok)return;document.getElementById('d-name').textContent=res.name+(res.is_vip?' ⭐':'');var h='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12px">';h+='<div><div class="field-label">Phone</div><div style="color:var(--text)">'+(res.phone||'—')+'</div></div>';h+='<div><div class="field-label">Email</div><div style="color:var(--text)">'+(res.email||'—')+'</div></div>';h+='<div><div class="field-label">Total Spent</div><div style="color:var(--mint);font-weight:700;font-size:15px;font-family:var(--mono)">'+res.currency+' '+fmt(res.total_spent)+'</div></div>';h+='<div><div class="field-label">Visits</div><div style="color:var(--text);font-size:15px;font-weight:700">'+res.visit_count+'</div></div>';h+='<div><div class="field-label">Outstanding</div><div style="color:'+(res.outstanding_balance>0?'var(--red)':'var(--text3)')+';font-family:var(--mono)">'+res.currency+' '+fmt(res.outstanding_balance)+'</div></div>';h+='<div><div class="field-label">Last Visit</div><div style="color:var(--text)">'+(res.last_visit||'Never')+'</div></div>';h+='</div>';if(res.notes)h+='<div style="padding:8px 12px;background:var(--bg);border-radius:7px;font-size:11px;color:var(--text2);margin-bottom:12px">📝 '+esc(res.notes)+'</div>';if(res.recent_sales&&res.recent_sales.length){h+='<div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Recent</div>';res.recent_sales.forEach(s=>{h+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px"><div><div style="color:var(--text)">'+(s.note||'Sale')+'</div><div style="color:var(--text3)">'+s.date+' · '+s.method+'</div></div><div style="color:var(--mint);font-family:var(--mono);font-weight:500">'+res.currency+' '+fmt(s.amount)+'</div></div>';});}document.getElementById('d-content').innerHTML=h;openModal('detail-modal');});}
-function toggleTaxFields(type){
-  var tf=document.getElementById('tax-fields');
-  if(tf) tf.style.display=type==='business'?'block':'none';
+// Country TIN config
+var TIN_CONFIG = {
+  'MV': {label:'GST TIN',placeholder:'XXXXXXXGSTXXX',hint:'Required on all Maldives tax invoices (MIRA)',mandatory:true},
+  'AE': {label:'TRN',placeholder:'100XXXXXXXXXXXX',hint:'15-digit Tax Registration Number (FTA)',mandatory:true},
+  'SA': {label:'VAT Number',placeholder:'3XXXXXXXXXXXXX3',hint:'15-digit VAT number (ZATCA)',mandatory:true},
+  'PK': {label:'NTN / STRN',placeholder:'XXXXXXX-X',hint:'FBR National Tax Number',mandatory:true},
+  'OM': {label:'VATIN',placeholder:'OMXXXXXXXXXXXXXXX',hint:'Oman VAT Identification Number',mandatory:true},
+  'IN': {label:'GSTIN',placeholder:'XXXXXXXXXXXXXXX',hint:'15-character GST Identification Number',mandatory:true},
+  'EG': {label:'Tax Reg. Number',placeholder:'XXXXXXXXX',hint:'9-digit ETA Tax Registration',mandatory:true},
+  'ID': {label:'NPWP',placeholder:'XX.XXX.XXX.X-XXX.XXX',hint:'Indonesia Tax ID Number',mandatory:true},
+  'CN': {label:'Fapiao Tax ID',placeholder:'XXXXXXXXXXXXXXXXXX',hint:'18-digit Unified Social Credit Code',mandatory:true},
+  'OTHER': {label:'Tax ID / TIN',placeholder:'Tax ID number',hint:'Tax identification number',mandatory:false}
+};
+
+var customerType = 'individual';
+
+function setType(type) {
+  customerType = type;
+  var ind = document.getElementById('type-individual');
+  var biz = document.getElementById('type-business');
+  if (type === 'individual') {
+    ind.style.border = '2px solid var(--mint)';
+    ind.style.background = 'rgba(16,185,129,.08)';
+    biz.style.border = '1px solid var(--border)';
+    biz.style.background = '';
+    document.getElementById('regno-wrap').style.display = 'none';
+    document.getElementById('tin-mandatory-badge').style.display = 'none';
+  } else {
+    biz.style.border = '2px solid var(--mint)';
+    biz.style.background = 'rgba(16,185,129,.08)';
+    ind.style.border = '1px solid var(--border)';
+    ind.style.background = '';
+    document.getElementById('regno-wrap').style.display = '';
+    document.getElementById('tin-mandatory-badge').style.display = 'inline';
+  }
+}
+
+function updateTINFields() {
+  var country = document.getElementById('c-country').value;
+  var cfg = TIN_CONFIG[country] || TIN_CONFIG['OTHER'];
+  document.getElementById('tin-label').textContent = cfg.label;
+  document.getElementById('c-taxid').placeholder = cfg.placeholder;
+  document.getElementById('tin-hint').textContent = cfg.hint;
+  if (cfg.mandatory) {
+    document.getElementById('tin-mandatory-badge').style.display = customerType === 'business' ? 'inline' : 'none';
+  }
+}
+document.getElementById('c-country').addEventListener('change', updateTINFields);
+
+function filterRows(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.cust-row').forEach(function(r) {
+    r.style.display = (r.dataset.n.includes(q) || r.dataset.p.includes(q)) ? '' : 'none';
+  });
+}
+
+function addCust() {
+  var name = document.getElementById('c-name').value.trim();
+  if (!name) { alert('Customer name is required'); return; }
+  var taxId = document.getElementById('c-taxid').value.trim();
+  var country = document.getElementById('c-country').value;
+  var cfg = TIN_CONFIG[country] || TIN_CONFIG['OTHER'];
+  // Warn if business and TIN missing
+  if (customerType === 'business' && cfg.mandatory && !taxId) {
+    if (!confirm('Tax ID (' + cfg.label + ') is mandatory for ' + country + ' business customers on tax invoices. Save without it?')) return;
+  }
+  fetch('/api/customer/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      phone: document.getElementById('c-phone').value,
+      email: document.getElementById('c-email').value,
+      city: document.getElementById('c-city').value,
+      address: document.getElementById('c-address').value,
+      country: country,
+      customer_type: customerType,
+      tax_id: taxId,
+      registration_number: document.getElementById('c-regno').value,
+      is_vip: document.getElementById('c-vip').checked,
+      notes: document.getElementById('c-notes').value
+    })
+  }).then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.ok) { location.reload(); }
+    else {
+      var m = document.getElementById('c-msg');
+      m.textContent = 'Error: ' + res.error;
+      m.style.display = 'block';
+    }
+  });
+}
+
+function viewCust(id) {
+  fetch('/api/customer/' + id).then(function(r) { return r.json(); }).then(function(res) {
+    if (!res.ok) return;
+    document.getElementById('d-name').textContent = res.name + (res.is_vip ? ' ⭐' : '');
+    var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12px">';
+    h += '<div><div class="field-label">Phone</div><div style="color:var(--text)">' + (res.phone || '—') + '</div></div>';
+    h += '<div><div class="field-label">Email</div><div style="color:var(--text)">' + (res.email || '—') + '</div></div>';
+    h += '<div><div class="field-label">Type</div><div style="color:var(--text)">' + (res.customer_type === 'business' ? '🏢 Business' : '👤 Individual') + '</div></div>';
+    h += '<div><div class="field-label">Country</div><div style="color:var(--text)">' + (res.country || '—') + '</div></div>';
+    if (res.tax_id) h += '<div style="grid-column:1/-1"><div class="field-label">Tax ID / TIN</div><div style="color:var(--mint);font-family:var(--mono);font-size:13px">' + esc(res.tax_id) + '</div></div>';
+    if (res.address) h += '<div style="grid-column:1/-1"><div class="field-label">Address</div><div style="color:var(--text2)">' + esc(res.address) + (res.city ? ', ' + res.city : '') + '</div></div>';
+    h += '<div><div class="field-label">Total Spent</div><div style="color:var(--mint);font-weight:700;font-size:16px;font-family:var(--mono)">' + fmt(res.total_spent) + '</div></div>';
+    h += '<div><div class="field-label">Outstanding</div><div style="color:' + (res.outstanding_balance > 0 ? 'var(--red)' : 'var(--text3)') + ';font-family:var(--mono)">' + fmt(res.outstanding_balance) + '</div></div>';
+    h += '<div><div class="field-label">Visits</div><div style="color:var(--text);font-size:15px;font-weight:700">' + (res.visit_count || 0) + '</div></div>';
+    h += '<div><div class="field-label">Last Visit</div><div style="color:var(--text)">' + (res.last_visit || 'Never') + '</div></div>';
+    h += '</div>';
+    if (res.notes) h += '<div style="padding:8px 12px;background:var(--bg);border-radius:7px;font-size:11px;color:var(--text2);margin-bottom:12px">📝 ' + esc(res.notes) + '</div>';
+    if (res.recent_sales && res.recent_sales.length) {
+      h += '<div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Recent Sales</div>';
+      res.recent_sales.forEach(function(s) {
+        h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">'
+          + '<div><div style="color:var(--text)">' + (s.note || 'Sale') + '</div><div style="color:var(--text3)">' + s.date + ' · ' + s.method + '</div></div>'
+          + '<div style="color:var(--mint);font-family:var(--mono);font-weight:500">' + fmt(s.amount) + '</div></div>';
+      });
+    }
+    document.getElementById('d-content').innerHTML = h;
+    openModal('detail-modal');
+  });
 }
 </script>{% endblock %}
