@@ -2828,6 +2828,69 @@ def api_payment_cancel(pid):
 
 
 
+
+@app.route("/hr")
+@business_required
+def hr_dashboard():
+    user = current_user(); business = current_business()
+    try:
+        employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    except:
+        employees = []
+    # Compliance alerts
+    all_alerts = []
+    for e in employees:
+        for a in e.compliance_alerts():
+            a["employee_name"] = e.full_name
+            a["position"] = e.position or ""
+            all_alerts.append(a)
+    all_alerts.sort(key=lambda x: x.get("days", 999))
+    # Payroll summary
+    total_salary = sum(float(e.monthly_salary or 0) for e in employees)
+    total_allowances = sum(float(e.allowances or 0) + float(e.housing_allowance or 0) + float(e.transport_allowance or 0) for e in employees)
+    total_pension_er = sum(float(e.pension_employer or 0) for e in employees)
+    total_cost = total_salary + total_allowances + total_pension_er
+    local_count = sum(1 for e in employees if e.employment_type == 'local')
+    foreign_count = sum(1 for e in employees if e.employment_type == 'foreign')
+    # Expiring docs in next 30 days
+    urgent_alerts = [a for a in all_alerts if a.get("days", 999) <= 30]
+    return render_template("hr_dashboard.html", user=user, business=business,
+                           tax=business.tax_rules(), employees=employees,
+                           all_alerts=all_alerts, urgent_alerts=urgent_alerts,
+                           total_salary=total_salary, total_allowances=total_allowances,
+                           total_pension_er=total_pension_er, total_cost=total_cost,
+                           local_count=local_count, foreign_count=foreign_count)
+
+
+@app.route("/inventory/dashboard")
+@business_required
+def inventory_dashboard():
+    user = current_user(); business = current_business()
+    products = Product.query.filter_by(business_id=business.id).filter(
+        db.or_(Product.is_active==True, Product.is_active==None)
+    ).all()
+    locations = Location.query.filter_by(business_id=business.id, is_active=True).all()
+    low_stock = [p for p in products if float(p.stock_level or 0) <= float(p.reorder_level or 10)]
+    total_value = sum(float(p.stock_level or 0) * float(p.unit_cost or 0) for p in products)
+    total_retail = sum(float(p.stock_level or 0) * float(p.unit_price or 0) for p in products)
+    # Recent transfers
+    try:
+        recent_transfers = StockTransfer.query.filter_by(business_id=business.id).order_by(
+            StockTransfer.created_at.desc()).limit(10).all()
+    except:
+        recent_transfers = []
+    # Recent POs
+    try:
+        recent_pos = PurchaseOrder.query.filter_by(business_id=business.id).order_by(
+            PurchaseOrder.created_at.desc()).limit(5).all()
+    except:
+        recent_pos = []
+    return render_template("inventory_dashboard.html", user=user, business=business,
+                           tax=business.tax_rules(), products=products, locations=locations,
+                           low_stock=low_stock, total_value=total_value, total_retail=total_retail,
+                           recent_transfers=recent_transfers, recent_pos=recent_pos)
+
+
 @app.route('/admin')
 @login_required
 @admin_required
