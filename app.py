@@ -1,4 +1,5 @@
 import os, json, base64, urllib.request, urllib.parse, urllib.error, re
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta, date
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
@@ -31,12 +32,46 @@ ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', 'muahumadhu@gmail.com')
 
 # ── Config dicts ──────────────────────────────────────────────────────────────
 TAX_RULES = {
-    'MV': {'name':'Maldives','currency':'MVR','tax_name':'GST','tax_rate':0.08,'authority':'MIRA','tin_format':'XXXXXXXGSTXXX'},
-    'AE': {'name':'UAE',     'currency':'AED','tax_name':'VAT','tax_rate':0.05,'authority':'FTA', 'tin_format':'TRN XXXXXXXXXXXXXXX'},
-    'PK': {'name':'Pakistan','currency':'PKR','tax_name':'GST','tax_rate':0.17,'authority':'FBR', 'tin_format':'XXXXXXX-X'},
-    'CN': {'name':'China',   'currency':'CNY','tax_name':'VAT','tax_rate':0.13,'authority':'SAT', 'tin_format':'XXXXXXXXXXXXXXXXXX'},
-    'LK': {'name':'Sri Lanka','currency':'LKR','tax_name':'VAT','tax_rate':0.18,'authority':'IRD','tin_format':'XXXXXXXXX'},
-    'IN': {'name':'India',   'currency':'INR','tax_name':'GST','tax_rate':0.18,'authority':'CBIC','tin_format':'XXAAAAAAAAAAXXX'},
+    'MV': {'name':'Maldives','currency':'MVR','tax_name':'GST','tax_rate':0.08,
+           'tax_rate_tourism':0.17,'authority':'MIRA','tin_format':'XXXXXXXGSTXXX',
+           'threshold':1000000,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':False},
+    'AE': {'name':'UAE','currency':'AED','tax_name':'VAT','tax_rate':0.05,
+           'authority':'FTA','tin_format':'100XXXXXXXXXXXX',
+           'threshold':375000,'filing':'quarterly',
+           'requires_dual_tin':True,'rtl':True,'emirate_required':True},
+    'SA': {'name':'Saudi Arabia','currency':'SAR','tax_name':'VAT','tax_rate':0.15,
+           'authority':'ZATCA','tin_format':'3XXXXXXXXXXXXX3',
+           'threshold':0,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':True,'zatca_phase2':True},
+    'PK': {'name':'Pakistan','currency':'PKR','tax_name':'GST','tax_rate':0.18,
+           'tax_rate_luxury':0.25,'authority':'FBR','tin_format':'XXXXXXX-X',
+           'threshold':8000000,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':False},
+    'OM': {'name':'Oman','currency':'OMR','tax_name':'VAT','tax_rate':0.05,
+           'authority':'Tax Oman','tin_format':'OMXXXXXXXXXXXXXXX',
+           'threshold':38500,'filing':'quarterly',
+           'requires_dual_tin':True,'rtl':True},
+    'CN': {'name':'China','currency':'CNY','tax_name':'VAT','tax_rate':0.13,
+           'authority':'SAT','tin_format':'XXXXXXXXXXXXXXXXXX',
+           'threshold':500000,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':False},
+    'LK': {'name':'Sri Lanka','currency':'LKR','tax_name':'VAT','tax_rate':0.18,
+           'authority':'IRD','tin_format':'XXXXXXXXX',
+           'threshold':80000000,'filing':'monthly',
+           'requires_dual_tin':False,'rtl':False},
+    'IN': {'name':'India','currency':'INR','tax_name':'GST','tax_rate':0.18,
+           'authority':'GSTN','tin_format':'XXAAAAAAAAAAXXX',
+           'threshold':2000000,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':False,'irn_required':True},
+    'EG': {'name':'Egypt','currency':'EGP','tax_name':'VAT','tax_rate':0.14,
+           'authority':'ETA','tin_format':'XXXXXXXXX',
+           'threshold':500000,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':False},
+    'ID': {'name':'Indonesia','currency':'IDR','tax_name':'PPN','tax_rate':0.11,
+           'authority':'DGT','tin_format':'XX.XXX.XXX.X-XXX.XXX',
+           'threshold':4800000000,'filing':'monthly',
+           'requires_dual_tin':True,'rtl':False,'nsfp_required':True},
 }
 TAX_THRESHOLDS = {
     'MV':{'amount':1000000,'currency':'MVR','authority':'MIRA','tax':'GST'},
@@ -1032,8 +1067,13 @@ def invoices():
     user = current_user(); business = current_business()
     invoice_list = Invoice.query.filter_by(business_id=business.id).order_by(Invoice.created_at.desc()).all()
     customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
+    products_list = []
+    if business.has_inventory:
+        products_list = Product.query.filter_by(business_id=business.id).filter(
+            db.or_(Product.is_active==True, Product.is_active==None)
+        ).order_by(Product.name).all()
     return render_template('invoices.html', user=user, business=business, invoices=invoice_list,
-                           customers=customers_list, tax=business.tax_rules())
+                           customers=customers_list, products=products_list, tax=business.tax_rules())
 
 @app.route('/reports')
 @login_required
@@ -2411,6 +2451,49 @@ def api_payroll_run():
 
 
 
+
+@app.route("/api/supplier/add", methods=["POST"])
+@login_required
+def api_supplier_add():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    if not name: return jsonify({"ok":False,"error":"Supplier name required"})
+    existing = Supplier.query.filter_by(business_id=business.id, name=name).first()
+    if existing: return jsonify({"ok":False,"error":"Supplier already exists","supplier_id":existing.id})
+    try:
+        s = Supplier(business_id=business.id, name=name,
+                     tax_id=data.get("tax_id",""),
+                     phone=data.get("phone",""),
+                     email=data.get("email",""),
+                     address=data.get("address",""),
+                     currency=data.get("currency", business.base_currency),
+                     payment_terms=data.get("payment_terms","Net 30"),
+                     notes=data.get("notes",""))
+        db.session.add(s)
+        db.session.commit()
+        return jsonify({"ok":True,"supplier_id":s.id,"name":s.name})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/supplier/<int:sid>/delete", methods=["POST"])
+@login_required
+def api_supplier_delete(sid):
+    business, err = api_business_guard()
+    if err: return err
+    s = Supplier.query.filter_by(id=sid, business_id=business.id).first()
+    if not s: return jsonify({"ok":False,"error":"Not found"})
+    if s.has_transactions:
+        return jsonify({"ok":False,"error":"Cannot delete — supplier has transactions. Archive instead."})
+    s.is_active = False
+    db.session.commit()
+    return jsonify({"ok":True})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -2680,8 +2763,10 @@ def api_pos_sale():
     if business.is_tax_registered:
         tax_rate = business.tax_rules()['tax_rate']
         if data.get('tax_inclusive', True):
-            tax_amount = round(amount - (amount / (1 + tax_rate)), 2)
-            net_amount = amount - tax_amount
+            amt = Decimal(str(amount))
+            rate = Decimal(str(tax_rate))
+            tax_amount = float((amt - (amt / (1 + rate))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+            net_amount = round(amount - tax_amount, 2)
     sale = POSSale(business_id=business.id, user_id=user.id, customer_id=customer_id,
                    amount=amount, tax_amount=tax_amount, currency=business.base_currency,
                    payment_method=payment, note=data.get('note',''), category=data.get('category','Sale'),
