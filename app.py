@@ -325,13 +325,18 @@ class Product(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
     sku = db.Column(db.String(50))
-    name = db.Column(db.String(100), nullable=False)
+    barcode = db.Column(db.String(50))
+    name = db.Column(db.String(200), nullable=False)
     category = db.Column(db.String(50))
-    stock_level = db.Column(db.Integer, default=0)
-    reorder_level = db.Column(db.Integer, default=10)
+    unit = db.Column(db.String(20), default='pcs')  # pcs, kg, litre, box, etc
+    stock_level = db.Column(db.Numeric(12,3), default=0)  # Total across all locations
+    reorder_level = db.Column(db.Numeric(12,3), default=10)
     unit_cost = db.Column(db.Numeric(12,2), default=0)
     unit_price = db.Column(db.Numeric(12,2), default=0)
     currency = db.Column(db.String(3), default='MVR')
+    has_expiry = db.Column(db.Boolean, default=False)
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Customer(db.Model):
@@ -407,26 +412,98 @@ class Employee(db.Model):
     __tablename__ = 'employees'
     id = db.Column(db.Integer, primary_key=True)
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
-    full_name = db.Column(db.String(100), nullable=False)
+    # Core
+    full_name = db.Column(db.String(200), nullable=False)
     employee_id = db.Column(db.String(50))
     position = db.Column(db.String(100))
     department = db.Column(db.String(100))
+    location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
+    # Employment type
+    employment_type = db.Column(db.String(20), default='local')  # local / foreign
+    contract_type = db.Column(db.String(20), default='permanent')  # permanent / fixed / part_time / probation
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date)
+    is_active = db.Column(db.Boolean, default=True)
+    # Identity
     nationality = db.Column(db.String(50))
+    country_of_work = db.Column(db.String(10), default='MV')
     id_card_number = db.Column(db.String(50))
     passport_number = db.Column(db.String(50))
+    passport_expiry = db.Column(db.Date)
+    # Visa & Work Permit
     visa_number = db.Column(db.String(50))
+    visa_type = db.Column(db.String(50))
     visa_expiry = db.Column(db.Date)
     work_permit_number = db.Column(db.String(50))
     work_permit_expiry = db.Column(db.Date)
+    # Maldives-specific
+    quota_slot_number = db.Column(db.String(50))
+    quota_fee_paid = db.Column(db.Numeric(12,2), default=0)
+    security_deposit = db.Column(db.Numeric(12,2), default=0)
+    deposit_paid_date = db.Column(db.Date)
+    medical_expiry = db.Column(db.Date)
+    insurance_provider = db.Column(db.String(100))
+    insurance_expiry = db.Column(db.Date)
+    insurance_cost = db.Column(db.Numeric(12,2), default=0)
+    # Contact
     phone = db.Column(db.String(30))
     email = db.Column(db.String(150))
+    emergency_contact = db.Column(db.String(200))
+    # Salary & Benefits
     monthly_salary = db.Column(db.Numeric(12,2))
     allowances = db.Column(db.Numeric(12,2), default=0)
+    housing_allowance = db.Column(db.Numeric(12,2), default=0)
+    transport_allowance = db.Column(db.Numeric(12,2), default=0)
     currency = db.Column(db.String(3), default='MVR')
-    employment_type = db.Column(db.String(20), default='Full-time')
-    joined_date = db.Column(db.Date)
-    contract_end_date = db.Column(db.Date)
-    is_active = db.Column(db.Boolean, default=True)
+    # Statutory deductions
+    pension_employee = db.Column(db.Numeric(12,2), default=0)  # 7% MV, 12% IN
+    pension_employer = db.Column(db.Numeric(12,2), default=0)
+    social_insurance = db.Column(db.Numeric(12,2), default=0)  # GOSI, BPJS, etc
+    gratuity_accrued = db.Column(db.Numeric(12,2), default=0)  # End of service
+    # Bank
+    bank_name = db.Column(db.String(100))
+    bank_account = db.Column(db.String(50))
+    # Notes
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='employees')
+
+    def total_cost(self):
+        """True monthly cost including all statutory contributions"""
+        base = float(self.monthly_salary or 0)
+        allow = float(self.allowances or 0) + float(self.housing_allowance or 0) + float(self.transport_allowance or 0)
+        pension = float(self.pension_employer or 0)
+        social = float(self.social_insurance or 0)
+        # Amortize one-time costs over 12 months
+        visa_amort = float(self.quota_fee_paid or 0) / 12
+        insurance_amort = float(self.insurance_cost or 0) / 12
+        deposit_amort = 0  # deposit is refundable — show separately
+        return round(base + allow + pension + social + visa_amort + insurance_amort, 2)
+
+    def days_to_visa_expiry(self):
+        if not self.visa_expiry: return None
+        from datetime import date
+        return (self.visa_expiry - date.today()).days
+
+    def days_to_medical_expiry(self):
+        if not self.medical_expiry: return None
+        from datetime import date
+        return (self.medical_expiry - date.today()).days
+
+    def compliance_alerts(self):
+        alerts = []
+        visa_days = self.days_to_visa_expiry()
+        if visa_days is not None and visa_days <= 45:
+            alerts.append({'type':'visa','days':visa_days,'msg':'Visa expires in ' + str(visa_days) + ' days'})
+        med_days = self.days_to_medical_expiry()
+        if med_days is not None and med_days <= 30:
+            alerts.append({'type':'medical','days':med_days,'msg':'Medical report expires in ' + str(med_days) + ' days'})
+        if self.work_permit_expiry:
+            from datetime import date
+            wp_days = (self.work_permit_expiry - date.today()).days
+            if wp_days <= 45:
+                alerts.append({'type':'work_permit','days':wp_days,'msg':'Work permit expires in ' + str(wp_days) + ' days'})
+        return alerts
 
 class AIConversation(db.Model):
     __tablename__ = 'ai_conversations'
@@ -552,6 +629,7 @@ class Location(db.Model):
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
     name = db.Column(db.String(100), nullable=False)  # e.g. "Male Branch"
     address = db.Column(db.Text)
+    location_type = db.Column(db.String(20), default='branch')  # branch / warehouse / outlet / virtual
     is_warehouse = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -2128,6 +2206,296 @@ def migrate_models():
         return "<pre>" + result_text + "</pre>"
     except Exception as e:
         return "Migration error: " + str(e)
+
+
+
+# ── Inventory & Warehouse Management APIs ─────────────────────────────────────
+
+@app.route("/api/stock/transfer", methods=["POST"])
+@login_required
+def api_stock_transfer():
+    """Transfer stock between locations/warehouses"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    product_id = data.get("product_id")
+    from_loc = int(data.get("from_location_id", 0))
+    to_loc = int(data.get("to_location_id", 0))
+    qty = float(data.get("quantity", 0))
+    if not product_id or not from_loc or not to_loc or qty <= 0:
+        return jsonify({"ok":False,"error":"Product, locations and quantity required"})
+    if from_loc == to_loc:
+        return jsonify({"ok":False,"error":"Source and destination cannot be the same"})
+    # Check source stock
+    from_pl = ProductLocation.query.filter_by(product_id=product_id, location_id=from_loc).first()
+    if not from_pl or float(from_pl.stock_quantity) < qty:
+        avail = float(from_pl.stock_quantity) if from_pl else 0
+        return jsonify({"ok":False,"error":"Insufficient stock. Available: " + str(avail)})
+    # Deduct from source
+    from_pl.stock_quantity = float(from_pl.stock_quantity) - qty
+    # Add to destination
+    to_pl = ProductLocation.query.filter_by(product_id=product_id, location_id=to_loc).first()
+    if not to_pl:
+        to_pl = ProductLocation(product_id=product_id, location_id=to_loc, stock_quantity=0)
+        db.session.add(to_pl)
+    to_pl.stock_quantity = float(to_pl.stock_quantity) + qty
+    # Record transfer
+    transfer = StockTransfer(
+        business_id=business.id, product_id=product_id,
+        from_location_id=from_loc, to_location_id=to_loc,
+        quantity=qty, reference=data.get("reference",""),
+        notes=data.get("notes",""), created_by=user.id, status="COMPLETED"
+    )
+    db.session.add(transfer)
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Stock transferred successfully","quantity":qty})
+
+
+@app.route("/api/stock/adjust", methods=["POST"])
+@login_required
+def api_stock_adjust():
+    """Manual stock adjustment — with reason"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    product_id = data.get("product_id")
+    location_id = data.get("location_id")
+    new_qty = float(data.get("new_quantity", 0))
+    reason = data.get("reason", "Manual adjustment")
+    product = Product.query.filter_by(id=product_id, business_id=business.id).first()
+    if not product: return jsonify({"ok":False,"error":"Product not found"})
+    if location_id:
+        pl = ProductLocation.query.filter_by(product_id=product_id, location_id=location_id).first()
+        if not pl:
+            pl = ProductLocation(product_id=product_id, location_id=location_id, stock_quantity=0)
+            db.session.add(pl)
+        old_qty = float(pl.stock_quantity)
+        pl.stock_quantity = new_qty
+    else:
+        old_qty = float(product.stock_level)
+        product.stock_level = new_qty
+    # Post adjustment to journal if significant
+    diff = new_qty - old_qty
+    if abs(diff) > 0:
+        try:
+            adj_val = abs(diff) * float(product.unit_cost or 0)
+            if adj_val > 0:
+                if diff > 0:
+                    lines = [{"account_code":"1200","debit":adj_val,"credit":0},
+                             {"account_code":"6900","debit":0,"credit":adj_val}]
+                else:
+                    lines = [{"account_code":"6900","debit":adj_val,"credit":0},
+                             {"account_code":"1200","debit":0,"credit":adj_val}]
+                post_journal(business.id, user.id, "Stock Adjustment: " + product.name,
+                            "ADJ-" + str(product_id), "ADJUSTMENT", lines)
+        except: pass
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Stock adjusted. Old: " + str(old_qty) + " → New: " + str(new_qty)})
+
+
+@app.route("/api/purchase-order/create", methods=["POST"])
+@login_required
+def api_po_create():
+    """Create a purchase order"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    import random
+    po_num = "PO-" + str(datetime.utcnow().year) + "-" + str(random.randint(1000,9999))
+    items = data.get("items", [])
+    subtotal = sum(float(i.get("qty",0)) * float(i.get("unit_cost",0)) for i in items)
+    po = PurchaseOrder(
+        business_id=business.id,
+        supplier_id=data.get("supplier_id"),
+        po_number=po_num,
+        warehouse_id=data.get("warehouse_id"),
+        currency=business.base_currency,
+        subtotal=subtotal, total_amount=subtotal,
+        items=json.dumps(items),
+        notes=data.get("notes",""), status="DRAFT"
+    )
+    db.session.add(po)
+    db.session.commit()
+    return jsonify({"ok":True,"po_id":po.id,"po_number":po_num,"total":subtotal})
+
+
+@app.route("/api/purchase-order/<int:po_id>/receive", methods=["POST"])
+@login_required
+def api_po_receive(po_id):
+    """Mark PO as received — update inventory"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    po = PurchaseOrder.query.filter_by(id=po_id, business_id=business.id).first()
+    if not po: return jsonify({"ok":False,"error":"PO not found"})
+    try:
+        items = json.loads(po.items or "[]")
+        for item in items:
+            product = Product.query.filter_by(id=item.get("product_id"), business_id=business.id).first()
+            if product:
+                qty = float(item.get("qty", 0))
+                product.stock_level = float(product.stock_level or 0) + qty
+                if po.warehouse_id:
+                    pl = ProductLocation.query.filter_by(product_id=product.id, location_id=po.warehouse_id).first()
+                    if not pl:
+                        pl = ProductLocation(product_id=product.id, location_id=po.warehouse_id, stock_quantity=0)
+                        db.session.add(pl)
+                    pl.stock_quantity = float(pl.stock_quantity or 0) + qty
+        po.status = "RECEIVED"
+        po.received_date = datetime.utcnow().date()
+        # Post to journal
+        if po.total_amount > 0:
+            post_journal(business.id, user.id, "PO Received: " + po.po_number,
+                        po.po_number, "PURCHASE",
+                        [{"account_code":"1200","debit":float(po.total_amount),"credit":0},
+                         {"account_code":"2000","debit":0,"credit":float(po.total_amount)}])
+        db.session.commit()
+        return jsonify({"ok":True,"message":"PO received and inventory updated"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+# ── HR Management APIs ────────────────────────────────────────────────────────
+
+@app.route("/api/employee/add", methods=["POST"])
+@login_required
+def api_employee_add():
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    name = (data.get("full_name") or "").strip()
+    if not name: return jsonify({"ok":False,"error":"Employee name required"})
+    country = data.get("country_of_work", business.region or "MV")
+    emp_type = data.get("employment_type", "local")
+    salary = float(data.get("monthly_salary", 0))
+    rules = get_employment_rules(country)
+    # Auto-calculate pension
+    pension_emp = round(salary * rules.get("pension_employee_pct", 0) / 100, 2)
+    pension_er = round(salary * rules.get("pension_employer_pct", 0) / 100, 2)
+    try:
+        e = Employee(business_id=business.id, full_name=name)
+        e.employee_id = data.get("employee_id", "EMP-" + str(Employee.query.filter_by(business_id=business.id).count() + 1).zfill(3))
+        e.position = data.get("position","")
+        e.department = data.get("department","")
+        e.nationality = data.get("nationality","")
+        e.employment_type = emp_type
+        e.contract_type = data.get("contract_type","permanent")
+        e.country_of_work = country
+        e.phone = data.get("phone","")
+        e.email = data.get("email","")
+        e.monthly_salary = salary
+        e.allowances = float(data.get("allowances",0))
+        e.housing_allowance = float(data.get("housing_allowance",0))
+        e.transport_allowance = float(data.get("transport_allowance",0))
+        e.pension_employee = pension_emp
+        e.pension_employer = pension_er
+        e.currency = business.base_currency
+        # Parse dates
+        for field, key in [("start_date","start_date"),("visa_expiry","visa_expiry"),
+                           ("work_permit_expiry","work_permit_expiry"),("passport_expiry","passport_expiry"),
+                           ("medical_expiry","medical_expiry"),("insurance_expiry","insurance_expiry")]:
+            val = data.get(key)
+            if val:
+                try: setattr(e, field, datetime.strptime(val, "%Y-%m-%d").date())
+                except: pass
+        e.passport_number = data.get("passport_number","")
+        e.visa_number = data.get("visa_number","")
+        e.work_permit_number = data.get("work_permit_number","")
+        e.quota_slot_number = data.get("quota_slot_number","")
+        e.quota_fee_paid = float(data.get("quota_fee_paid",0))
+        e.security_deposit = float(data.get("security_deposit",0))
+        e.insurance_provider = data.get("insurance_provider","")
+        e.insurance_cost = float(data.get("insurance_cost",0))
+        e.bank_name = data.get("bank_name","")
+        e.bank_account = data.get("bank_account","")
+        e.notes = data.get("notes","")
+        db.session.add(e)
+        db.session.commit()
+        costs = calculate_employee_costs(e, country)
+        return jsonify({"ok":True,"employee_id":e.id,"name":e.full_name,
+                       "true_monthly_cost":costs["true_monthly_cost"],
+                       "net_salary":costs["net_salary"]})
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(ex)})
+
+
+@app.route("/api/employee/<int:emp_id>/costs")
+@login_required
+def api_employee_costs(emp_id):
+    """Get true cost breakdown for an employee"""
+    business, err = api_business_guard()
+    if err: return err
+    e = Employee.query.filter_by(id=emp_id, business_id=business.id).first()
+    if not e: return jsonify({"ok":False,"error":"Not found"})
+    costs = calculate_employee_costs(e, e.country_of_work or business.region or "MV")
+    return jsonify({"ok":True,"employee":e.full_name,"costs":costs,
+                   "alerts":e.compliance_alerts()})
+
+
+@app.route("/api/hr/compliance-alerts")
+@login_required
+def api_hr_compliance_alerts():
+    """Get all compliance alerts across all employees"""
+    business, err = api_business_guard()
+    if err: return err
+    employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    all_alerts = []
+    for e in employees:
+        alerts = e.compliance_alerts()
+        for a in alerts:
+            a["employee_id"] = e.id
+            a["employee_name"] = e.full_name
+            a["position"] = e.position
+            all_alerts.append(a)
+    # Sort by urgency
+    all_alerts.sort(key=lambda x: x.get("days", 999))
+    return jsonify({"ok":True,"alerts":all_alerts,"count":len(all_alerts)})
+
+
+@app.route("/api/hr/payroll-run", methods=["POST"])
+@login_required
+def api_payroll_run():
+    """Process payroll for all active employees — post to journal"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    month = data.get("month", datetime.utcnow().strftime("%Y-%m"))
+    employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    if not employees: return jsonify({"ok":False,"error":"No active employees"})
+    total_gross = 0
+    total_pension_er = 0
+    total_net = 0
+    posted = 0
+    for e in employees:
+        costs = calculate_employee_costs(e, e.country_of_work or business.region or "MV")
+        gross = costs["base_salary"] + costs["allowances"]
+        net = costs["net_salary"]
+        pension_er = costs["pension_employer"]
+        total_gross += gross
+        total_pension_er += pension_er
+        total_net += net
+        try:
+            post_journal(business.id, user.id,
+                "Payroll: " + e.full_name + " (" + month + ")",
+                "PAY-" + month + "-" + str(e.id), "PAYROLL",
+                [{"account_code":"5100","debit":gross,"credit":0,"description":"Gross salary"},
+                 {"account_code":"2210","debit":pension_er,"credit":0,"description":"Pension employer"},
+                 {"account_code":"2000","debit":0,"credit":gross + pension_er,"description":"Net payable"}])
+            posted += 1
+        except: pass
+    db.session.commit()
+    return jsonify({"ok":True,"month":month,"employees_processed":posted,
+                   "total_gross":round(total_gross,2),
+                   "total_pension_employer":round(total_pension_er,2),
+                   "total_net_payable":round(total_net,2)})
+
 
 
 @app.route('/admin')
