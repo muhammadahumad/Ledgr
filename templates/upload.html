@@ -141,6 +141,13 @@ function processFile(file){
   reader.readAsDataURL(file);
 }
 function showResult(res){
+  // Handle bank statement detection — redirect to bank page
+  if(res.is_bank_statement){
+    var go=confirm('This looks like a bank statement.\n\nBank statements should be uploaded from the Bank page for proper processing with GL account assignment.\n\nGo to Bank page now?');
+    if(go) window.location.href='/bank';
+    else resetUpload();
+    return;
+  }
   // Handle duplicate detection
   if(res.duplicate){
     var msg='⚠ Possible duplicate detected!\n\n'+res.duplicate_vendor+'\nPreviously uploaded: '+res.duplicate_date+'\nAmount: '+fmt(res.duplicate_amount)+'\n\nDo you want to save this as a new document anyway?';
