@@ -1,0 +1,215 @@
+{% extends "base.html" %}{% block title %}Data Import — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Data Import</div><div class="page-sub">Import from QuickBooks, Xero, Odoo or any CSV export</div></div>
+</div>
+<div class="content">
+
+  <!-- QB Migration Guide -->
+  <div class="card" style="border-color:rgba(16,185,129,.3);margin-bottom:14px">
+    <div class="card-title">📋 Migrating from QuickBooks Online / Xero / Odoo?</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.8">
+      <strong>Recommended approach — Clean Start as of a cut-off date:</strong><br>
+      1. Export your Chart of Accounts, Customers, and Suppliers as CSV from your old system<br>
+      2. Import them below using the import tools<br>
+      3. Enter Opening Balances (Total assets, liabilities, equity) as of your cut-off date via Journal → Manual Entry<br>
+      4. Start recording new transactions in LEDGR from your cut-off date forward<br>
+      5. Keep your old system read-only for historical reference<br><br>
+      <strong>This is the standard method used by Xero, Odoo and all major accounting firms.</strong>
+      Historical transaction migration is not recommended — it adds months of work and creates audit complications.
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+    <!-- Import Customers -->
+    <div class="card">
+      <div class="card-title">👥 Import Customers</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+        QB: Reports → Customer Contact List → Export to CSV<br>
+        Xero: Contacts → Filter Customers → Export<br>
+        Required columns: Name, Email (optional), Phone (optional), Balance (optional)
+      </div>
+      <div class="upload-zone" id="cust-drop" onclick="document.getElementById('cust-file').click()" ondragover="event.preventDefault()" ondrop="handleDrop('cust',event)" style="margin-bottom:8px;cursor:pointer;padding:20px">
+        <div style="font-size:20px;margin-bottom:4px">↑</div>
+        <div style="font-size:12px;color:var(--text2)">Drop CSV or click to upload</div>
+      </div>
+      <input type="file" id="cust-file" accept=".csv,text/csv" style="display:none" onchange="previewCSV('cust',this)">
+      <div id="cust-preview" style="display:none;margin-bottom:8px;font-size:11px;color:var(--mint)"></div>
+      <button class="btn btn-primary" id="cust-import-btn" style="display:none;width:100%" onclick="importCSV('customers')">Import Customers</button>
+      <div id="cust-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    </div>
+
+    <!-- Import Suppliers -->
+    <div class="card">
+      <div class="card-title">🏪 Import Suppliers / Vendors</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
+        QB: Reports → Vendor Contact List → Export to CSV<br>
+        Xero: Contacts → Filter Suppliers → Export<br>
+        Required columns: Name, Email (optional), Phone (optional)
+      </div>
+      <div class="upload-zone" id="sup-drop" onclick="document.getElementById('sup-file').click()" ondragover="event.preventDefault()" ondrop="handleDrop('sup',event)" style="margin-bottom:8px;cursor:pointer;padding:20px">
+        <div style="font-size:20px;margin-bottom:4px">↑</div>
+        <div style="font-size:12px;color:var(--text2)">Drop CSV or click to upload</div>
+      </div>
+      <input type="file" id="sup-file" accept=".csv,text/csv" style="display:none" onchange="previewCSV('sup',this)">
+      <div id="sup-preview" style="display:none;margin-bottom:8px;font-size:11px;color:var(--mint)"></div>
+      <button class="btn btn-primary" id="sup-import-btn" style="display:none;width:100%" onclick="importCSV('suppliers')">Import Suppliers</button>
+      <div id="sup-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    </div>
+
+  </div>
+
+  <!-- Opening Balances -->
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">💰 Set Opening Balances</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">
+      After importing contacts, enter your opening balances as of your migration date. This creates the starting Trial Balance.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+      <div>
+        <div class="field-label">Cut-off Date</div>
+        <input class="field-input" type="date" id="ob-date" value="{{ today }}">
+      </div>
+      <div>
+        <div class="field-label">Opening Cash Balance</div>
+        <input class="field-input" type="number" id="ob-cash" placeholder="0.00" step="0.01">
+      </div>
+      <div>
+        <div class="field-label">Opening Bank Balance</div>
+        <input class="field-input" type="number" id="ob-bank" placeholder="0.00" step="0.01">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px">
+      <div>
+        <div class="field-label">Total Accounts Receivable</div>
+        <input class="field-input" type="number" id="ob-ar" placeholder="0.00" step="0.01">
+      </div>
+      <div>
+        <div class="field-label">Total Accounts Payable</div>
+        <input class="field-input" type="number" id="ob-ap" placeholder="0.00" step="0.01">
+      </div>
+      <div>
+        <div class="field-label">Inventory Value</div>
+        <input class="field-input" type="number" id="ob-inv" placeholder="0.00" step="0.01">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:12px">
+      <div>
+        <div class="field-label">Total Equity / Capital</div>
+        <input class="field-input" type="number" id="ob-equity" placeholder="0.00" step="0.01">
+      </div>
+      <div>
+        <div class="field-label">Retained Earnings</div>
+        <input class="field-input" type="number" id="ob-retained" placeholder="0.00" step="0.01">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="postOpeningBalances()">Post Opening Balances</button>
+    <div id="ob-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+var csvContents = {};
+
+function handleDrop(prefix, e) {
+  e.preventDefault();
+  if (e.dataTransfer.files.length) {
+    var input = document.getElementById(prefix + '-file');
+    // Manually trigger
+    var file = e.dataTransfer.files[0];
+    processFile(prefix, file);
+  }
+}
+
+function previewCSV(prefix, input) {
+  if (input.files.length) processFile(prefix, input.files[0]);
+}
+
+function processFile(prefix, file) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    csvContents[prefix] = e.target.result;
+    var lines = e.target.result.split('\n').filter(Boolean);
+    var preview = document.getElementById(prefix + '-preview');
+    preview.textContent = '✓ ' + file.name + ' — ' + (lines.length-1) + ' records detected';
+    preview.style.display = 'block';
+    document.getElementById(prefix + '-import-btn').style.display = 'block';
+  };
+  reader.readAsText(file);
+}
+
+function importCSV(type) {
+  var prefix = type === 'customers' ? 'cust' : 'sup';
+  var csv = csvContents[prefix];
+  if (!csv) { alert('No file selected'); return; }
+  var btn = document.getElementById(prefix + '-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing...';
+  var endpoint = type === 'customers' ? '/api/import/customers-csv' : '/api/import/suppliers-csv';
+  fetch(endpoint, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({csv_content: csv})
+  }).then(function(r){return r.json();}).then(function(res){
+    var m = document.getElementById(prefix + '-msg');
+    m.style.display = 'block';
+    if (res.ok) {
+      m.style.color = 'var(--mint)';
+      m.textContent = '✓ ' + res.message;
+    } else {
+      m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + res.error;
+      btn.disabled = false;
+      btn.textContent = 'Import ' + (type==='customers'?'Customers':'Suppliers');
+    }
+  });
+}
+
+function postOpeningBalances() {
+  var date = document.getElementById('ob-date').value;
+  var cash = parseFloat(document.getElementById('ob-cash').value)||0;
+  var bank = parseFloat(document.getElementById('ob-bank').value)||0;
+  var ar = parseFloat(document.getElementById('ob-ar').value)||0;
+  var ap = parseFloat(document.getElementById('ob-ap').value)||0;
+  var inv = parseFloat(document.getElementById('ob-inv').value)||0;
+  var equity = parseFloat(document.getElementById('ob-equity').value)||0;
+  var retained = parseFloat(document.getElementById('ob-retained').value)||0;
+
+  var total_assets = cash + bank + ar + inv;
+  var total_liabilities = ap;
+  var total_equity = equity + retained;
+
+  if (!date) { alert('Please select a cut-off date'); return; }
+  if (total_assets === 0 && total_equity === 0) { alert('Please enter at least one balance'); return; }
+
+  // Build journal lines
+  var lines = [];
+  if (cash > 0) lines.push({account_code:'1000',debit:cash,credit:0,description:'Opening balance'});
+  if (bank > 0) lines.push({account_code:'1010',debit:bank,credit:0,description:'Opening balance'});
+  if (ar > 0) lines.push({account_code:'1100',debit:ar,credit:0,description:'Opening AR balance'});
+  if (inv > 0) lines.push({account_code:'1200',debit:inv,credit:0,description:'Opening inventory value'});
+  if (ap > 0) lines.push({account_code:'2000',debit:0,credit:ap,description:'Opening AP balance'});
+  if (equity > 0) lines.push({account_code:'3000',debit:0,credit:equity,description:'Opening equity'});
+  if (retained > 0) lines.push({account_code:'3100',debit:0,credit:retained,description:'Opening retained earnings'});
+
+  // Balance check
+  var dr = lines.reduce(function(s,l){return s+l.debit;},0);
+  var cr = lines.reduce(function(s,l){return s+l.credit;},0);
+  if (Math.abs(dr-cr) > 0.01) {
+    // Add balancing entry to equity
+    var diff = dr - cr;
+    if (diff > 0) lines.push({account_code:'3100',debit:0,credit:diff,description:'Balancing entry'});
+    else lines.push({account_code:'3100',debit:Math.abs(diff),credit:0,description:'Balancing entry'});
+  }
+
+  fetch('/api/journal/manual', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({memo:'Opening Balances as of ' + date, ref:'OPENING-BAL', lines:lines})
+  }).then(function(r){return r.json();}).then(function(res){
+    var m = document.getElementById('ob-msg');
+    m.style.display = 'block';
+    if(res.ok){ m.style.color='var(--mint)'; m.textContent='✓ Opening balances posted to journal'; }
+    else { m.style.color='var(--red)'; m.textContent='Error: '+res.error; }
+  });
+}
+</script>{% endblock %}
