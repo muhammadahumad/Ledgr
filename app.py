@@ -682,6 +682,40 @@ class ProductLocation(db.Model):
     reorder_level = db.Column(db.Integer, default=10)
     product = db.relationship('Product', backref='location_stock')
 
+
+class Payment(db.Model):
+    """Records of payments made or received"""
+    __tablename__ = 'payments'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    payment_type = db.Column(db.String(20))  # OUTGOING (AP) / INCOMING (AR)
+    payment_method = db.Column(db.String(30), default='Bank Transfer')  # Cash / Bank Transfer / Cheque / Card
+    bank_account_id = db.Column(db.Integer, db.ForeignKey('bank_accounts.id'), nullable=True)
+    payment_date = db.Column(db.Date, default=date.today)
+    amount = db.Column(db.Numeric(12,2), nullable=False)
+    currency = db.Column(db.String(3), default='MVR')
+    reference = db.Column(db.String(100))  # Cheque number, transfer ref
+    notes = db.Column(db.Text)
+    # Links
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='payments')
+
+
+class PaymentAllocation(db.Model):
+    """Links a payment to specific documents/invoices"""
+    __tablename__ = 'payment_allocations'
+    id = db.Column(db.Integer, primary_key=True)
+    payment_id = db.Column(db.Integer, db.ForeignKey('payments.id'))
+    document_id = db.Column(db.Integer, db.ForeignKey('documents.id'), nullable=True)
+    invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
+    amount_allocated = db.Column(db.Numeric(12,2), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 with app.app_context():
     try:
         db.create_all()
@@ -2491,6 +2525,306 @@ def api_supplier_delete(sid):
     s.is_active = False
     db.session.commit()
     return jsonify({"ok":True})
+
+
+
+
+# ── Payment Module ────────────────────────────────────────────────────────────
+
+@app.route("/payments")
+@business_required
+def payments():
+    user = current_user(); business = current_business()
+    # Unpaid bills (AP)
+    unpaid_bills = Document.query.filter(
+        Document.business_id==business.id,
+        Document.doc_type.in_(["BILL","EXPENSE"]),
+        Document.payment_status.in_(["UNPAID","PARTIAL","POSTED_UNPAID"])
+    ).order_by(Document.invoice_date).all()
+    # Unpaid invoices (AR)
+    unpaid_invoices = Invoice.query.filter(
+        Invoice.business_id==business.id,
+        Invoice.status.in_(["SENT","PARTIAL"])
+    ).order_by(Invoice.invoice_date).all()
+    # Recent payments
+    recent_payments = Payment.query.filter_by(
+        business_id=business.id
+    ).order_by(Payment.payment_date.desc()).limit(30).all()
+    # Bank accounts for payment method
+    bank_accounts = BankAccount.query.filter_by(
+        business_id=business.id, is_active=True).all()
+    # Totals
+    total_ap = sum(float(b.total_amount or 0) for b in unpaid_bills)
+    total_ar = sum(float(i.amount_due()) for i in unpaid_invoices)
+    return render_template("payments.html", user=user, business=business,
+                           tax=business.tax_rules(),
+                           unpaid_bills=unpaid_bills,
+                           unpaid_invoices=unpaid_invoices,
+                           recent_payments=recent_payments,
+                           bank_accounts=bank_accounts,
+                           total_ap=total_ap, total_ar=total_ar)
+
+
+@app.route("/api/payment/pay-bills", methods=["POST"])
+@login_required
+def api_pay_bills():
+    """Pay one or multiple bills — bulk AP payment"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    doc_ids = data.get("document_ids", [])
+    payment_method = data.get("payment_method", "Bank Transfer")
+    bank_account_id = data.get("bank_account_id")
+    payment_date_str = data.get("payment_date")
+    reference = data.get("reference", "")
+    notes = data.get("notes", "")
+
+    if not doc_ids:
+        return jsonify({"ok":False,"error":"No bills selected"})
+
+    try:
+        payment_date = datetime.strptime(payment_date_str, "%Y-%m-%d").date() if payment_date_str else date.today()
+    except:
+        payment_date = date.today()
+
+    # Get and validate all selected bills
+    docs = []
+    total_amount = 0
+    for did in doc_ids:
+        doc = Document.query.filter_by(id=did, business_id=business.id).first()
+        if doc and doc.payment_status not in ["PAID"]:
+            docs.append(doc)
+            total_amount += float(doc.total_amount or 0)
+
+    if not docs:
+        return jsonify({"ok":False,"error":"No valid unpaid bills found"})
+
+    # Determine bank/cash GL code
+    bank_code = "1010" if payment_method in ["Bank Transfer","Card"] else "1000"
+    if bank_account_id:
+        bank_code = "1010"
+
+    try:
+        # Create payment record
+        payment = Payment(
+            business_id=business.id,
+            payment_type="OUTGOING",
+            payment_method=payment_method,
+            bank_account_id=bank_account_id,
+            payment_date=payment_date,
+            amount=total_amount,
+            currency=business.base_currency,
+            reference=reference,
+            notes=notes,
+            created_by=user.id
+        )
+        db.session.add(payment)
+        db.session.flush()
+
+        # Post journal: DR Accounts Payable, CR Bank/Cash
+        vendor_names = ", ".join(set(d.vendor_name or "Supplier" for d in docs))
+        lines = [
+            {"account_code":"2000","debit":total_amount,"credit":0,
+             "description":"AP Payment: " + vendor_names},
+            {"account_code":bank_code,"debit":0,"credit":total_amount,
+             "description":payment_method + " payment ref: " + (reference or "—")}
+        ]
+        je = post_journal(business.id, user.id,
+                         "Payment: " + vendor_names,
+                         reference or "PAY-" + str(payment.id),
+                         "PAYMENT", lines)
+        payment.journal_entry_id = je.id
+
+        # Update bank account balance
+        if bank_account_id:
+            ba = BankAccount.query.get(bank_account_id)
+            if ba:
+                ba.current_balance = float(ba.current_balance or 0) - total_amount
+
+        # Mark each bill as paid and create allocations
+        for doc in docs:
+            doc.payment_status = "PAID"
+            doc.status = "PAID"
+            alloc = PaymentAllocation(
+                payment_id=payment.id,
+                document_id=doc.id,
+                amount_allocated=float(doc.total_amount or 0)
+            )
+            db.session.add(alloc)
+
+        # Update supplier totals if linked
+        if docs:
+            vendor_name = docs[0].vendor_name
+            if vendor_name:
+                supplier = Supplier.query.filter_by(
+                    business_id=business.id, name=vendor_name).first()
+                if supplier:
+                    supplier.total_purchases = float(supplier.total_purchases or 0) + total_amount
+                    supplier.has_transactions = True
+
+        db.session.commit()
+        return jsonify({
+            "ok":True,
+            "payment_id":payment.id,
+            "bills_paid":len(docs),
+            "total_paid":total_amount,
+            "currency":business.base_currency,
+            "message":str(len(docs)) + " bill(s) paid — " + business.base_currency + " " + str(round(total_amount,2))
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/payment/receive", methods=["POST"])
+@login_required
+def api_payment_receive():
+    """Record payment received from customer — clears AR"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    invoice_ids = data.get("invoice_ids", [])
+    amount_received = float(data.get("amount_received", 0))
+    payment_method = data.get("payment_method", "Bank Transfer")
+    bank_account_id = data.get("bank_account_id")
+    payment_date_str = data.get("payment_date")
+    reference = data.get("reference", "")
+    customer_id = data.get("customer_id")
+
+    if not invoice_ids and not amount_received:
+        return jsonify({"ok":False,"error":"Select invoices or enter amount received"})
+
+    try:
+        payment_date = datetime.strptime(payment_date_str, "%Y-%m-%d").date() if payment_date_str else date.today()
+    except:
+        payment_date = date.today()
+
+    bank_code = "1010" if payment_method in ["Bank Transfer","Card"] else "1000"
+
+    try:
+        # Get invoices
+        invoices = []
+        total_invoiced = 0
+        for iid in invoice_ids:
+            inv = Invoice.query.filter_by(id=iid, business_id=business.id).first()
+            if inv and inv.status not in ["PAID","CANCELLED"]:
+                invoices.append(inv)
+                total_invoiced += inv.amount_due()
+
+        actual_amount = amount_received if amount_received > 0 else total_invoiced
+
+        # Create payment record
+        payment = Payment(
+            business_id=business.id,
+            payment_type="INCOMING",
+            payment_method=payment_method,
+            bank_account_id=bank_account_id,
+            payment_date=payment_date,
+            amount=actual_amount,
+            currency=business.base_currency,
+            reference=reference,
+            customer_id=customer_id,
+            created_by=user.id
+        )
+        db.session.add(payment)
+        db.session.flush()
+
+        # Post journal: DR Bank/Cash, CR Accounts Receivable
+        lines = [
+            {"account_code":bank_code,"debit":actual_amount,"credit":0,
+             "description":"Payment received: " + payment_method},
+            {"account_code":"1100","debit":0,"credit":actual_amount,
+             "description":"AR cleared — " + (reference or "—")}
+        ]
+        je = post_journal(business.id, user.id,
+                         "Payment received",
+                         reference or "RECV-" + str(payment.id),
+                         "RECEIPT", lines)
+        payment.journal_entry_id = je.id
+
+        # Update bank balance
+        if bank_account_id:
+            ba = BankAccount.query.get(bank_account_id)
+            if ba:
+                ba.current_balance = float(ba.current_balance or 0) + actual_amount
+
+        # Allocate to invoices and update status
+        remaining = actual_amount
+        for inv in invoices:
+            due = inv.amount_due()
+            allocated = min(due, remaining)
+            inv.amount_paid = float(inv.amount_paid or 0) + allocated
+            if inv.amount_due() <= 0.01:
+                inv.status = "PAID"
+            else:
+                inv.status = "PARTIAL"
+            remaining -= allocated
+            db.session.add(PaymentAllocation(
+                payment_id=payment.id,
+                invoice_id=inv.id,
+                amount_allocated=allocated
+            ))
+            # Update customer outstanding
+            if inv.customer_id:
+                c = Customer.query.get(inv.customer_id)
+                if c:
+                    c.outstanding_balance = max(0, float(c.outstanding_balance or 0) - allocated)
+
+        db.session.commit()
+        return jsonify({
+            "ok":True,
+            "payment_id":payment.id,
+            "amount_received":actual_amount,
+            "invoices_updated":len(invoices),
+            "currency":business.base_currency,
+            "message":"Payment of " + business.base_currency + " " + str(round(actual_amount,2)) + " received and recorded"
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/payment/<int:pid>/cancel", methods=["POST"])
+@login_required
+def api_payment_cancel(pid):
+    """Cancel/reverse a payment — creates reversal journal"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    payment = Payment.query.filter_by(id=pid, business_id=business.id).first()
+    if not payment:
+        return jsonify({"ok":False,"error":"Payment not found"})
+    try:
+        # Reverse the journal
+        if payment.journal_entry_id:
+            orig = JournalEntry.query.get(payment.journal_entry_id)
+            if orig and not orig.is_void:
+                orig_lines = JournalLine.query.filter_by(journal_entry_id=orig.id).all()
+                reversal = [{"account_code":l.account.code,"debit":float(l.credit),"credit":float(l.debit),
+                            "description":"REVERSAL: " + (l.description or "")} for l in orig_lines if l.account]
+                post_journal(business.id, user.id, "REVERSAL: " + orig.description,
+                            "REV-" + str(pid), "REVERSAL", reversal)
+                orig.is_void = True
+        # Reopen allocated documents
+        allocs = PaymentAllocation.query.filter_by(payment_id=pid).all()
+        for alloc in allocs:
+            if alloc.document_id:
+                doc = Document.query.get(alloc.document_id)
+                if doc: doc.payment_status = "UNPAID"
+            if alloc.invoice_id:
+                inv = Invoice.query.get(alloc.invoice_id)
+                if inv:
+                    inv.amount_paid = max(0, float(inv.amount_paid or 0) - float(alloc.amount_allocated))
+                    inv.status = "SENT"
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Payment reversed successfully"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
 
 
 
