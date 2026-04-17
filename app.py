@@ -3112,6 +3112,264 @@ def data_import():
 
 
 
+
+# ── Professional Financial Reports ───────────────────────────────────────────
+
+@app.route("/reports/pl")
+@business_required
+def report_pl():
+    """Profit & Loss Statement — QB/Xero format"""
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    # Period selection
+    period = request.args.get("period","month")
+    from datetime import date
+    today = date.today()
+    if period == "month":
+        start = date(today.year, today.month, 1)
+        end = today
+        period_label = today.strftime("%B %Y")
+    elif period == "quarter":
+        q = (today.month - 1) // 3
+        start = date(today.year, q*3+1, 1)
+        end = today
+        period_label = f"Q{q+1} {today.year}"
+    elif period == "year":
+        start = date(today.year, 1, 1)
+        end = today
+        period_label = str(today.year)
+    elif period == "custom":
+        try:
+            start = datetime.strptime(request.args.get("start",""), "%Y-%m-%d").date()
+            end = datetime.strptime(request.args.get("end",""), "%Y-%m-%d").date()
+            period_label = start.strftime("%d %b %Y") + " to " + end.strftime("%d %b %Y")
+        except:
+            start = date(today.year, 1, 1); end = today
+            period_label = str(today.year)
+    else:
+        start = date(today.year, today.month, 1); end = today
+        period_label = today.strftime("%B %Y")
+
+    # Get revenue accounts with balances for period
+    revenue_accounts = Account.query.filter_by(
+        business_id=business.id, account_type="REVENUE", is_active=True
+    ).order_by(Account.code).all()
+
+    expense_accounts = Account.query.filter_by(
+        business_id=business.id, account_type="EXPENSE", is_active=True
+    ).order_by(Account.code).all()
+
+    # Calculate balances for period from journal lines
+    def account_period_balance(acct_id, start, end):
+        lines = db.session.query(
+            db.func.sum(JournalLine.credit - JournalLine.debit)
+        ).join(JournalEntry).filter(
+            JournalLine.account_id == acct_id,
+            JournalEntry.business_id == business.id,
+            db.func.date(JournalEntry.date) >= start,
+            db.func.date(JournalEntry.date) <= end
+        ).scalar() or 0
+        return float(lines)
+
+    revenue_items = []
+    total_revenue = 0
+    for acct in revenue_accounts:
+        bal = account_period_balance(acct.id, start, end)
+        if bal != 0:
+            revenue_items.append({"code":acct.code,"name":acct.name,"amount":bal})
+            total_revenue += bal
+
+    expense_items = []
+    total_expenses = 0
+    for acct in expense_accounts:
+        bal = -account_period_balance(acct.id, start, end)
+        if bal != 0:
+            expense_items.append({"code":acct.code,"name":acct.name,"amount":bal})
+            total_expenses += bal
+
+    # Group expenses by category
+    cogs_items = [e for e in expense_items if e["code"].startswith("5") and int(e["code"][:4]) <= 5099]
+    opex_items = [e for e in expense_items if e not in cogs_items]
+    total_cogs = sum(e["amount"] for e in cogs_items)
+    total_opex = sum(e["amount"] for e in opex_items)
+    gross_profit = total_revenue - total_cogs
+    net_profit = total_revenue - total_expenses
+
+    return render_template("report_pl.html",
+        user=user, business=business, tax=tax,
+        period=period, period_label=period_label,
+        start=start, end=end, today=today,
+        revenue_items=revenue_items, total_revenue=total_revenue,
+        cogs_items=cogs_items, total_cogs=total_cogs,
+        opex_items=opex_items, total_opex=total_opex,
+        gross_profit=gross_profit, net_profit=net_profit)
+
+
+@app.route("/reports/balance-sheet")
+@business_required
+def report_balance_sheet():
+    """Balance Sheet — as of date"""
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    from datetime import date
+    as_of_str = request.args.get("as_of","")
+    try:
+        as_of = datetime.strptime(as_of_str, "%Y-%m-%d").date()
+    except:
+        as_of = date.today()
+
+    def acct_balance_as_of(acct):
+        lines = db.session.query(
+            db.func.sum(JournalLine.debit - JournalLine.credit)
+        ).join(JournalEntry).filter(
+            JournalLine.account_id == acct.id,
+            JournalEntry.business_id == business.id,
+            db.func.date(JournalEntry.date) <= as_of
+        ).scalar() or 0
+        bal = float(acct.opening_balance or 0)
+        if acct.account_type in ["ASSET","EXPENSE"]:
+            return bal + float(lines)
+        else:
+            return bal - float(lines)
+
+    assets = Account.query.filter_by(business_id=business.id, account_type="ASSET", is_active=True).order_by(Account.code).all()
+    liabilities = Account.query.filter_by(business_id=business.id, account_type="LIABILITY", is_active=True).order_by(Account.code).all()
+    equity = Account.query.filter_by(business_id=business.id, account_type="EQUITY", is_active=True).order_by(Account.code).all()
+
+    asset_items = [{"code":a.code,"name":a.name,"amount":acct_balance_as_of(a)} for a in assets]
+    liability_items = [{"code":a.code,"name":a.name,"amount":acct_balance_as_of(a)} for a in liabilities]
+    equity_items = [{"code":a.code,"name":a.name,"amount":acct_balance_as_of(a)} for a in equity]
+
+    # P&L for current year feeds into retained earnings
+    year_start = date(as_of.year, 1, 1)
+    revenue = db.session.query(db.func.sum(JournalLine.credit - JournalLine.debit)).join(JournalEntry).join(Account).filter(
+        Account.business_id==business.id, Account.account_type=="REVENUE",
+        db.func.date(JournalEntry.date) >= year_start,
+        db.func.date(JournalEntry.date) <= as_of
+    ).scalar() or 0
+    expenses = db.session.query(db.func.sum(JournalLine.debit - JournalLine.credit)).join(JournalEntry).join(Account).filter(
+        Account.business_id==business.id, Account.account_type=="EXPENSE",
+        db.func.date(JournalEntry.date) >= year_start,
+        db.func.date(JournalEntry.date) <= as_of
+    ).scalar() or 0
+    current_year_profit = float(revenue) - float(expenses)
+
+    total_assets = sum(i["amount"] for i in asset_items)
+    total_liabilities = sum(i["amount"] for i in liability_items)
+    total_equity = sum(i["amount"] for i in equity_items) + current_year_profit
+
+    return render_template("report_balance_sheet.html",
+        user=user, business=business, tax=tax, as_of=as_of,
+        asset_items=asset_items, total_assets=total_assets,
+        liability_items=liability_items, total_liabilities=total_liabilities,
+        equity_items=equity_items, total_equity=total_equity,
+        current_year_profit=current_year_profit)
+
+
+@app.route("/reports/statement-of-accounts/<int:customer_id>")
+@business_required
+def report_statement_of_accounts(customer_id):
+    """Customer Statement of Account"""
+    user = current_user(); business = current_business()
+    customer = Customer.query.filter_by(id=customer_id, business_id=business.id).first()
+    if not customer: return redirect(url_for("customers"))
+    invoices = Invoice.query.filter_by(
+        business_id=business.id, customer_id=customer_id
+    ).order_by(Invoice.invoice_date).all()
+    # Build statement lines
+    lines = []
+    running_balance = 0
+    for inv in invoices:
+        running_balance += float(inv.total_amount or 0)
+        lines.append({
+            "date": inv.invoice_date,
+            "type": "Invoice",
+            "reference": inv.invoice_number,
+            "debit": float(inv.total_amount or 0),
+            "credit": 0,
+            "balance": running_balance,
+            "status": inv.status
+        })
+        if float(inv.amount_paid or 0) > 0:
+            running_balance -= float(inv.amount_paid)
+            lines.append({
+                "date": inv.invoice_date,
+                "type": "Payment",
+                "reference": "PMT-" + inv.invoice_number,
+                "debit": 0,
+                "credit": float(inv.amount_paid),
+                "balance": running_balance,
+                "status": "PAID"
+            })
+    return render_template("report_statement.html",
+        user=user, business=business, tax=business.tax_rules(),
+        customer=customer, lines=lines,
+        total_invoiced=sum(l["debit"] for l in lines),
+        total_paid=sum(l["credit"] for l in lines),
+        outstanding=running_balance)
+
+
+@app.route("/reports/cash-flow")
+@business_required  
+def report_cash_flow():
+    """Cash Flow Statement"""
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    from datetime import date
+    period = request.args.get("period","month")
+    today = date.today()
+    if period == "month":
+        start = date(today.year, today.month, 1); end = today
+        period_label = today.strftime("%B %Y")
+    elif period == "quarter":
+        q = (today.month-1)//3
+        start = date(today.year, q*3+1, 1); end = today
+        period_label = f"Q{q+1} {today.year}"
+    else:
+        start = date(today.year, 1, 1); end = today
+        period_label = str(today.year)
+
+    # Operating activities from ledger entries
+    operating_in = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
+        LedgerEntry.business_id==business.id, LedgerEntry.entry_type=="REVENUE",
+        LedgerEntry.timestamp >= datetime.combine(start, datetime.min.time()),
+        LedgerEntry.timestamp <= datetime.combine(end, datetime.max.time())
+    ).scalar() or 0)
+
+    operating_out = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
+        LedgerEntry.business_id==business.id, LedgerEntry.entry_type=="EXPENSE",
+        LedgerEntry.timestamp >= datetime.combine(start, datetime.min.time()),
+        LedgerEntry.timestamp <= datetime.combine(end, datetime.max.time())
+    ).scalar() or 0)
+
+    # Bank transactions for financing
+    bank_credits = float(db.session.query(db.func.sum(BankTransaction.credit)).filter(
+        BankTransaction.business_id==business.id,
+        BankTransaction.txn_date >= start,
+        BankTransaction.txn_date <= end,
+        BankTransaction.category == "Transfer"
+    ).scalar() or 0)
+
+    bank_debits = float(db.session.query(db.func.sum(BankTransaction.debit)).filter(
+        BankTransaction.business_id==business.id,
+        BankTransaction.txn_date >= start,
+        BankTransaction.txn_date <= end,
+        BankTransaction.category == "Transfer"
+    ).scalar() or 0)
+
+    net_operating = operating_in - operating_out
+    net_financing = bank_credits - bank_debits
+    net_cash_change = net_operating + net_financing
+
+    return render_template("report_cash_flow.html",
+        user=user, business=business, tax=tax,
+        period=period, period_label=period_label, start=start, end=end,
+        operating_in=operating_in, operating_out=operating_out,
+        net_operating=net_operating,
+        bank_credits=bank_credits, bank_debits=bank_debits,
+        net_financing=net_financing, net_cash_change=net_cash_change)
+
+
 @app.route('/admin')
 @login_required
 @admin_required
