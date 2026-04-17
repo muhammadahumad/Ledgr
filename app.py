@@ -1004,7 +1004,10 @@ def inventory():
 @login_required
 def payroll():
     user = current_user(); business = current_business()
-    employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    try:
+        employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    except Exception:
+        employees = []
     total_payroll = sum(float(e.monthly_salary or 0) + float(e.allowances or 0) for e in employees)
     return render_template('payroll.html', user=user, business=business, employees=employees, total_payroll=total_payroll)
 
@@ -2444,7 +2447,10 @@ def api_hr_compliance_alerts():
     """Get all compliance alerts across all employees"""
     business, err = api_business_guard()
     if err: return err
-    employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    try:
+        employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    except Exception:
+        employees = []
     all_alerts = []
     for e in employees:
         alerts = e.compliance_alerts()
@@ -2467,7 +2473,10 @@ def api_payroll_run():
     if err: return err
     data = request.get_json()
     month = data.get("month", datetime.utcnow().strftime("%Y-%m"))
-    employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    try:
+        employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    except Exception:
+        employees = []
     if not employees: return jsonify({"ok":False,"error":"No active employees"})
     total_gross = 0
     total_pension_er = 0
@@ -2666,7 +2675,10 @@ def api_ai_chat():
     total_revenue = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(business_id=business.id,entry_type='REVENUE').scalar() or 0)
     total_expenses = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(business_id=business.id,entry_type='EXPENSE').scalar() or 0)
     total_customers = Customer.query.filter_by(business_id=business.id).count()
-    employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    try:
+        employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    except Exception:
+        employees = []
     monthly_payroll = sum(float(e.monthly_salary or 0) + float(e.allowances or 0) for e in employees)
     threshold = check_threshold(business)
     threshold_str = f"Rolling 12-month revenue: {tax['currency']} {total_revenue:.2f} = {threshold['percentage'] if threshold else 0}% of {tax['authority']} threshold." if threshold else ""
@@ -2727,7 +2739,9 @@ def pos():
     # Products with location stock
     products = []
     if business.has_inventory:
-        products = Product.query.filter_by(business_id=business.id).order_by(Product.name).all()
+        products = Product.query.filter_by(business_id=business.id).filter(
+            db.or_(Product.is_active == True, Product.is_active == None)
+        ).order_by(Product.name).all()
         if business.has_multi_location and current_location:
             loc_stock = {pl.product_id: float(pl.stock_quantity)
                         for pl in ProductLocation.query.filter_by(location_id=current_location.id).all()}
