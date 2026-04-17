@@ -1074,6 +1074,42 @@ def ai_accountant():
     return render_template('ai.html', user=user, business=business, history=history, tax=business.tax_rules())
 
 
+
+@app.route("/api/business/settings", methods=["POST"])
+@login_required
+def api_business_settings():
+    """Save business module toggles and settings"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    # Boolean toggle fields
+    bool_fields = ['has_pos','has_inventory','has_payroll','has_full_accounting',
+                   'has_multi_location','has_service_charge','has_expiry_tracking',
+                   'is_tax_registered','collect_tax_on_sales']
+    for field in bool_fields:
+        if field in data:
+            setattr(business, field, bool(data[field]))
+    # Numeric fields
+    numeric_fields = ['service_charge_rate']
+    for field in numeric_fields:
+        if field in data:
+            try: setattr(business, field, float(data[field]))
+            except: pass
+    # Text fields
+    text_fields = ['industry_type','region','business_type','secondary_currency',
+                   'invoice_prefix','quote_prefix','invoice_notes']
+    for field in text_fields:
+        if field in data and data[field] is not None:
+            setattr(business, field, data[field])
+    try:
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Settings saved"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+
 @app.route("/api/business/profile", methods=["POST"])
 @login_required
 def api_business_profile():
