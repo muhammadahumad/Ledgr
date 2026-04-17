@@ -1806,6 +1806,123 @@ def api_bill_mark_paid(doc_id):
 @app.route("/api/bank/upload-statement-pdf", methods=["POST"])
 @login_required
 def api_bank_upload_statement_pdf():
+    """Split PDF into pages, extract each separately, merge results"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    if not ANTHROPIC_KEY:
+        return jsonify({"ok":False,"error":"AI not configured"})
+
+    data = request.get_json()
+    file_b64 = data.get("file","")
+    media_type = data.get("media_type","application/pdf")
+    bank_account_id = data.get("bank_account_id")
+    tax = business.tax_rules()
+    currency = tax["currency"]
+    region_name = tax["name"]
+
+    try:
+        import base64 as b64lib
+        import io
+        file_bytes = b64lib.b64decode(file_b64)
+
+        # Try to split PDF with PyPDF2
+        page_chunks = []
+        try:
+            import PyPDF2
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+            total_pages = len(pdf_reader.pages)
+            chunk_size = 3  # 3 pages per chunk for reliability
+
+            for start in range(0, total_pages, chunk_size):
+                writer = PyPDF2.PdfWriter()
+                end = min(start + chunk_size, total_pages)
+                for i in range(start, end):
+                    writer.add_page(pdf_reader.pages[i])
+                buf = io.BytesIO()
+                writer.write(buf)
+                chunk_b64 = b64lib.b64encode(buf.getvalue()).decode()
+                page_chunks.append({
+                    "b64": chunk_b64,
+                    "pages": str(start+1) + "-" + str(end),
+                    "total": total_pages
+                })
+        except Exception as pdf_err:
+            print("PDF split error — falling back to full file: " + str(pdf_err))
+            page_chunks = [{"b64": file_b64, "pages": "all", "total": 1}]
+
+        # Extract each chunk
+        all_transactions = []
+        stmt_meta = {}
+        json_template = ('{"account_name":"","account_number":"","bank_name":"",'
+                        '"statement_period":"","opening_balance":0.00,"closing_balance":0.00,'
+                        '"currency":"' + currency + '",'
+                        '"transactions":[{"date":"YYYY-MM-DD","description":"","reference":"",'
+                        '"debit":0.00,"credit":0.00,"balance":0.00,"category":"Other"}]}')
+
+        for idx, chunk in enumerate(page_chunks):
+            page_note = "Pages " + chunk["pages"] + " of " + str(chunk["total"]) + ". "
+            prompt = (
+                "Extract ALL bank transactions from this " + region_name + " bank statement. "
+                + page_note +
+                "Be thorough — extract every single transaction row. "
+                "Return ONLY valid JSON: " + json_template + " "
+                "Rules: debit=money out, credit=money in. Use 0.00 not null. "
+                "Date format YYYY-MM-DD. "
+                "Categories: Sales Revenue, Salary Payment, Rent, Utilities, "
+                "Supplier Payment, Tax Payment, Bank Charges, Transfer, Other."
+            )
+            content = {
+                "type": "document",
+                "source": {"type": "base64", "media_type": "application/pdf", "data": chunk["b64"]}
+            }
+            try:
+                body = json.dumps({
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 8000,
+                    "messages": [{"role":"user","content":[content,{"type":"text","text":prompt}]}]
+                }).encode()
+                req = urllib.request.Request(
+                    "https://api.anthropic.com/v1/messages", data=body,
+                    headers={"Content-Type":"application/json","x-api-key":ANTHROPIC_KEY,
+                             "anthropic-version":"2023-06-01"}
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    result = json.loads(resp.read())
+                    text = result["content"][0]["text"].strip()
+                    start_idx = text.find("{")
+                    end_idx = text.rfind("}") + 1
+                    if start_idx >= 0:
+                        chunk_data = json.loads(text[start_idx:end_idx])
+                        if idx == 0:
+                            stmt_meta = chunk_data
+                        txns = chunk_data.get("transactions", [])
+                        # Deduplicate by date+description+amount
+                        for t in txns:
+                            key = str(t.get("date","")) + str(t.get("description","")) + str(t.get("debit",0)) + str(t.get("credit",0))
+                            if not any(str(e.get("date",""))+str(e.get("description",""))+str(e.get("debit",0))+str(e.get("credit",0)) == key for e in all_transactions):
+                                all_transactions.append(t)
+                        if chunk_data.get("closing_balance"):
+                            stmt_meta["closing_balance"] = chunk_data["closing_balance"]
+            except Exception as chunk_err:
+                print("Chunk " + str(idx) + " error: " + str(chunk_err))
+                continue
+
+        stmt_meta["transactions"] = all_transactions
+        txn_count = len(all_transactions)
+        return jsonify({
+            "ok": True,
+            "extracted": stmt_meta,
+            "bank_account_id": bank_account_id,
+            "pages_processed": len(page_chunks),
+            "message": str(txn_count) + " transactions extracted from " + str(len(page_chunks)) + " page chunks"
+        })
+
+    except Exception as e:
+        return jsonify({"ok":False,"error":"Processing error: " + str(e)[:200]})
+
+
+def api_bank_upload_statement_pdf():
     """Upload bank statement using Claude Files API for maximum page support"""
     user = current_user()
     business, err = api_business_guard()
@@ -2337,10 +2454,13 @@ def api_customer_add():
     try:
         c = Customer(business_id=business.id, name=name,
                      phone=data.get('phone',''), email=data.get('email',''),
+                     address=data.get('address',''), city=data.get('city',''),
+                     country=data.get('country','MV'),
                      notes=data.get('notes',''), is_vip=data.get('is_vip',False),
                      customer_type=data.get('customer_type','individual'),
                      tax_id=data.get('tax_id',''),
-                     registration_number=data.get('registration_number',''))
+                     registration_number=data.get('registration_number',''),
+                     is_tax_registered=bool(data.get('tax_id','')))
         db.session.add(c)
         db.session.commit()
         return jsonify({'ok':True,'customer_id':c.id,'name':c.name})
@@ -2367,9 +2487,15 @@ def api_customer_detail(cid):
     c = Customer.query.filter_by(id=cid, business_id=business.id).first()
     if not c: return jsonify({'ok':False,'error':'Not found'})
     sales = POSSale.query.filter_by(customer_id=cid).order_by(POSSale.timestamp.desc()).limit(10).all()
-    return jsonify({'ok':True,'id':c.id,'name':c.name,'phone':c.phone,'email':c.email,'notes':c.notes,
-                    'is_vip':c.is_vip,'total_spent':float(c.total_spent or 0),'visit_count':c.visit_count or 0,
-                    'outstanding_balance':float(c.outstanding_balance or 0),'credit_limit':float(c.credit_limit or 0),
+    return jsonify({'ok':True,'id':c.id,'name':c.name,'phone':c.phone,'email':c.email,
+                    'notes':c.notes,'address':c.address or '','city':c.city or '',
+                    'country':c.country or 'MV','tax_id':c.tax_id or '',
+                    'registration_number':c.registration_number or '',
+                    'customer_type':c.customer_type or 'individual',
+                    'is_vip':c.is_vip,'total_spent':float(c.total_spent or 0),
+                    'visit_count':c.visit_count or 0,
+                    'outstanding_balance':float(c.outstanding_balance or 0),
+                    'credit_limit':float(getattr(c,'credit_limit',0) or 0),
                     'last_visit':c.last_visit.strftime('%d %b %Y %H:%M') if c.last_visit else None,
                     'currency':business.base_currency,
                     'recent_sales':[{'amount':float(s.amount),'date':s.timestamp.strftime('%d %b %Y'),'method':s.payment_method,'note':s.note} for s in sales]})
