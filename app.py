@@ -2949,25 +2949,6 @@ def api_inventory_from_upload():
     return jsonify({'ok':True,'results':results,'updated':len(results)})
 
 # ── API: Employees ────────────────────────────────────────────────────────────
-@app.route('/api/employee/add', methods=['POST'])
-@login_required
-@app.route('/api/business/settings', methods=['POST'])
-@login_required
-def api_business_settings():
-    business, err = api_business_guard()
-    if err: return err
-    data = request.get_json()
-    bool_fields = ['has_inventory','has_payroll','has_pos','is_tax_registered',
-                   'has_full_accounting','collect_tax_on_sales']
-    for field in bool_fields:
-        if field in data: setattr(business, field, bool(data[field]))
-    text_fields = ['tax_registration_number','tax_id','secondary_currency']
-    for field in text_fields:
-        if field in data: setattr(business, field, data[field])
-    db.session.commit()
-    return jsonify({'ok':True,'message':'Settings updated'})
-
-# ── API: Invoices ─────────────────────────────────────────────────────────────
 @app.route('/api/invoice/create', methods=['POST'])
 @login_required
 def api_invoice_create():
@@ -3229,23 +3210,6 @@ def bank():
         BankTransaction.txn_date.desc()).limit(50).all()
     return render_template("bank.html", user=user, business=business, tax=business.tax_rules(),
                            bank_accounts=bank_accounts, recent_txns=recent_txns)
-
-
-@app.route("/api/bank/add-account", methods=["POST"])
-@login_required
-def api_bank_add_account():
-    business = current_business()
-    data = request.get_json()
-    acct = BankAccount(business_id=business.id, bank_name=data.get("bank_name",""),
-                       account_name=data.get("account_name",""), account_number=data.get("account_number",""),
-                       currency=data.get("currency",business.base_currency),
-                       opening_balance=float(data.get("opening_balance",0)),
-                       current_balance=float(data.get("opening_balance",0)))
-    db.session.add(acct)
-    db.session.commit()
-    return jsonify({"ok":True,"account_id":acct.id})
-
-
 @app.route("/api/bank/upload-statement", methods=["POST"])
 @login_required
 def api_bank_upload_statement():
