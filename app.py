@@ -717,13 +717,32 @@ def extract_with_ai(file_b64, media_type, region='MV'):
                         'CN':'Extract Fapiao number and seller tax ID (18 digits).',
                         'LK':'Extract VAT registration number (9 digits).',
                         'IN':'Extract GSTIN (15 chars). Note HSN/SAC codes.'}.get(region,'')
-    prompt = f'''You are LEDGR AI, an expert accountant for {tax["name"]} businesses.
-Rules: currency={tax["currency"]}, tax={tax["tax_name"]} at {tax["tax_rate"]*100:.0f}%, authority={tax["authority"]}.
-{compliance_hints}
-Return ONLY valid JSON:
-{{"doc_type":"BILL","vendor_name":"","vendor_tax_id":null,"invoice_number":"","invoice_date":"YYYY-MM-DD","due_date":null,"currency":"{tax["currency"]}","subtotal":0.00,"tax_amount":0.00,"total_amount":0.00,"category":"Other","confidence":"high","notes":"","line_items":[{{"description":"","quantity":1,"unit_price":0.00,"total":0.00}}],"compliance_data":{{"irn":null,"qr_code":null,"supply_type":"standard"}}}}
-doc_type: BILL RECEIPT INVOICE PAYROLL_SLIP BANK_STATEMENT
-category: Office Supplies Utilities Travel Meals Professional Services Inventory Purchase Payroll Tax Payment Other'''
+    currency = tax["currency"]
+    tax_name = tax["tax_name"]
+    tax_rate = tax["tax_rate"]*100
+    authority = tax["authority"]
+    country = tax["name"]
+    prompt = (
+        "You are LEDGR AI, an expert accountant for " + country + " businesses. "
+        "Analyse this document carefully and extract all financial data. "
+        "Rules: currency=" + currency + ", tax=" + tax_name + " at " + str(tax_rate) + "%, authority=" + authority + ". "
+        + compliance_hints + " "
+        "IMPORTANT — Identify doc_type correctly: "
+        "INVOICE = a tax invoice issued TO a customer (they owe you money). "
+        "BILL = a bill/invoice received FROM a supplier (you owe them money). "
+        "RECEIPT = proof of payment already made. "
+        "PAYROLL_SLIP = employee salary slip. "
+        "BANK_STATEMENT = bank account transaction listing. "
+        "Return ONLY valid JSON: "
+        '{"doc_type":"BILL","vendor_name":"","vendor_tax_id":null,"invoice_number":"",'
+        '"invoice_date":"YYYY-MM-DD","due_date":null,"currency":"' + currency + '",'
+        '"subtotal":0.00,"tax_amount":0.00,"total_amount":0.00,'
+        '"legal_seller_name":"","seller_trn_vat_number":"","buyer_legal_name":"","buyer_trn_vat_number":"",'
+        '"category":"Other","confidence":"high","notes":"",'
+        '"line_items":[{"description":"","quantity":1,"unit_price":0.00,"total":0.00}],'
+        '"compliance_data":{"irn":null,"qr_code":null,"supply_type":"standard","uuid":null,"hs_code":null}}'
+        " category options: Office Supplies, Utilities, Travel, Meals, Professional Services, Inventory Purchase, Payroll, Tax Payment, Other"
+    )
     content = ({'type':'document','source':{'type':'base64','media_type':'application/pdf','data':file_b64}}
                if media_type=='application/pdf' else
                {'type':'image','source':{'type':'base64','media_type':media_type,'data':file_b64}})
