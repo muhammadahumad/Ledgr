@@ -1,53 +1,249 @@
-{% extends "base.html" %}{% block title %}Payroll — LEDGR{% endblock %}{% block content %}
-<div class="topbar"><div><div class="page-title">Payroll & HR</div><div class="page-sub">{{ employees|length }} active employees · Monthly: {{ business.base_currency }} {{ "%.2f"|format(total_payroll) }}</div></div><button class="btn btn-primary" onclick="openModal('add-emp-modal')">+ Add Employee</button></div>
-<div class="content">
-<div class="card">
-  <div class="card-title">Employees</div>
-  {% if employees %}
-  <div style="overflow-x:auto">
-  <table class="table"><thead><tr><th>Name</th><th>ID</th><th>Position</th><th>Nationality</th><th>Passport</th><th>Visa No.</th><th>Visa Expiry</th><th>Work Permit</th><th>Salary</th><th>Type</th></tr></thead><tbody>
-  {% for e in employees %}<tr>
-    <td style="color:var(--text);font-weight:500">{{ e.full_name }}</td>
-    <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ e.employee_id or '—' }}</td>
-    <td style="color:var(--text2)">{{ e.position or '—' }}</td>
-    <td>{{ e.nationality or '—' }}</td>
-    <td style="font-family:var(--mono);font-size:11px">{{ e.passport_number or '—' }}</td>
-    <td style="font-family:var(--mono);font-size:11px">{{ e.visa_number or '—' }}</td>
-    <td style="font-size:11px;color:{% if e.visa_expiry and e.visa_expiry.strftime('%Y-%m-%d') < '2027-01-01' %}var(--amber){% else %}var(--text3){% endif %}">{{ e.visa_expiry.strftime('%d %b %Y') if e.visa_expiry else '—' }}</td>
-    <td style="font-family:var(--mono);font-size:11px">{{ e.work_permit_number or '—' }}</td>
-    <td style="color:var(--mint);font-family:var(--mono);font-weight:500">{{ e.currency }} {{ "%.2f"|format(e.monthly_salary) }}</td>
-    <td><span class="badge badge-gray" style="font-size:10px">{{ e.employment_type }}</span></td>
-  </tr>{% endfor %}
-  </tbody></table>
+{% extends "base.html" %}{% block title %}Payroll & HR — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Payroll & HR</div><div class="page-sub">{{ employees|length }} active employees · Monthly: {{ business.base_currency }} {{ "%.2f"|format(total_payroll) }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="openModal('add-emp-modal')">+ Add Employee</button>
   </div>
-  {% else %}
-  <div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">$</div><div style="font-weight:500;color:var(--text2);margin-bottom:14px">No employees yet</div><button class="btn btn-primary" onclick="openModal('add-emp-modal')">Add first employee</button></div>
-  {% endif %}
 </div>
+<div class="content">
+  <div class="card">
+    <div class="card-title">Employees</div>
+    {% if not employees %}
+    <div style="text-align:center;padding:40px 0;color:var(--text3)">
+      <div style="font-size:28px;margin-bottom:10px">👥</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:14px">No employees yet</div>
+      <button class="btn btn-primary" onclick="openModal('add-emp-modal')">Add first employee</button>
+    </div>
+    {% else %}
+    <div style="overflow-x:auto">
+    <table class="table">
+      <thead><tr>
+        <th>Name</th><th>ID</th><th>Position</th><th>Type</th>
+        <th>Passport</th><th>Visa No.</th><th>Visa Expiry</th><th>Work Permit</th>
+        <th style="text-align:right">Salary</th><th style="text-align:right">True Cost</th>
+      </tr></thead>
+      <tbody>
+      {% for e in employees %}
+      <tr>
+        <td style="color:var(--text);font-weight:500">{{ e.full_name }}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ e.employee_id or '—' }}</td>
+        <td style="color:var(--text2)">{{ e.position or '—' }}</td>
+        <td><span class="badge badge-{% if e.employment_type=='foreign' %}amber{% else %}gray{% endif %}">{{ e.employment_type|title if e.employment_type else 'Local' }}</span></td>
+        <td style="font-family:var(--mono);font-size:11px">{{ e.passport_number or '—' }}</td>
+        <td style="font-family:var(--mono);font-size:11px">{{ e.visa_number or '—' }}</td>
+        <td style="font-size:11px;color:{% if e.visa_expiry and e.visa_expiry.strftime('%Y-%m-%d') < '2026-06-01' %}var(--amber){% else %}var(--text3){% endif %}">
+          {{ e.visa_expiry.strftime('%d %b %Y') if e.visa_expiry else '—' }}
+        </td>
+        <td style="font-family:var(--mono);font-size:11px">{{ e.work_permit_number or '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--mint)">{{ business.base_currency }} {{ "%.2f"|format(e.monthly_salary or 0) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text2)">
+          {% set total = (e.monthly_salary or 0)|float + (e.allowances or 0)|float + (e.pension_employer or 0)|float %}
+          {{ business.base_currency }} {{ "%.2f"|format(total) }}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
 </div>
 
+<!-- Add Employee Modal -->
 <div id="add-emp-modal" class="modal-overlay">
-  <div class="modal" style="max-width:640px">
+  <div class="modal" style="max-width:620px;max-height:90vh;overflow-y:auto">
     <div class="modal-title">Add Employee <button class="modal-close" onclick="closeModal('add-emp-modal')">×</button></div>
-    <div style="font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Personal Information</div>
-    <div class="field-row"><div><div class="field-label">Full Name *</div><input class="field-input" id="e-name" placeholder="Ahmed Hassan"></div><div><div class="field-label">Employee ID</div><input class="field-input" id="e-id" placeholder="EMP-001"></div></div>
-    <div class="field-row"><div><div class="field-label">Nationality</div><input class="field-input" id="e-nat" placeholder="Maldivian"></div><div><div class="field-label">ID Card / NID</div><input class="field-input" id="e-idcard" placeholder="A123456"></div></div>
-    <div class="field-row"><div><div class="field-label">Phone</div><input class="field-input" id="e-phone" placeholder="+960 7XX XXXX"></div><div><div class="field-label">Email</div><input class="field-input" id="e-email" placeholder="optional"></div></div>
-    <div style="font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 8px">Travel Documents</div>
-    <div class="field-row"><div><div class="field-label">Passport Number</div><input class="field-input" id="e-passport" placeholder="A12345678"></div><div><div class="field-label">Visa Number</div><input class="field-input" id="e-visa" placeholder="V123456789"></div></div>
-    <div class="field-row"><div><div class="field-label">Visa Expiry</div><input class="field-input" type="date" id="e-visaexp"></div><div><div class="field-label">Work Permit No.</div><input class="field-input" id="e-permit" placeholder="WP123456"></div></div>
-    <div class="field-row"><div><div class="field-label">Work Permit Expiry</div><input class="field-input" type="date" id="e-permitexp"></div><div></div></div>
+
+    <!-- Basic Info -->
+    <div style="font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Basic Information</div>
+    <div class="field-row">
+      <div><div class="field-label">Full Name *</div><input class="field-input" id="e-name" placeholder="Ahmed Hassan"></div>
+      <div><div class="field-label">Employee ID</div><input class="field-input" id="e-id" placeholder="EMP-001"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Position</div><input class="field-input" id="e-pos" placeholder="Site Manager"></div>
+      <div><div class="field-label">Department</div><input class="field-input" id="e-dept" placeholder="Operations"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="e-phone" placeholder="+960 7XX XXXX"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="e-email" placeholder="optional"></div>
+    </div>
+
+    <!-- Employment -->
     <div style="font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 8px">Employment</div>
-    <div class="field-row"><div><div class="field-label">Position</div><input class="field-input" id="e-pos" placeholder="Site Manager"></div><div><div class="field-label">Department</div><input class="field-input" id="e-dept" placeholder="Operations"></div></div>
-    <div class="field-row"><div><div class="field-label">Employment Type</div><select class="select-input" id="e-type"><option>Full-time</option><option>Part-time</option><option>Contract</option><option>Expatriate</option></select></div><div><div class="field-label">Join Date</div><input class="field-input" type="date" id="e-date"></div></div>
-    <div class="field-row"><div><div class="field-label">Contract End Date</div><input class="field-input" type="date" id="e-cend"></div><div></div></div>
-    <div style="font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 8px">Salary</div>
-    <div class="field-row"><div><div class="field-label">Monthly Salary *</div><input class="field-input" type="number" id="e-sal" step="0.01" placeholder="0.00"></div><div><div class="field-label">Allowances</div><input class="field-input" type="number" id="e-allow" step="0.01" placeholder="0.00"></div></div>
-    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary" onclick="addEmp()">Add Employee</button><button class="btn" onclick="closeModal('add-emp-modal')">Cancel</button></div>
+    <div class="field-row">
+      <div><div class="field-label">Employment Type</div>
+        <select class="select-input" id="e-type" onchange="toggleForeignFields(this.value)">
+          <option value="local">Local / Maldivian</option>
+          <option value="foreign">Foreign / Expatriate</option>
+        </select>
+      </div>
+      <div><div class="field-label">Contract Type</div>
+        <select class="select-input" id="e-contract">
+          <option value="permanent">Permanent</option>
+          <option value="fixed">Fixed Term</option>
+          <option value="part_time">Part Time</option>
+          <option value="probation">Probation</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Start Date</div><input class="field-input" type="date" id="e-date" value="{{ today }}"></div>
+      <div><div class="field-label">Contract End Date</div><input class="field-input" type="date" id="e-cend"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Nationality</div><input class="field-input" id="e-nat" placeholder="Maldivian"></div>
+      <div><div class="field-label">ID Card / NID</div><input class="field-input" id="e-idcard" placeholder="A123456"></div>
+    </div>
+
+    <!-- Foreign fields -->
+    <div id="foreign-fields" style="display:none">
+      <div style="font-size:10px;color:var(--amber);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 8px">⚠ Expatriate Compliance</div>
+      <div class="field-row">
+        <div><div class="field-label">Passport Number</div><input class="field-input" id="e-passport" placeholder="A12345678"></div>
+        <div><div class="field-label">Passport Expiry</div><input class="field-input" type="date" id="e-passexp"></div>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">Visa Number</div><input class="field-input" id="e-visa" placeholder="V123456789"></div>
+        <div><div class="field-label">Visa Expiry</div><input class="field-input" type="date" id="e-visaexp"></div>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">Work Permit No.</div><input class="field-input" id="e-permit" placeholder="WP123456"></div>
+        <div><div class="field-label">Work Permit Expiry</div><input class="field-input" type="date" id="e-permitexp"></div>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">Quota Slot No.</div><input class="field-input" id="e-quota" placeholder="Q-XXXXX"></div>
+        <div><div class="field-label">Quota Fee Paid (MVR)</div><input class="field-input" type="number" id="e-quotafee" placeholder="2000" step="0.01"></div>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">Security Deposit (MVR)</div><input class="field-input" type="number" id="e-deposit" placeholder="3000" step="0.01"></div>
+        <div><div class="field-label">Insurance Provider</div><input class="field-input" id="e-insurer" placeholder="Allied Insurance / Amana Takaful"></div>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">Insurance Cost (MVR/yr)</div><input class="field-input" type="number" id="e-inscost" placeholder="0.00" step="0.01"></div>
+        <div><div class="field-label">Medical Expiry</div><input class="field-input" type="date" id="e-medexp"></div>
+      </div>
+    </div>
+
+    <!-- Salary -->
+    <div style="font-size:10px;color:var(--mint);font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:12px 0 8px">Salary & Benefits</div>
+    <div class="field-row">
+      <div><div class="field-label">Monthly Salary *</div><input class="field-input" type="number" id="e-sal" step="0.01" placeholder="0.00" oninput="calcCost()"></div>
+      <div><div class="field-label">Allowances</div><input class="field-input" type="number" id="e-allow" step="0.01" placeholder="0.00" oninput="calcCost()"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Housing Allowance</div><input class="field-input" type="number" id="e-housing" step="0.01" placeholder="0.00" oninput="calcCost()"></div>
+      <div><div class="field-label">Transport Allowance</div><input class="field-input" type="number" id="e-transport" step="0.01" placeholder="0.00" oninput="calcCost()"></div>
+    </div>
+
+    <!-- Cost preview -->
+    <div id="cost-preview" style="background:var(--bg);border-radius:8px;padding:10px;margin:8px 0;font-size:12px;display:none">
+      <div style="font-weight:600;color:var(--text2);margin-bottom:6px">True Monthly Cost Preview</div>
+      <div style="display:flex;justify-content:space-between"><span>Base Salary</span><span id="cp-salary" style="font-family:var(--mono)">0.00</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Allowances</span><span id="cp-allow" style="font-family:var(--mono)">0.00</span></div>
+      <div style="display:flex;justify-content:space-between"><span>Pension (Employer 7%)</span><span id="cp-pension" style="font-family:var(--mono)">0.00</span></div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid var(--border);margin-top:6px;padding-top:6px;font-weight:600;color:var(--mint)"><span>Total Cost to Business</span><span id="cp-total" style="font-family:var(--mono)">0.00</span></div>
+    </div>
+
+    <!-- Bank -->
+    <div class="field-row">
+      <div><div class="field-label">Bank Name</div><input class="field-input" id="e-bank" placeholder="BML / MIB"></div>
+      <div><div class="field-label">Bank Account</div><input class="field-input" id="e-bankacct" placeholder="Account number"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="e-notes" placeholder="Any additional notes..."></div>
+
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn btn-primary" onclick="addEmp()">Save Employee</button>
+      <button class="btn" onclick="closeModal('add-emp-modal')">Cancel</button>
+    </div>
     <div id="e-msg" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
   </div>
 </div>
 {% endblock %}
+
 {% block scripts %}<script>
-function addEmp(){var name=document.getElementById('e-name').value.trim(),sal=parseFloat(document.getElementById('e-sal').value)||0;if(!name||!sal){alert('Name and salary required');return;}fetch('/api/employee/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({full_name:name,employee_id:document.getElementById('e-id').value,position:document.getElementById('e-pos').value,department:document.getElementById('e-dept').value,nationality:document.getElementById('e-nat').value,id_card_number:document.getElementById('e-idcard').value,phone:document.getElementById('e-phone').value,email:document.getElementById('e-email').value,passport_number:document.getElementById('e-passport').value,visa_number:document.getElementById('e-visa').value,visa_expiry:document.getElementById('e-visaexp').value,work_permit_number:document.getElementById('e-permit').value,work_permit_expiry:document.getElementById('e-permitexp').value,employment_type:document.getElementById('e-type').value,joined_date:document.getElementById('e-date').value,contract_end_date:document.getElementById('e-cend').value,monthly_salary:sal,allowances:parseFloat(document.getElementById('e-allow').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{document.getElementById('e-msg').textContent='Error: '+res.error;document.getElementById('e-msg').style.display='block';}});}
+function toggleForeignFields(type) {
+  document.getElementById('foreign-fields').style.display = type === 'foreign' ? 'block' : 'none';
+}
+
+function calcCost() {
+  var sal = parseFloat(document.getElementById('e-sal').value) || 0;
+  var allow = (parseFloat(document.getElementById('e-allow').value)||0) +
+              (parseFloat(document.getElementById('e-housing').value)||0) +
+              (parseFloat(document.getElementById('e-transport').value)||0);
+  var pension = Math.round(sal * 0.07 * 100) / 100;
+  var total = sal + allow + pension;
+  if (sal > 0) {
+    document.getElementById('cost-preview').style.display = 'block';
+    document.getElementById('cp-salary').textContent = sal.toFixed(2);
+    document.getElementById('cp-allow').textContent = allow.toFixed(2);
+    document.getElementById('cp-pension').textContent = pension.toFixed(2);
+    document.getElementById('cp-total').textContent = total.toFixed(2);
+  }
+}
+
+function addEmp() {
+  var name = document.getElementById('e-name').value.trim();
+  var sal = parseFloat(document.getElementById('e-sal').value) || 0;
+  if (!name) { alert('Employee name is required'); return; }
+  if (!sal) { alert('Monthly salary is required'); return; }
+  var btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  fetch('/api/employee/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      full_name: name,
+      employee_id: document.getElementById('e-id').value,
+      position: document.getElementById('e-pos').value,
+      department: document.getElementById('e-dept').value,
+      nationality: document.getElementById('e-nat').value,
+      id_card_number: document.getElementById('e-idcard').value,
+      phone: document.getElementById('e-phone').value,
+      email: document.getElementById('e-email').value,
+      passport_number: document.getElementById('e-passport') ? document.getElementById('e-passport').value : '',
+      passport_expiry: document.getElementById('e-passexp') ? document.getElementById('e-passexp').value : '',
+      visa_number: document.getElementById('e-visa') ? document.getElementById('e-visa').value : '',
+      visa_expiry: document.getElementById('e-visaexp') ? document.getElementById('e-visaexp').value : '',
+      work_permit_number: document.getElementById('e-permit') ? document.getElementById('e-permit').value : '',
+      work_permit_expiry: document.getElementById('e-permitexp') ? document.getElementById('e-permitexp').value : '',
+      quota_slot_number: document.getElementById('e-quota') ? document.getElementById('e-quota').value : '',
+      quota_fee_paid: parseFloat(document.getElementById('e-quotafee') ? document.getElementById('e-quotafee').value : 0) || 0,
+      security_deposit: parseFloat(document.getElementById('e-deposit') ? document.getElementById('e-deposit').value : 0) || 0,
+      insurance_provider: document.getElementById('e-insurer') ? document.getElementById('e-insurer').value : '',
+      insurance_cost: parseFloat(document.getElementById('e-inscost') ? document.getElementById('e-inscost').value : 0) || 0,
+      medical_expiry: document.getElementById('e-medexp') ? document.getElementById('e-medexp').value : '',
+      employment_type: document.getElementById('e-type').value,
+      contract_type: document.getElementById('e-contract').value,
+      start_date: document.getElementById('e-date').value,
+      end_date: document.getElementById('e-cend').value,
+      monthly_salary: sal,
+      allowances: parseFloat(document.getElementById('e-allow').value) || 0,
+      housing_allowance: parseFloat(document.getElementById('e-housing').value) || 0,
+      transport_allowance: parseFloat(document.getElementById('e-transport').value) || 0,
+      bank_name: document.getElementById('e-bank').value,
+      bank_account: document.getElementById('e-bankacct').value,
+      notes: document.getElementById('e-notes').value
+    })
+  }).then(function(r) { return r.json(); })
+  .then(function(res) {
+    if (res.ok) {
+      closeModal('add-emp-modal');
+      location.reload();
+    } else {
+      var m = document.getElementById('e-msg');
+      m.textContent = 'Error: ' + res.error;
+      m.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Save Employee';
+    }
+  }).catch(function(err) {
+    var m = document.getElementById('e-msg');
+    m.textContent = 'Connection error. Please try again.';
+    m.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Save Employee';
+  });
+}
 </script>{% endblock %}
