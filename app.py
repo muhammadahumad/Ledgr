@@ -2650,10 +2650,10 @@ def pos():
             loc_stock = {pl.product_id: float(pl.stock_quantity)
                         for pl in ProductLocation.query.filter_by(location_id=current_location.id).all()}
             for p in products:
-                p.location_stock = loc_stock.get(p.id, 0)
+                p.display_stock = loc_stock.get(p.id, 0)
         else:
             for p in products:
-                p.location_stock = float(p.stock_level or 0)
+                p.display_stock = float(p.stock_level or 0)
     customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).limit(100).all()
     return render_template("pos.html", user=user, business=business, tax=business.tax_rules(),
                            today_sales=today_sales, today_total=today_total, today_tax=today_tax,
