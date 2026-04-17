@@ -1,0 +1,132 @@
+{% extends "base.html" %}{% block title %}HR & Payroll — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">HR & Payroll Dashboard</div><div class="page-sub">{{ employees|length }} employees · {{ local_count }} local · {{ foreign_count }} expatriate</div></div>
+  <div style="display:flex;gap:8px">
+    <a href="/payroll" class="btn">Manage Employees →</a>
+  </div>
+</div>
+<div class="content">
+
+  <!-- Urgent Alerts -->
+  {% if urgent_alerts %}
+  <div class="card" style="border-color:rgba(239,68,68,.4);margin-bottom:14px">
+    <div class="card-title" style="color:var(--red)">⚠ Urgent Compliance Alerts — Action Required</div>
+    {% for a in urgent_alerts %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-weight:500;color:var(--text)">{{ a.employee_name }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ a.position }}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:12px;color:var(--red)">{{ a.msg }}</div>
+        <div style="font-size:10px;color:var(--text3)">{{ a.type|upper }}</div>
+      </div>
+      <div>
+        {% if a.days <= 0 %}
+        <span class="badge badge-red">EXPIRED</span>
+        {% elif a.days <= 14 %}
+        <span class="badge badge-red">{{ a.days }} days</span>
+        {% else %}
+        <span class="badge badge-amber">{{ a.days }} days</span>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Summary Stats -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="stat-card">
+      <div class="stat-label">Total Employees</div>
+      <div class="stat-value">{{ employees|length }}</div>
+      <div class="stat-sub">{{ local_count }} local · {{ foreign_count }} expat</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Monthly Payroll</div>
+      <div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ "%.0f"|format(total_salary) }}</div>
+      <div class="stat-sub">Base salaries</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Allowances</div>
+      <div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ "%.0f"|format(total_allowances) }}</div>
+      <div class="stat-sub">Housing, transport, other</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(239,68,68,.3)">
+      <div class="stat-label">True Monthly Cost</div>
+      <div class="stat-value" style="font-size:18px;color:var(--red)">{{ tax.currency }} {{ "%.0f"|format(total_cost) }}</div>
+      <div class="stat-sub">Inc. pension {{ tax.currency }} {{ "%.0f"|format(total_pension_er) }}</div>
+    </div>
+  </div>
+
+  <!-- Employee List with compliance status -->
+  <div class="card" style="padding:0">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <div class="card-title" style="margin:0">Employee Compliance Status</div>
+    </div>
+    {% if employees %}
+    <table class="table">
+      <thead><tr>
+        <th>Employee</th><th>Type</th><th>Position</th>
+        <th>Visa Expiry</th><th>Medical</th><th>Work Permit</th>
+        <th style="text-align:right">Net Salary</th><th style="text-align:right">True Cost</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody>
+      {% for e in employees %}
+      {% set alerts = e.compliance_alerts() %}
+      <tr>
+        <td style="font-weight:500;color:var(--text)">{{ e.full_name }}</td>
+        <td><span class="badge badge-{% if e.employment_type=='foreign' %}amber{% else %}gray{% endif %}" style="font-size:10px">{{ e.employment_type|title if e.employment_type else 'Local' }}</span></td>
+        <td style="color:var(--text2);font-size:12px">{{ e.position or '—' }}</td>
+        <td style="font-size:11px;color:{% if e.visa_expiry and (e.visa_expiry - today_date).days <= 45 %}var(--amber){% else %}var(--text3){% endif %}">
+          {{ e.visa_expiry.strftime('%d %b %Y') if e.visa_expiry else '—' }}
+        </td>
+        <td style="font-size:11px;color:{% if e.medical_expiry and (e.medical_expiry - today_date).days <= 30 %}var(--red){% else %}var(--text3){% endif %}">
+          {{ e.medical_expiry.strftime('%d %b %Y') if e.medical_expiry else '—' }}
+        </td>
+        <td style="font-size:11px;color:{% if e.work_permit_expiry and (e.work_permit_expiry - today_date).days <= 45 %}var(--amber){% else %}var(--text3){% endif %}">
+          {{ e.work_permit_expiry.strftime('%d %b %Y') if e.work_permit_expiry else '—' }}
+        </td>
+        <td style="text-align:right;font-family:var(--mono)">
+          {{ tax.currency }} {{ "%.2f"|format((e.monthly_salary or 0)|float - (e.pension_employee or 0)|float) }}
+        </td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--red)">
+          {{ tax.currency }} {{ "%.2f"|format(((e.monthly_salary or 0)|float) + ((e.allowances or 0)|float) + ((e.pension_employer or 0)|float)) }}
+        </td>
+        <td>
+          {% if alerts %}
+          <span class="badge badge-red" style="font-size:10px">{{ alerts|length }} alert{{ 's' if alerts|length > 1 }}</span>
+          {% else %}
+          <span class="badge badge-green" style="font-size:10px">✓ OK</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px;color:var(--text3)">
+      <div style="font-size:28px;margin-bottom:10px">👥</div>
+      <div style="margin-bottom:12px">No employees yet</div>
+      <a href="/payroll" class="btn btn-primary">Add Employee →</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- All compliance alerts -->
+  {% if all_alerts %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">All Upcoming Compliance Dates</div>
+    {% for a in all_alerts %}
+    <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span class="badge badge-{% if a.days <= 14 %}red{% elif a.days <= 30 %}amber{% else %}gray{% endif %}" style="font-size:10px;min-width:60px;text-align:center">{{ a.days }} days</span>
+      <div style="flex:1"><span style="color:var(--text);font-weight:500">{{ a.employee_name }}</span> — <span style="color:var(--text2)">{{ a.msg }}</span></div>
+      <span style="color:var(--text3);font-size:10px;text-transform:uppercase">{{ a.type }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

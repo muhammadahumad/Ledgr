@@ -7,6 +7,24 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
+:root[data-theme="light"]{
+  --bg:#f5f6fa;--surface:#ffffff;--surface2:#f0f1f5;--border:#e0e2e8;--border2:#cdd0d8;
+  --text:#1a1d2e;--text2:#4a4f6a;--text3:#8b91a8;
+  --mint:#0ea87a;--red:#dc2626;--amber:#d97706;--blue:#2563eb;
+  --mono:'SF Mono',monospace;--font:-apple-system,sans-serif;
+}
+:root[data-theme="warm"]{
+  --bg:#fdf6ec;--surface:#ffffff;--surface2:#fef9f2;--border:#e8d5b7;--border2:#d4b896;
+  --text:#2c1a0e;--text2:#5c3d1e;--text3:#9c7a52;
+  --mint:#16a34a;--red:#dc2626;--amber:#d97706;--blue:#2563eb;
+  --mono:'SF Mono',monospace;--font:-apple-system,sans-serif;
+}
+:root[data-theme="blue"]{
+  --bg:#0a192f;--surface:#112240;--surface2:#1a3a5c;--border:#1e3a5f;--border2:#2a4a7f;
+  --text:#ccd6f6;--text2:#8892b0;--text3:#4a5568;
+  --mint:#64ffda;--red:#ff6b6b;--amber:#ffd166;--blue:#57cbff;
+  --mono:'SF Mono',monospace;--font:-apple-system,sans-serif;
+}
 :root{
   --bg:#0a0e17;--surface:#111827;--surface2:#1a2235;--border:#1f2d45;--border2:#253348;
   --text:#e2e8f0;--text2:#8899aa;--text3:#4a6080;
@@ -154,7 +172,7 @@ a:hover{text-decoration:underline}
   <span></span><span></span><span></span>
 </button>
 
-<nav class="sidebar">
+<nav class="sidebar" id="sidebar">
   <div class="sidebar-brand">
     <div class="brand-logo">L<span>EDGR</span></div>
     <div class="brand-sub">Business Financial OS</div>
@@ -162,51 +180,72 @@ a:hover{text-decoration:underline}
 
   <div class="biz-switcher">
     <div class="biz-label">Workspace</div>
-    <div class="biz-current">{{ session.get('business_name','My Business') }}</div>
-    <a href="/business/add" class="biz-add">+ Add business</a>
+    <div class="biz-current" style="cursor:pointer" onclick="toggleBizMenu()">{{ session.get('business_name','My Business') }} ▾</div>
+    <div id="biz-menu" style="display:none;margin-top:6px">
+      {% if user_businesses is defined %}
+      {% for ub in user_businesses %}
+      <a href="/business/switch/{{ ub.business_id }}" style="display:block;padding:4px 8px;font-size:11px;color:var(--text2);text-decoration:none;border-radius:5px" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">{{ ub.business.name }}</a>
+      {% endfor %}
+      {% endif %}
+      <a href="/business/add" style="display:block;padding:4px 8px;font-size:11px;color:var(--mint);text-decoration:none">+ New workspace</a>
+    </div>
   </div>
 
-  <div class="nav-section">Core</div>
+  <!-- MAIN -->
+  <div class="nav-section">Main</div>
   <a href="/dashboard" class="nav-item {% if request.path=='/dashboard' %}active{% endif %}"><span class="ni">⬡</span>Dashboard</a>
-  <a href="/upload" class="nav-item {% if request.path=='/upload' %}active{% endif %}"><span class="ni">↑</span>Upload</a>
   <a href="/ledger" class="nav-item {% if request.path=='/ledger' %}active{% endif %}"><span class="ni">≡</span>Ledger</a>
-
-  <div class="nav-section">Documents</div>
-  <a href="/documents" class="nav-item {% if request.path.startswith('/documents') %}active{% endif %}"><span class="ni">📄</span>Document Archive</a>
-
-  <div class="nav-section">Accounting</div>
-  <a href="/accounts" class="nav-item {% if request.path=='/accounts' %}active{% endif %}"><span class="ni">≣</span>Chart of Accounts</a>
   <a href="/journal" class="nav-item {% if request.path=='/journal' %}active{% endif %}"><span class="ni">✎</span>Journal</a>
-  <a href="/reports" class="nav-item {% if request.path=='/reports' %}active{% endif %}"><span class="ni">↗</span>Reports</a>
-  <a href="/bank" class="nav-item {% if request.path=='/bank' %}active{% endif %}"><span class="ni">🏦</span>Bank</a>
+  <a href="/accounts" class="nav-item {% if request.path=='/accounts' %}active{% endif %}"><span class="ni">≣</span>Accounts</a>
 
+  <!-- SALES -->
   <div class="nav-section">Sales</div>
   <a href="/pos" class="nav-item {% if request.path=='/pos' %}active{% endif %}"><span class="ni">⚡</span>Point of Sale</a>
+  <a href="/invoices" class="nav-item {% if request.path=='/invoices' %}active{% endif %}"><span class="ni">🧾</span>Invoices</a>
+  <a href="/quotations" class="nav-item {% if request.path=='/quotations' %}active{% endif %}"><span class="ni">◻</span>Quotations</a>
   <a href="/customers" class="nav-item {% if request.path=='/customers' %}active{% endif %}"><span class="ni">◎</span>Customers</a>
-  <a href="/invoices" class="nav-item {% if request.path=='/invoices' %}active{% endif %}"><span class="ni">◻</span>Invoices</a>
-  <a href="/quotations" class="nav-item {% if request.path=='/quotations' %}active{% endif %}"><span class="ni">📋</span>Quotations</a>
 
-  <div class="nav-section">Operations</div>
-  <a href="/inventory" class="nav-item {% if request.path=='/inventory' %}active{% endif %}"><span class="ni">▦</span>Inventory</a>
-  <a href="/locations" class="nav-item {% if request.path=='/locations' %}active{% endif %}"><span class="ni">📍</span>Locations</a>
-  <a href="/suppliers" class="nav-item {% if request.path=='/suppliers' %}active{% endif %}"><span class="ni">🏭</span>Suppliers</a>
-  <a href="/payroll" class="nav-item {% if request.path=='/payroll' %}active{% endif %}"><span class="ni">$</span>Payroll & HR</a>
+  <!-- PURCHASES -->
+  <div class="nav-section">Purchases</div>
+  <a href="/upload" class="nav-item {% if request.path=='/upload' %}active{% endif %}"><span class="ni">↑</span>Upload Bill</a>
+  <a href="/documents" class="nav-item {% if request.path.startswith('/documents') %}active{% endif %}"><span class="ni">📄</span>Documents</a>
+  <a href="/suppliers" class="nav-item {% if request.path=='/suppliers' %}active{% endif %}"><span class="ni">🏪</span>Suppliers</a>
 
-  <div class="nav-section">AI</div>
-  <a href="/ai" class="nav-item ai-item {% if request.path=='/ai' %}active{% endif %}"><span class="ni">⬡</span>AI Accountant</a>
+  <!-- PAYMENTS -->
+  <div class="nav-section">Payments</div>
+  <a href="/payments" class="nav-item {% if request.path=='/payments' %}active{% endif %}"><span class="ni">💳</span>Pay Bills (AP)</a>
+  <a href="/payments" class="nav-item {% if request.path=='/payments' %}active{% endif %}" style="padding-left:28px"><span class="ni">↓</span>Receive (AR)</a>
+  <a href="/bank" class="nav-item {% if request.path=='/bank' %}active{% endif %}"><span class="ni">🏦</span>Bank</a>
 
-  <div class="nav-section">Account</div>
-  <a href="/settings" class="nav-item {% if request.path=='/settings' %}active{% endif %}"><span class="ni">⚙</span>Settings</a>
-  <a href="/logout" class="nav-item"><span class="ni">→</span>Sign out</a>
+  <!-- INVENTORY -->
+  <div class="nav-section">Inventory</div>
+  <a href="/inventory/dashboard" class="nav-item {% if request.path.startswith('/inventory') %}active{% endif %}"><span class="ni">📦</span>Inventory</a>
+  <a href="/locations" class="nav-item {% if request.path=='/locations' %}active{% endif %}"><span class="ni">📍</span>Warehouses</a>
 
-  <div class="sidebar-footer">
-    <div class="user-chip">
-      <div class="user-av">{{ session.get('user_name','U')[0].upper() }}</div>
-      <div>
-        <div class="user-name">{{ session.get('user_name','') }}</div>
-        <div class="user-plan">{{ session.get('plan','Free') }} plan</div>
+  <!-- HR & PAYROLL -->
+  <div class="nav-section">HR & Payroll</div>
+  <a href="/hr" class="nav-item {% if request.path.startswith('/hr') or request.path=='/payroll' %}active{% endif %}"><span class="ni">👥</span>HR & Payroll</a>
+
+  <!-- REPORTS -->
+  <div class="nav-section">Reports</div>
+  <a href="/reports" class="nav-item {% if request.path=='/reports' %}active{% endif %}"><span class="ni">↗</span>Financial Reports</a>
+  <a href="/reports/compliance" class="nav-item {% if request.path=='/reports/compliance' %}active{% endif %}"><span class="ni">✓</span>Compliance</a>
+  <a href="/accountant" class="nav-item {% if request.path=='/accountant' %}active{% endif %}"><span class="ni">💼</span>Accountant</a>
+
+  <!-- BOTTOM -->
+  <div style="margin-top:auto;padding-top:12px;border-top:1px solid var(--border)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Theme</span>
+      <div style="display:flex;gap:4px">
+        <button onclick="setTheme('dark')" title="Dark" style="width:18px;height:18px;border-radius:50%;background:#0f1117;border:2px solid transparent;cursor:pointer" id="theme-btn-dark"></button>
+        <button onclick="setTheme('light')" title="Light" style="width:18px;height:18px;border-radius:50%;background:#f8f9fa;border:2px solid #dee2e6;cursor:pointer" id="theme-btn-light"></button>
+        <button onclick="setTheme('warm')" title="Warm" style="width:18px;height:18px;border-radius:50%;background:#fdf6ec;border:2px solid #e8d5b7;cursor:pointer" id="theme-btn-warm"></button>
+        <button onclick="setTheme('blue')" title="Blue" style="width:18px;height:18px;border-radius:50%;background:#0a192f;border:2px solid #1e3a5f;cursor:pointer" id="theme-btn-blue"></button>
       </div>
     </div>
+    <a href="/settings" class="nav-item {% if request.path=='/settings' %}active{% endif %}" style="font-size:11px"><span class="ni">⚙</span>Settings</a>
+    <a href="/ai" class="nav-item {% if request.path=='/ai' %}active{% endif %}" style="font-size:11px"><span class="ni">✦</span>AI Accountant</a>
+    <a href="/logout" class="nav-item" style="font-size:11px;color:var(--text3)"><span class="ni">→</span>Logout</a>
   </div>
 </nav>
 {% endif %}
@@ -236,5 +275,27 @@ function openModal(id){document.getElementById(id).classList.add('open')}
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 </script>
 {% block scripts %}{% endblock %}
+<script>
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('ledgr-theme',t);
+  // Update active button
+  ['dark','light','warm','blue'].forEach(function(name){
+    var btn=document.getElementById('theme-btn-'+name);
+    if(btn) btn.style.border=name===t?'2px solid var(--mint)':'2px solid transparent';
+  });
+}
+function toggleBizMenu(){
+  var m=document.getElementById('biz-menu');
+  if(m) m.style.display=m.style.display==='none'?'block':'none';
+}
+// Apply saved theme on load
+(function(){
+  var t=localStorage.getItem('ledgr-theme')||'dark';
+  document.documentElement.setAttribute('data-theme',t);
+  var btn=document.getElementById('theme-btn-'+t);
+  if(btn) btn.style.border='2px solid var(--mint)';
+})();
+</script>
 </body>
 </html>

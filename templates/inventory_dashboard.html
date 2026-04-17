@@ -1,0 +1,113 @@
+{% extends "base.html" %}{% block title %}Inventory — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Inventory & Warehouse</div><div class="page-sub">{{ products|length }} products · {{ locations|length }} locations</div></div>
+  <div style="display:flex;gap:8px">
+    <a href="/inventory" class="btn">Manage Products →</a>
+    <a href="/locations" class="btn">Warehouses →</a>
+  </div>
+</div>
+<div class="content">
+
+  <!-- Stats -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="stat-card">
+      <div class="stat-label">Total SKUs</div>
+      <div class="stat-value">{{ products|length }}</div>
+      <div class="stat-sub">{{ low_stock|length }} low stock</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Stock Value (Cost)</div>
+      <div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ "%.0f"|format(total_value) }}</div>
+      <div class="stat-sub">At purchase price</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(16,185,129,.3)">
+      <div class="stat-label">Stock Value (Retail)</div>
+      <div class="stat-value" style="font-size:18px;color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(total_retail) }}</div>
+      <div class="stat-sub">Potential revenue</div>
+    </div>
+    <div class="stat-card" style="border-color:rgba(245,158,11,.3)">
+      <div class="stat-label">Gross Margin</div>
+      <div class="stat-value" style="font-size:18px;color:var(--amber)">
+        {% if total_retail > 0 %}{{ "%.1f"|format((total_retail - total_value) / total_retail * 100) }}%{% else %}—{% endif %}
+      </div>
+      <div class="stat-sub">{{ tax.currency }} {{ "%.0f"|format(total_retail - total_value) }} potential profit</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+    <!-- Low Stock Alerts -->
+    <div class="card" style="padding:0">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+        <div class="card-title" style="margin:0;color:var(--amber)">⚠ Low Stock Alert <span class="badge badge-amber">{{ low_stock|length }}</span></div>
+      </div>
+      {% if low_stock %}
+      {% for p in low_stock %}
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:500;color:var(--text);font-size:12px">{{ p.name }}</div>
+          <div style="font-size:10px;color:var(--text3)">{{ p.category or '—' }} · Reorder at {{ p.reorder_level }}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--mono);font-weight:700;color:var(--red)">{{ p.stock_level }}</div>
+          <div style="font-size:10px;color:var(--text3)">{{ p.unit or 'pcs' }}</div>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="text-align:center;padding:30px;color:var(--text3)">
+        <div style="font-size:20px;margin-bottom:6px">✓</div>
+        <div style="font-size:12px">All stock above reorder level</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Warehouse Stock by Location -->
+    <div class="card" style="padding:0">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+        <div class="card-title" style="margin:0">Warehouse / Location Stock</div>
+      </div>
+      {% for loc in locations %}
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <div style="font-weight:500;color:var(--text)">{{ loc.name }}</div>
+          <span class="badge badge-{% if loc.is_warehouse %}blue{% else %}gray{% endif %}" style="font-size:10px">{{ 'Warehouse' if loc.is_warehouse else 'Branch' }}</span>
+        </div>
+        {% set loc_products = loc.product_stock %}
+        {% if loc_products %}
+        <div style="font-size:11px;color:var(--text3)">{{ loc_products|length }} products stocked</div>
+        {% else %}
+        <div style="font-size:11px;color:var(--text3)">No stock assigned</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div style="text-align:center;padding:30px;color:var(--text3);font-size:12px">No locations set up</div>
+      {% endfor %}
+    </div>
+
+  </div>
+
+  <!-- Recent Transfers -->
+  {% if recent_transfers %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Recent Stock Transfers</div>
+    <table class="table">
+      <thead><tr><th>Date</th><th>Product</th><th>From</th><th>To</th><th style="text-align:right">Qty</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for t in recent_transfers %}
+      <tr>
+        <td style="font-size:11px;color:var(--text3)">{{ t.created_at.strftime('%d %b %Y') if t.created_at else '—' }}</td>
+        <td style="font-size:12px">{{ t.product.name if t.product else '—' }}</td>
+        <td style="font-size:11px;color:var(--text2)">{{ t.from_location.name if t.from_location else '—' }}</td>
+        <td style="font-size:11px;color:var(--text2)">{{ t.to_location.name if t.to_location else '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono)">{{ t.quantity }}</td>
+        <td><span class="badge badge-green" style="font-size:10px">{{ t.status }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
