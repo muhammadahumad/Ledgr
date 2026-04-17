@@ -1,29 +1,168 @@
 {% extends "base.html" %}{% block title %}Journal — LEDGR{% endblock %}{% block content %}
-<div class="topbar"><div><div class="page-title">Journal Entries</div><div class="page-sub">Double-entry bookkeeping — every transaction balanced</div></div></div>
-<div class="content">
-<div class="card">
-{% if entries %}{% for entry in entries %}
-<div style="border-bottom:1px solid var(--border);padding:12px 0">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-    <div><span class="badge badge-gray" style="margin-right:8px">{{ entry.entry_type }}</span><span style="color:var(--text);font-weight:500">{{ entry.description }}</span></div>
-    <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">{{ entry.date.strftime('%d %b %Y %H:%M') }} · {{ entry.reference or '—' }}</div>
-  </div>
-  <table style="width:100%;font-size:11px;border-collapse:collapse;background:var(--bg);border-radius:6px;overflow:hidden">
-    <thead><tr>
-      <th style="text-align:left;color:var(--text3);padding:6px 10px;font-weight:500">Account</th>
-      <th style="text-align:left;color:var(--text3);padding:6px 10px;font-weight:500">Description</th>
-      <th style="text-align:right;color:var(--text3);padding:6px 10px;font-weight:500">Debit</th>
-      <th style="text-align:right;color:var(--text3);padding:6px 10px;font-weight:500">Credit</th>
-    </tr></thead>
-    <tbody>{% for line in entry.lines %}<tr>
-      <td style="padding:5px 10px;color:var(--mint);font-family:var(--mono)">{{ line.account.code if line.account else '?' }} — {{ line.account.name if line.account else 'Unknown' }}</td>
-      <td style="padding:5px 10px;color:var(--text2)">{{ line.description or '—' }}</td>
-      <td style="padding:5px 10px;text-align:right;color:#60a5fa;font-family:var(--mono)">{% if line.debit > 0 %}{{ "%.2f"|format(line.debit) }}{% endif %}</td>
-      <td style="padding:5px 10px;text-align:right;color:var(--red);font-family:var(--mono)">{% if line.credit > 0 %}{{ "%.2f"|format(line.credit) }}{% endif %}</td>
-    </tr>{% endfor %}</tbody>
-  </table>
+<div class="topbar">
+  <div><div class="page-title">Journal Entries</div><div class="page-sub">Double-entry bookkeeping — every transaction balanced</div></div>
+  <button class="btn btn-primary" onclick="openModal('manual-journal-modal')">+ Manual Entry</button>
 </div>
-{% endfor %}{% else %}
-<div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">✎</div><div style="font-weight:500;color:var(--text2);margin-bottom:6px">No journal entries yet</div><div style="font-size:11px">Upload documents or record POS sales</div></div>
-{% endif %}
-</div></div>{% endblock %}
+<div class="content">
+  <div class="card" style="padding:0">
+    {% if entries %}
+    {% for entry in entries %}
+    <div style="border-bottom:1px solid var(--border);padding:14px 16px" id="je-{{ entry.id }}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="badge badge-{% if entry.entry_type=='SALE' %}green{% elif entry.entry_type=='PURCHASE' %}amber{% elif entry.entry_type=='VOID' %}red{% elif entry.entry_type=='MANUAL' %}blue{% else %}gray{% endif %}">{{ entry.entry_type }}</span>
+          <span style="color:var(--text);font-weight:500">{{ entry.description }}</span>
+          {% if entry.is_void %}<span class="badge badge-red" style="font-size:9px">VOIDED</span>{% endif %}
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">{{ entry.date.strftime('%d %b %Y %H:%M') }} · {{ entry.reference or '—' }}</div>
+          {% if not entry.is_void and entry.entry_type in ['MANUAL','ADJUSTMENT'] %}
+          <button class="btn btn-sm" onclick="voidJE({{ entry.id }})" style="color:var(--red);border-color:var(--red);font-size:10px">Void</button>
+          {% elif not entry.is_void %}
+          <button class="btn btn-sm" onclick="voidJE({{ entry.id }})" style="color:var(--text3);font-size:10px" title="Creates reversal entry">⊘ Reverse</button>
+          {% endif %}
+        </div>
+      </div>
+      <table style="width:100%;font-size:11px;border-collapse:collapse;background:var(--bg);border-radius:6px;overflow:hidden">
+        <thead><tr>
+          <th style="text-align:left;color:var(--text3);padding:6px 10px;font-weight:500">Account</th>
+          <th style="text-align:left;color:var(--text3);padding:6px 10px;font-weight:500">Description</th>
+          <th style="text-align:right;color:var(--text3);padding:6px 10px;font-weight:500">Debit</th>
+          <th style="text-align:right;color:var(--text3);padding:6px 10px;font-weight:500">Credit</th>
+        </tr></thead>
+        <tbody>{% for line in entry.lines %}<tr>
+          <td style="padding:5px 10px;color:var(--mint);font-family:var(--mono)">{{ line.account.code if line.account else '?' }} — {{ line.account.name if line.account else 'Unknown' }}</td>
+          <td style="padding:5px 10px;color:var(--text2)">{{ line.description or '—' }}</td>
+          <td style="padding:5px 10px;text-align:right;color:#60a5fa;font-family:var(--mono)">{% if line.debit > 0 %}{{ "%.2f"|format(line.debit) }}{% endif %}</td>
+          <td style="padding:5px 10px;text-align:right;color:var(--red);font-family:var(--mono)">{% if line.credit > 0 %}{{ "%.2f"|format(line.credit) }}{% endif %}</td>
+        </tr>{% endfor %}</tbody>
+      </table>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="text-align:center;padding:60px 0;color:var(--text3)">
+      <div style="font-size:36px;margin-bottom:12px">✎</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:6px">No journal entries yet</div>
+      <div style="font-size:11px;margin-bottom:16px">Upload documents, record POS sales, or create a manual entry</div>
+      <button class="btn btn-primary" onclick="openModal('manual-journal-modal')">Create Manual Entry</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Manual Journal Modal -->
+<div id="manual-journal-modal" class="modal-overlay">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-title">Manual Journal Entry <button class="modal-close" onclick="closeModal('manual-journal-modal')">×</button></div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:12px">For adjustments, corrections, depreciation, accruals. Debits must equal Credits.</p>
+    <div class="field-row">
+      <div><div class="field-label">Memo / Description *</div><input class="field-input" id="mj-memo" placeholder="e.g. Depreciation — Office Equipment Q1"></div>
+      <div><div class="field-label">Reference</div><input class="field-input" id="mj-ref" placeholder="ADJ-001"></div>
+    </div>
+
+    <!-- Account lines -->
+    <div style="margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:130px 1fr 110px 110px 30px;gap:5px;margin-bottom:4px">
+        <div class="field-label">Account Code</div>
+        <div class="field-label">Description</div>
+        <div class="field-label">Debit</div>
+        <div class="field-label">Credit</div>
+        <div></div>
+      </div>
+      <div id="mj-lines"></div>
+    </div>
+    <button class="btn btn-sm" onclick="addJLine()" style="margin-bottom:12px">+ Add Line</button>
+
+    <!-- Balance indicator -->
+    <div style="display:flex;gap:20px;font-size:12px;margin-bottom:12px;padding:10px;background:var(--bg);border-radius:7px">
+      <span>Debits: <span id="mj-total-dr" style="color:#60a5fa;font-family:var(--mono);font-weight:600">0.00</span></span>
+      <span>Credits: <span id="mj-total-cr" style="color:var(--red);font-family:var(--mono);font-weight:600">0.00</span></span>
+      <span id="mj-balance-msg" style="color:var(--red);display:none">⚠ Not balanced</span>
+      <span id="mj-balanced-msg" style="color:var(--mint);display:none">✓ Balanced</span>
+    </div>
+
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="postManualJE()">Post Journal Entry</button>
+      <button class="btn" onclick="closeModal('manual-journal-modal')">Cancel</button>
+    </div>
+    <div id="mj-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+// Manual Journal
+var mjLines = [];
+
+// Pre-populate with 2 lines
+window.addEventListener('load', function() { addJLine(); addJLine(); });
+
+function addJLine() {
+  var i = mjLines.length;
+  mjLines.push({account_code:'', debit:0, credit:0, description:''});
+  var d = document.createElement('div');
+  d.id = 'mjl-' + i;
+  d.style.cssText = 'display:grid;grid-template-columns:130px 1fr 110px 110px 30px;gap:5px;margin-bottom:5px;align-items:center';
+  d.innerHTML =
+    '<input class="field-input" placeholder="e.g. 5400" oninput="updMJ('+i+',\'account_code\',this.value)" style="font-size:11px;font-family:var(--mono)">' +
+    '<input class="field-input" placeholder="Description" oninput="updMJ('+i+',\'description\',this.value)" style="font-size:11px">' +
+    '<input class="field-input" type="number" step="0.01" placeholder="0.00" oninput="updMJ('+i+',\'debit\',this.value)" style="font-size:11px">' +
+    '<input class="field-input" type="number" step="0.01" placeholder="0.00" oninput="updMJ('+i+',\'credit\',this.value)" style="font-size:11px">' +
+    '<button onclick="rmMJL('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>';
+  document.getElementById('mj-lines').appendChild(d);
+}
+
+function rmMJL(i) { mjLines[i] = null; var el = document.getElementById('mjl-'+i); if(el) el.remove(); updateMJTotals(); }
+
+function updMJ(i, k, v) {
+  if (!mjLines[i]) return;
+  mjLines[i][k] = (k==='account_code'||k==='description') ? v : (parseFloat(v)||0);
+  updateMJTotals();
+}
+
+function updateMJTotals() {
+  var dr = mjLines.filter(Boolean).reduce(function(s,l){return s+l.debit;}, 0);
+  var cr = mjLines.filter(Boolean).reduce(function(s,l){return s+l.credit;}, 0);
+  document.getElementById('mj-total-dr').textContent = dr.toFixed(2);
+  document.getElementById('mj-total-cr').textContent = cr.toFixed(2);
+  var balanced = Math.abs(dr-cr) < 0.01 && dr > 0;
+  document.getElementById('mj-balance-msg').style.display = balanced ? 'none' : (dr>0||cr>0?'inline':'none');
+  document.getElementById('mj-balanced-msg').style.display = balanced ? 'inline' : 'none';
+}
+
+function postManualJE() {
+  var memo = document.getElementById('mj-memo').value.trim();
+  var ref = document.getElementById('mj-ref').value.trim();
+  if (!memo) { alert('Memo / description is required'); return; }
+  var lines = mjLines.filter(Boolean).filter(function(l){ return l.account_code; });
+  if (lines.length < 2) { alert('At least 2 lines with account codes required'); return; }
+  var dr = lines.reduce(function(s,l){return s+l.debit;},0);
+  var cr = lines.reduce(function(s,l){return s+l.credit;},0);
+  if (Math.abs(dr-cr) > 0.01) { alert('Journal does not balance. Debits: '+dr.toFixed(2)+' Credits: '+cr.toFixed(2)); return; }
+  var btn = event.target; btn.disabled=true; btn.textContent='Posting...';
+  fetch('/api/journal/manual', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({memo:memo, ref:ref, lines:lines})
+  }).then(function(r){return r.json();}).then(function(res){
+    var m = document.getElementById('mj-msg');
+    m.style.display='block';
+    if (res.ok) {
+      m.style.color='var(--mint)'; m.textContent='✓ '+res.message;
+      setTimeout(function(){ closeModal('manual-journal-modal'); location.reload(); }, 1200);
+    } else {
+      m.style.color='var(--red)'; m.textContent='Error: '+res.error;
+      btn.disabled=false; btn.textContent='Post Journal Entry';
+    }
+  });
+}
+
+function voidJE(id) {
+  if (!confirm('This will create a reversal entry to cancel this journal. The original entry will remain for audit trail. Continue?')) return;
+  fetch('/api/journal/'+id+'/void', {method:'POST'})
+    .then(function(r){return r.json();})
+    .then(function(res){
+      if (res.ok) { alert('✓ '+res.message); location.reload(); }
+      else alert('Error: '+res.error);
+    });
+}
+</script>{% endblock %}
