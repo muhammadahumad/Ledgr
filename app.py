@@ -2891,6 +2891,227 @@ def inventory_dashboard():
                            recent_transfers=recent_transfers, recent_pos=recent_pos)
 
 
+
+@app.route("/api/bank/upload-csv", methods=["POST"])
+@login_required
+def api_bank_upload_csv():
+    """Upload bank statement as CSV — no AI needed, direct parsing"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    csv_content = data.get("csv_content", "")
+    bank_account_id = data.get("bank_account_id")
+
+    if not csv_content:
+        return jsonify({"ok":False,"error":"No CSV content provided"})
+
+    try:
+        import csv, io
+        reader = csv.DictReader(io.StringIO(csv_content))
+        headers = reader.fieldnames or []
+
+        # Auto-detect column mappings for common bank formats
+        # BML, MIB, HSBC, and generic CSV formats
+        def find_col(possible_names, headers):
+            headers_lower = [h.lower().strip() for h in headers]
+            for name in possible_names:
+                for i, h in enumerate(headers_lower):
+                    if name in h:
+                        return headers[i]
+            return None
+
+        date_col = find_col(['date','txn date','transaction date','value date','posting date'], headers)
+        desc_col = find_col(['description','narration','particulars','details','transaction','memo','reference','remarks'], headers)
+        debit_col = find_col(['debit','withdrawal','dr','amount out','payments out','debit amount'], headers)
+        credit_col = find_col(['credit','deposit','cr','amount in','payments in','credit amount'], headers)
+        balance_col = find_col(['balance','running balance','closing balance'], headers)
+        amount_col = find_col(['amount'], headers)  # Some banks use single amount column
+
+        if not date_col:
+            return jsonify({"ok":False,"error":"Could not find date column. Headers found: " + ", ".join(headers[:10])})
+
+        transactions = []
+        for row in reader:
+            try:
+                # Parse date
+                raw_date = (row.get(date_col) or "").strip()
+                txn_date = None
+                for fmt in ['%d/%m/%Y','%Y-%m-%d','%m/%d/%Y','%d-%m-%Y','%d %b %Y','%d-%b-%Y','%d %B %Y']:
+                    try:
+                        txn_date = datetime.strptime(raw_date, fmt).strftime('%Y-%m-%d')
+                        break
+                    except: pass
+                if not txn_date: continue
+
+                desc = (row.get(desc_col) or "").strip() if desc_col else ""
+                if not desc: continue
+
+                # Parse amounts
+                def parse_amount(val):
+                    if not val: return 0.0
+                    val = str(val).replace(',','').replace(' ','').strip()
+                    if val in ['','-','—']: return 0.0
+                    try: return abs(float(val))
+                    except: return 0.0
+
+                debit = parse_amount(row.get(debit_col)) if debit_col else 0
+                credit = parse_amount(row.get(credit_col)) if credit_col else 0
+                balance = parse_amount(row.get(balance_col)) if balance_col else 0
+
+                # Handle single amount column
+                if amount_col and not debit_col and not credit_col:
+                    amt_raw = str(row.get(amount_col) or "").replace(',','').strip()
+                    try:
+                        amt = float(amt_raw)
+                        if amt < 0: debit = abs(amt)
+                        else: credit = amt
+                    except: pass
+
+                if debit == 0 and credit == 0: continue
+
+                # Auto-categorize
+                desc_lower = desc.lower()
+                category = "Other"
+                if any(w in desc_lower for w in ['salary','payroll','wages','allowance']): category = "Salary Payment"
+                elif any(w in desc_lower for w in ['rent','lease']): category = "Rent"
+                elif any(w in desc_lower for w in ['electric','water','utility','utilities','mwsc','stelco']): category = "Utilities"
+                elif any(w in desc_lower for w in ['bank charge','service charge','fee','commission']): category = "Bank Charges"
+                elif any(w in desc_lower for w in ['tax','gst','vat','mira']): category = "Tax Payment"
+                elif any(w in desc_lower for w in ['transfer','trf','trx']): category = "Transfer"
+                elif credit > 0 and any(w in desc_lower for w in ['sale','pos','payment received','receipt']): category = "Sales Revenue"
+
+                transactions.append({
+                    "date": txn_date,
+                    "description": desc,
+                    "reference": "",
+                    "debit": debit,
+                    "credit": credit,
+                    "balance": balance,
+                    "category": category
+                })
+            except Exception as row_err:
+                continue
+
+        if not transactions:
+            return jsonify({"ok":False,"error":"No valid transactions found in CSV. Check the file format."})
+
+        return jsonify({
+            "ok": True,
+            "extracted": {
+                "bank_name": "Imported from CSV",
+                "account_name": "",
+                "account_number": "",
+                "statement_period": "",
+                "opening_balance": 0,
+                "closing_balance": transactions[-1]["balance"] if transactions else 0,
+                "currency": business.base_currency,
+                "transactions": transactions
+            },
+            "bank_account_id": bank_account_id,
+            "headers_detected": headers[:15],
+            "message": str(len(transactions)) + " transactions parsed from CSV"
+        })
+
+    except Exception as e:
+        return jsonify({"ok":False,"error":"CSV parsing error: " + str(e)[:200]})
+
+
+# ── Data Import from QB/Odoo/Xero ─────────────────────────────────────────────
+
+@app.route("/api/import/customers-csv", methods=["POST"])
+@login_required
+def api_import_customers_csv():
+    """Import customers from QB/Xero/Odoo CSV export"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    csv_content = data.get("csv_content", "")
+    if not csv_content:
+        return jsonify({"ok":False,"error":"No CSV content"})
+    try:
+        import csv, io
+        reader = csv.DictReader(io.StringIO(csv_content))
+        headers = reader.fieldnames or []
+        def find_col(names, headers):
+            hl = [h.lower().strip() for h in headers]
+            for n in names:
+                for i,h in enumerate(hl):
+                    if n in h: return headers[i]
+            return None
+        name_col = find_col(['name','customer name','company','full name'], headers)
+        email_col = find_col(['email','e-mail','email address'], headers)
+        phone_col = find_col(['phone','telephone','mobile','contact'], headers)
+        balance_col = find_col(['balance','outstanding','amount due','open balance'], headers)
+        if not name_col:
+            return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+        imported = 0; skipped = 0
+        for row in reader:
+            name = (row.get(name_col) or "").strip()
+            if not name: continue
+            existing = Customer.query.filter_by(business_id=business.id, name=name).first()
+            if existing: skipped += 1; continue
+            c = Customer(business_id=business.id, name=name,
+                        email=(row.get(email_col) or "").strip() if email_col else "",
+                        phone=(row.get(phone_col) or "").strip() if phone_col else "",
+                        outstanding_balance=abs(float(str(row.get(balance_col) or 0).replace(',',''))) if balance_col else 0)
+            db.session.add(c); imported += 1
+        db.session.commit()
+        return jsonify({"ok":True,"imported":imported,"skipped":skipped,
+                       "message":str(imported) + " customers imported, " + str(skipped) + " skipped (already exist)"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/import/suppliers-csv", methods=["POST"])
+@login_required
+def api_import_suppliers_csv():
+    """Import suppliers/vendors from QB/Xero/Odoo CSV export"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    csv_content = data.get("csv_content", "")
+    try:
+        import csv, io
+        reader = csv.DictReader(io.StringIO(csv_content))
+        headers = reader.fieldnames or []
+        def find_col(names, headers):
+            hl = [h.lower().strip() for h in headers]
+            for n in names:
+                for i,h in enumerate(hl):
+                    if n in h: return headers[i]
+            return None
+        name_col = find_col(['name','vendor name','supplier name','company'], headers)
+        email_col = find_col(['email','e-mail'], headers)
+        phone_col = find_col(['phone','telephone','mobile'], headers)
+        if not name_col:
+            return jsonify({"ok":False,"error":"Could not find name column"})
+        imported = 0; skipped = 0
+        for row in reader:
+            name = (row.get(name_col) or "").strip()
+            if not name: continue
+            existing = Supplier.query.filter_by(business_id=business.id, name=name).first()
+            if existing: skipped += 1; continue
+            s = Supplier(business_id=business.id, name=name,
+                        email=(row.get(email_col) or "").strip() if email_col else "",
+                        phone=(row.get(phone_col) or "").strip() if phone_col else "")
+            db.session.add(s); imported += 1
+        db.session.commit()
+        return jsonify({"ok":True,"imported":imported,"skipped":skipped})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/import")
+@business_required
+def data_import():
+    user = current_user(); business = current_business()
+    return render_template("import.html", user=user, business=business, tax=business.tax_rules())
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
