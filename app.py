@@ -431,21 +431,43 @@ class Invoice(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    # Core
     invoice_number = db.Column(db.String(50))
-    po_number = db.Column(db.String(100))        # Customer PO reference
+    po_number = db.Column(db.String(100))
     invoice_date = db.Column(db.Date, default=date.today)
     due_date = db.Column(db.Date)
     currency = db.Column(db.String(3), default='MVR')
-    exchange_rate = db.Column(db.Numeric(10,4), default=1)  # For multicurrency
+    exchange_rate = db.Column(db.Numeric(10,4), default=1)
     subtotal = db.Column(db.Numeric(12,2), default=0)
     discount_amount = db.Column(db.Numeric(12,2), default=0)
     tax_amount = db.Column(db.Numeric(12,2), default=0)
     total_amount = db.Column(db.Numeric(12,2), default=0)
     amount_paid = db.Column(db.Numeric(12,2), default=0)
-    status = db.Column(db.String(20), default='DRAFT')  # DRAFT SENT PAID PARTIAL OVERDUE CANCELLED
+    status = db.Column(db.String(20), default='DRAFT')
     payment_terms = db.Column(db.String(100))
     notes = db.Column(db.Text)
-    items = db.Column(db.Text, default='[]')     # JSON line items
+    items = db.Column(db.Text, default='[]')
+    # Global compliance — 9 countries
+    legal_seller_name = db.Column(db.String(200))
+    seller_trn_vat_number = db.Column(db.String(50))
+    buyer_legal_name = db.Column(db.String(200))
+    buyer_trn_vat_number = db.Column(db.String(50))
+    irn = db.Column(db.String(100))
+    qr_code_data = db.Column(db.Text)
+    uuid = db.Column(db.String(100))
+    cryptographic_stamp = db.Column(db.Text)
+    nsfp = db.Column(db.String(100))
+    hs_code = db.Column(db.String(20))
+    emirate = db.Column(db.String(50))
+    transaction_type_code = db.Column(db.String(20))
+    supply_type = db.Column(db.String(20), default='standard')
+    clearance_status = db.Column(db.String(20), default='PENDING')
+    clearance_date = db.Column(db.DateTime)
+    clearance_reference = db.Column(db.String(100))
+    total_excl_tax_local = db.Column(db.Numeric(12,2))
+    total_vat_local = db.Column(db.Numeric(12,2))
+    total_incl_tax_local = db.Column(db.Numeric(12,2))
+    line_items = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     customer = db.relationship('Customer', backref='invoices')
     business = db.relationship('Business', backref='invoices')
@@ -1894,6 +1916,71 @@ def api_bank_upload_statement_pdf():
     except Exception as e:
         return jsonify({"ok":False,"error":"Processing error: " + str(e)[:200]})
 
+
+
+
+@app.route('/admin/migrate-models')
+@login_required
+@admin_required
+def migrate_models():
+    """One-time migration for new global compliance fields"""
+    try:
+        db.create_all()
+        # Run ALTER TABLE for new columns that won't be created by create_all
+        compliance_cols = [
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS legal_seller_name VARCHAR(200)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS seller_trn_vat_number VARCHAR(50)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS buyer_legal_name VARCHAR(200)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS buyer_trn_vat_number VARCHAR(50)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS irn VARCHAR(100)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS qr_code_data TEXT",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS uuid VARCHAR(100)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS cryptographic_stamp TEXT",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS nsfp VARCHAR(100)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS hs_code VARCHAR(20)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS emirate VARCHAR(50)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS transaction_type_code VARCHAR(20)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS supply_type VARCHAR(20) DEFAULT 'standard'",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS clearance_status VARCHAR(20) DEFAULT 'PENDING'",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS clearance_date TIMESTAMP",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS clearance_reference VARCHAR(100)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS total_excl_tax_local NUMERIC(12,2)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS total_vat_local NUMERIC(12,2)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS total_incl_tax_local NUMERIC(12,2)",
+            "ALTER TABLE documents ADD COLUMN IF NOT EXISTS line_items TEXT DEFAULT '[]'",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS legal_seller_name VARCHAR(200)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS seller_trn_vat_number VARCHAR(50)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_legal_name VARCHAR(200)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS buyer_trn_vat_number VARCHAR(50)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS irn VARCHAR(100)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS qr_code_data TEXT",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS uuid VARCHAR(100)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS cryptographic_stamp TEXT",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS nsfp VARCHAR(100)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS hs_code VARCHAR(20)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS emirate VARCHAR(50)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS transaction_type_code VARCHAR(20)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS supply_type VARCHAR(20) DEFAULT 'standard'",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS clearance_status VARCHAR(20) DEFAULT 'PENDING'",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS clearance_date TIMESTAMP",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS clearance_reference VARCHAR(100)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_excl_tax_local NUMERIC(12,2)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_vat_local NUMERIC(12,2)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_incl_tax_local NUMERIC(12,2)",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items TEXT DEFAULT '[]'",
+        ]
+        results = []
+        for sql in compliance_cols:
+            try:
+                db.session.execute(db.text(sql))
+                results.append("OK: " + sql[:60])
+            except Exception as e:
+                results.append("SKIP: " + str(e)[:60])
+        db.session.commit()
+        result_text = "Migration complete!\n\n" + "\n".join(results)
+        return "<pre>" + result_text + "</pre>"
+    except Exception as e:
+        return "Migration error: " + str(e)
 
 
 @app.route('/admin')
