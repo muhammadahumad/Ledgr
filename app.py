@@ -338,9 +338,18 @@ class Customer(db.Model):
     __tablename__ = 'customers'
     id = db.Column(db.Integer, primary_key=True)
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
-    name = db.Column(db.String(100), nullable=False)
+    name = db.Column(db.String(200), nullable=False)
     phone = db.Column(db.String(30))
     email = db.Column(db.String(150))
+    address = db.Column(db.Text)
+    city = db.Column(db.String(100))
+    country = db.Column(db.String(10), default='MV')
+    # Tax & compliance
+    customer_type = db.Column(db.String(20), default='individual')  # individual / business
+    tax_id = db.Column(db.String(100))        # TIN / TRN / GSTIN / NTN etc
+    registration_number = db.Column(db.String(100))
+    is_tax_registered = db.Column(db.Boolean, default=False)
+    # CRM
     notes = db.Column(db.Text)
     is_vip = db.Column(db.Boolean, default=False)
     credit_limit = db.Column(db.Numeric(12,2), default=0)
@@ -349,6 +358,8 @@ class Customer(db.Model):
     visit_count = db.Column(db.Integer, default=0)
     last_visit = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='customers')
+    def is_business_customer(self): return self.customer_type == 'business'
 
 
 
@@ -2446,21 +2457,24 @@ def api_customer_add():
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
-    name = data.get('name','').strip()
+    name = (data.get('name') or '').strip()
     if not name: return jsonify({'ok':False,'error':'Name is required'})
     if data.get('phone'):
         existing = Customer.query.filter_by(business_id=business.id, phone=data.get('phone')).first()
         if existing: return jsonify({'ok':False,'error':'Customer with this phone already exists','customer_id':existing.id,'name':existing.name})
     try:
-        c = Customer(business_id=business.id, name=name,
-                     phone=data.get('phone',''), email=data.get('email',''),
-                     address=data.get('address',''), city=data.get('city',''),
-                     country=data.get('country','MV'),
-                     notes=data.get('notes',''), is_vip=data.get('is_vip',False),
-                     customer_type=data.get('customer_type','individual'),
-                     tax_id=data.get('tax_id',''),
-                     registration_number=data.get('registration_number',''),
-                     is_tax_registered=bool(data.get('tax_id','')))
+        c = Customer(business_id=business.id, name=name)
+        c.phone = data.get('phone','')
+        c.email = data.get('email','')
+        c.address = data.get('address','')
+        c.city = data.get('city','')
+        c.country = data.get('country','MV')
+        c.notes = data.get('notes','')
+        c.is_vip = data.get('is_vip', False)
+        c.customer_type = data.get('customer_type','individual')
+        c.tax_id = data.get('tax_id','')
+        c.registration_number = data.get('registration_number','')
+        c.is_tax_registered = bool(data.get('tax_id',''))
         db.session.add(c)
         db.session.commit()
         return jsonify({'ok':True,'customer_id':c.id,'name':c.name})
