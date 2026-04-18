@@ -716,6 +716,22 @@ class PaymentAllocation(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
+
+class PayrollRun(db.Model):
+    """Record of each payroll run for audit trail"""
+    __tablename__ = 'payroll_runs'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
+    month = db.Column(db.String(7))  # YYYY-MM
+    total_gross = db.Column(db.Numeric(12,2))
+    total_employer_contrib = db.Column(db.Numeric(12,2))
+    total_net = db.Column(db.Numeric(12,2))
+    employees_processed = db.Column(db.Integer)
+    status = db.Column(db.String(20), default='COMPLETED')
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='payroll_runs')
+
 with app.app_context():
     try:
         db.create_all()
@@ -2477,11 +2493,22 @@ def api_payroll_run():
                  {"account_code":"2000","debit":0,"credit":gross + pension_er,"description":"Net payable"}])
             posted += 1
         except: pass
+    # Save payroll run record
+    try:
+        pr = PayrollRun(business_id=business.id, month=month,
+                       total_gross=round(total_gross,2),
+                       total_employer_contrib=round(total_pension_er,2),
+                       total_net=round(total_net,2),
+                       employees_processed=posted,
+                       created_by=user.id, status="COMPLETED")
+        db.session.add(pr)
+    except: pass
     db.session.commit()
     return jsonify({"ok":True,"month":month,"employees_processed":posted,
                    "total_gross":round(total_gross,2),
                    "total_pension_employer":round(total_pension_er,2),
-                   "total_net_payable":round(total_net,2)})
+                   "total_net_payable":round(total_net,2),
+                   "message":"Payroll for " + month + " completed — " + str(posted) + " employees processed"})
 
 
 
@@ -3368,6 +3395,70 @@ def report_cash_flow():
         net_operating=net_operating,
         bank_credits=bank_credits, bank_debits=bank_debits,
         net_financing=net_financing, net_cash_change=net_cash_change)
+
+
+
+@app.route("/hr/employee/<int:emp_id>")
+@business_required
+def employee_detail(emp_id):
+    user = current_user(); business = current_business()
+    employee = Employee.query.filter_by(id=emp_id, business_id=business.id).first()
+    if not employee: return redirect(url_for("hr_dashboard"))
+    costs = calculate_employee_costs(employee, employee.country_of_work or business.region or "MV")
+    return render_template("employee_detail.html", user=user, business=business,
+                           employee=employee, costs=costs, tax=business.tax_rules(),
+                           today_date=date.today())
+
+
+@app.route("/hr/employee/<int:emp_id>/edit", methods=["GET","POST"])
+@business_required
+def employee_edit(emp_id):
+    user = current_user(); business = current_business()
+    employee = Employee.query.filter_by(id=emp_id, business_id=business.id).first()
+    if not employee: return redirect(url_for("hr_dashboard"))
+    if request.method == "POST":
+        data = request.form
+        for field in ["full_name","position","department","nationality","phone","email",
+                     "notes","employee_id","quota_slot_number","insurance_provider",
+                     "visa_number","work_permit_number","passport_number","bank_name","bank_account"]:
+            if field in data: setattr(employee, field, data[field])
+        for date_field in ["start_date","end_date","visa_expiry","work_permit_expiry",
+                          "medical_expiry","insurance_expiry","passport_expiry"]:
+            val = data.get(date_field)
+            if val:
+                try: setattr(employee, date_field, datetime.strptime(val, "%Y-%m-%d").date())
+                except: pass
+        for num_field in ["monthly_salary","allowances","housing_allowance","transport_allowance",
+                         "quota_fee_paid","security_deposit","insurance_cost"]:
+            val = data.get(num_field)
+            if val:
+                try: setattr(employee, num_field, float(val))
+                except: pass
+        if data.get("employment_type"): employee.employment_type = data["employment_type"]
+        if data.get("contract_type"): employee.contract_type = data["contract_type"]
+        db.session.commit()
+        flash(employee.full_name + " updated successfully", "success")
+        return redirect(url_for("employee_detail", emp_id=emp_id))
+    return render_template("employee_edit.html", user=user, business=business,
+                           employee=employee, tax=business.tax_rules())
+
+
+@app.route("/hr/payroll")
+@business_required
+def payroll_dashboard():
+    user = current_user(); business = current_business()
+    try:
+        employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+    except: employees = []
+    total_monthly_cost = sum(e.total_cost() for e in employees)
+    try:
+        payroll_history = PayrollRun.query.filter_by(
+            business_id=business.id).order_by(PayrollRun.created_at.desc()).all()
+    except: payroll_history = []
+    return render_template("payroll_dashboard.html", user=user, business=business,
+                           employees=employees, total_monthly_cost=total_monthly_cost,
+                           payroll_history=payroll_history, tax=business.tax_rules())
+
 
 
 @app.route('/admin')
