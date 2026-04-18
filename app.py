@@ -148,7 +148,7 @@ def get_employment_rules(country_code):
     }))
 
 
-def calculate_employee_costs(employee, country_code='MV'):
+def calculate_employee_costs(employee, country_code='MV', pension_registered=True):
     """Calculate true monthly cost of an employee including all statutory contributions"""
     salary = float(employee.monthly_salary or 0)
     allowances = (float(employee.allowances or 0) +
@@ -170,9 +170,12 @@ def calculate_employee_costs(employee, country_code='MV'):
     }
 
     r = country_rates.get(country_code, country_rates['MV'])
-    pension_employee = round(gross * r['pension_emp'] / 100, 2)
-    pension_employer = round(gross * r['pension_er'] / 100, 2)
-    social_insurance = round(gross * r['social'] / 100, 2)
+    # Only calculate pension if business is registered with pension authority
+    pension_rate_emp = r['pension_emp'] if pension_registered else 0.0
+    pension_rate_er = r['pension_er'] if pension_registered else 0.0
+    pension_employee = round(gross * pension_rate_emp / 100, 2)
+    pension_employer = round(gross * pension_rate_er / 100, 2)
+    social_insurance = round(gross * r['social'] / 100, 2) if pension_registered else 0.0
     visa_amort = round(float(employee.quota_fee_paid or 0) / 12, 2)
     insurance_amort = round(float(employee.insurance_cost or 0) / 12, 2)
     gratuity_monthly = round((salary / 30) * r['gratuity_days'] / 12, 2) if r['gratuity_days'] > 0 else 0.0
@@ -259,6 +262,8 @@ class Business(db.Model):
     service_charge_rate = db.Column(db.Numeric(5,4), default=0.10)
     has_expiry_tracking = db.Column(db.Boolean, default=False)
     has_multi_location = db.Column(db.Boolean, default=False)
+    pension_registered = db.Column(db.Boolean, default=True)   # Optional — not all businesses pay pension
+    pension_portal = db.Column(db.String(100))                 # e.g. Koshaaru, EPFO, GOSI
     # Tax settings
     is_tax_registered = db.Column(db.Boolean, default=False)
     collect_tax_on_sales = db.Column(db.Boolean, default=False)
@@ -808,49 +813,6 @@ class StockTransfer(db.Model):
 
 
 class PurchaseOrder(db.Model):
-    """Purchase order from supplier"""
-    __tablename__ = 'purchase_orders'
-    id = db.Column(db.Integer, primary_key=True)
-    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
-    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
-    po_number = db.Column(db.String(50))
-    order_date = db.Column(db.Date, default=date.today)
-    expected_date = db.Column(db.Date)
-    received_date = db.Column(db.Date)
-    warehouse_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
-    status = db.Column(db.String(20), default='DRAFT')
-    currency = db.Column(db.String(3), default='MVR')
-    subtotal = db.Column(db.Numeric(12,2), default=0)
-    tax_amount = db.Column(db.Numeric(12,2), default=0)
-    total_amount = db.Column(db.Numeric(12,2), default=0)
-    items = db.Column(db.Text, default='[]')
-    notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    warehouse = db.relationship('Location', foreign_keys=[warehouse_id])
-
-
-
-class StockTransfer(db.Model):
-    """Inter-warehouse stock transfer with full audit trail"""
-    __tablename__ = 'stock_transfers'
-    id = db.Column(db.Integer, primary_key=True)
-    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('inventory.id'), nullable=False)
-    from_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
-    to_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
-    quantity = db.Column(db.Numeric(12,3), nullable=False)
-    transfer_date = db.Column(db.Date, default=date.today)
-    reference = db.Column(db.String(100))
-    notes = db.Column(db.Text)
-    status = db.Column(db.String(20), default='COMPLETED')
-    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    product = db.relationship('Product', backref='transfers')
-    from_location = db.relationship('Location', foreign_keys=[from_location_id])
-    to_location = db.relationship('Location', foreign_keys=[to_location_id])
-
-
-class PurchaseOrder(db.Model):
     """Purchase order from supplier to restock inventory"""
     __tablename__ = 'purchase_orders'
     id = db.Column(db.Integer, primary_key=True)
@@ -1314,7 +1276,7 @@ def api_business_settings():
     # Boolean toggle fields
     bool_fields = ['has_pos','has_inventory','has_payroll','has_full_accounting',
                    'has_multi_location','has_service_charge','has_expiry_tracking',
-                   'is_tax_registered','collect_tax_on_sales']
+                   'is_tax_registered','collect_tax_on_sales','pension_registered']
     for field in bool_fields:
         if field in data:
             setattr(business, field, bool(data[field]))
@@ -2569,7 +2531,7 @@ def api_employee_costs(emp_id):
     if err: return err
     e = Employee.query.filter_by(id=emp_id, business_id=business.id).first()
     if not e: return jsonify({"ok":False,"error":"Not found"})
-    costs = calculate_employee_costs(e, e.country_of_work or business.region or "MV")
+    costs = calculate_employee_costs(e, e.country_of_work or business.region or "MV", pension_registered=business.pension_registered if hasattr(business,'pension_registered') and business.pension_registered is not None else True)
     return jsonify({"ok":True,"employee":e.full_name,"costs":costs,
                    "alerts":e.compliance_alerts()})
 
@@ -2616,7 +2578,7 @@ def api_payroll_run():
     total_net = 0
     posted = 0
     for e in employees:
-        costs = calculate_employee_costs(e, e.country_of_work or business.region or "MV")
+        costs = calculate_employee_costs(e, e.country_of_work or business.region or "MV", pension_registered=business.pension_registered if hasattr(business,'pension_registered') and business.pension_registered is not None else True)
         gross = costs["base_salary"] + costs["allowances"]
         net = costs["net_salary"]
         pension_er = costs["pension_employer"]
