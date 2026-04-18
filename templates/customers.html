@@ -31,7 +31,7 @@
           <div style="display:flex;gap:4px">
             <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a>
             <button class="btn btn-sm" onclick="editCust({{ c.id }})" style="color:var(--amber);border-color:var(--amber)">Edit</button>
-            <button class="btn btn-sm" onclick="deleteCust({{ c.id }},'{{ c.name|replace(\"'\",\"\\\\'\") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
+            <button class="btn btn-sm" onclick="deleteCust({{ c.id }}, {{ c.name|tojson }})" style="color:var(--red);border-color:var(--red)">Delete</button>
           </div>
         </td>
       </tr>

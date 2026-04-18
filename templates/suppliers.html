@@ -29,7 +29,7 @@
         <td>
           <div style="display:flex;gap:4px">
             <button class="btn btn-sm" onclick="editSup({{ s.id }})" style="color:var(--amber);border-color:var(--amber)">Edit</button>
-            <button class="btn btn-sm" onclick="deleteSup({{ s.id }},'{{ s.name|replace(\"'\",\"\\\\'\") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
+            <button class="btn btn-sm" onclick="deleteSup({{ s.id }}, {{ s.name|tojson }})" style="color:var(--red);border-color:var(--red)">Delete</button>
           </div>
         </td>
       </tr>
