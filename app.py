@@ -1311,64 +1311,12 @@ def reports():
                            net_profit=net_profit, total_assets=total_assets, total_liabilities=total_liabilities,
                            total_equity=total_equity)
 
-@app.route('/settings')
-@login_required
-def settings():
-    user = current_user(); business = current_business()
-    user_businesses = UserBusiness.query.filter_by(user_id=user.id).all()
-    threshold = TAX_THRESHOLDS.get(business.region, {})
-    return render_template('settings.html', user=user, business=business, tax=business.tax_rules(),
-                           regions=TAX_RULES, business_types=BUSINESS_TYPES,
-                           user_businesses=user_businesses, threshold_info=threshold)
-
 @app.route('/ai')
 @login_required
 def ai_accountant():
     user = current_user(); business = current_business()
     history = AIConversation.query.filter_by(business_id=business.id).order_by(AIConversation.created_at.asc()).limit(30).all()
     return render_template('ai.html', user=user, business=business, history=history, tax=business.tax_rules())
-
-
-
-@app.route("/api/business/settings", methods=["POST"])
-@login_required
-def api_business_settings():
-    """Save business module toggles and settings"""
-    business, err = api_business_guard()
-    if err: return err
-    data = request.get_json()
-    # Boolean toggle fields
-    bool_fields = ['has_pos','has_inventory','has_payroll','has_full_accounting',
-                   'has_multi_location','has_service_charge','has_expiry_tracking',
-                   'is_tax_registered','collect_tax_on_sales','pension_registered']
-    str_fields = ['gst_sector','gst_sector_type','display_name','address_line1',
-                  'phone','email','website','bank_name','bank_account_name',
-                  'bank_account_number','bank_swift','tax_registration_number',
-                  'pension_portal']
-    for field in str_fields:
-        if field in data and hasattr(business, field):
-            setattr(business, field, data[field])
-    for field in bool_fields:
-        if field in data:
-            setattr(business, field, bool(data[field]))
-    # Numeric fields
-    numeric_fields = ['service_charge_rate']
-    for field in numeric_fields:
-        if field in data:
-            try: setattr(business, field, float(data[field]))
-            except: pass
-    # Text fields
-    text_fields = ['industry_type','region','business_type','secondary_currency',
-                   'invoice_prefix','quote_prefix','invoice_notes']
-    for field in text_fields:
-        if field in data and data[field] is not None:
-            setattr(business, field, data[field])
-    try:
-        db.session.commit()
-        return jsonify({"ok":True,"message":"Settings saved"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
 
 
 
@@ -1392,23 +1340,6 @@ def api_business_profile():
     db.session.commit()
     return jsonify({"ok":True,"message":"Business profile updated"})
 
-
-@app.route("/api/business/logo")
-@login_required
-def api_business_logo():
-    business, err = api_business_guard()
-    if err: return ("", 404)
-    if business.logo_data:
-        import base64 as b64lib
-        from flask import Response
-        img_data = b64lib.b64decode(business.logo_data)
-        return Response(img_data, mimetype=business.logo_type or "image/png")
-    return "", 404
-
-
-
-
-# ── Locations & Branches ──────────────────────────────────────────────────────
 
 @app.route("/locations")
 @business_required
@@ -1546,18 +1477,6 @@ def api_business_industry():
 
 
 # ── Professional Invoices & Quotes ────────────────────────────────────────────
-
-@app.route("/invoice/<int:inv_id>/pdf")
-@login_required
-def invoice_pdf(inv_id):
-    business = current_business()
-    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
-    if not inv: return "Invoice not found", 404
-    items = json.loads(inv.items or "[]")
-    html = render_template("invoice_pdf.html", business=business, invoice=inv,
-                           items=items, tax=business.tax_rules(), doc_type="INVOICE")
-    return html
-
 
 @app.route("/quote/<int:qid>/pdf")
 @login_required
@@ -3899,6 +3818,73 @@ def api_supplier_delete_v2(sid):
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
+
+
+
+
+@app.route("/api/settings/logo", methods=["POST"])
+@login_required
+def api_settings_logo():
+    """Upload business logo"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    logo_b64 = data.get("logo")
+    if not logo_b64:
+        return jsonify({"ok":False,"error":"No image data"})
+    # Validate it is an image
+    if not logo_b64.startswith("data:image"):
+        return jsonify({"ok":False,"error":"Invalid image format"})
+    # Store as base64 data URL (max ~500KB)
+    if len(logo_b64) > 700000:
+        return jsonify({"ok":False,"error":"Image too large. Please use an image under 500KB."})
+    business.logo_data = logo_b64
+    try:
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Logo uploaded"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/business/logo")
+@login_required
+def api_business_logo():
+    """Serve business logo"""
+    business = current_business()
+    if not business or not business.logo_data:
+        return "", 404
+    if business.logo_data.startswith("data:image"):
+        # Return the base64 part
+        import base64
+        header, data = business.logo_data.split(",",1)
+        mime = header.split(";")[0].replace("data:","")
+        img_bytes = base64.b64decode(data)
+        from flask import Response
+        return Response(img_bytes, mimetype=mime)
+    return "", 404
+
+
+@app.route("/invoice/<int:inv_id>/pdf")
+@login_required
+def invoice_pdf(inv_id):
+    """Generate professional tax invoice PDF"""
+    user = current_user(); business = current_business()
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return "Invoice not found", 404
+    tax = business.tax_rules()
+    customer = Customer.query.get(inv.customer_id) if inv.customer_id else None
+    # Parse line items
+    try:
+        items = json.loads(inv.line_items or "[]")
+    except:
+        items = []
+    # Build HTML invoice
+    html = render_template("invoice_pdf.html",
+        business=business, inv=inv, customer=customer,
+        items=items, tax=tax, user=user,
+        today=date.today())
+    return html
 
 
 
