@@ -3827,6 +3827,49 @@ def api_supplier_delete_v2(sid):
 
 
 
+@app.route("/settings")
+@business_required
+def settings():
+    user = current_user()
+    business = current_business()
+    return render_template("settings.html", user=user, business=business,
+                           tax=business.tax_rules(), today=date.today())
+
+
+@app.route("/api/settings/update", methods=["POST"])
+@login_required
+def api_settings_update():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    str_fields = ["display_name","legal_name","registration_number","address_line1",
+                  "address_line2","city","country_full","phone","email","website",
+                  "tax_registration_number","gst_sector","gst_sector_type",
+                  "bank_name","bank_account_name","bank_account_number","bank_swift",
+                  "bank_iban","pension_portal","base_currency","invoice_prefix",
+                  "invoice_notes","invoice_terms"]
+    for f in str_fields:
+        if f in data and hasattr(business, f):
+            setattr(business, f, str(data[f]).strip() if data[f] else "")
+    bool_fields = ["has_pos","has_inventory","has_payroll","has_full_accounting",
+                   "has_multi_location","has_service_charge","has_expiry_tracking",
+                   "is_tax_registered","collect_tax_on_sales","pension_registered"]
+    for f in bool_fields:
+        if f in data and hasattr(business, f):
+            setattr(business, f, bool(data[f]))
+    if "service_charge_rate" in data:
+        try: business.service_charge_rate = float(data["service_charge_rate"])
+        except: pass
+    try:
+        db.session.commit()
+        if "display_name" in data and data["display_name"]:
+            session["business_name"] = data["display_name"]
+        return jsonify({"ok":True,"message":"Settings saved"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
 @app.route("/api/settings/logo", methods=["POST"])
 @login_required
 def api_settings_logo():
