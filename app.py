@@ -8,6 +8,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 
 app = Flask(__name__)
+
+@app.template_filter('from_json')
+def from_json_filter(s):
+    try: return json.loads(s or '[]')
+    except: return []
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 db_url = os.environ.get('DATABASE_URL', 'sqlite:///ledgr.db')
 if db_url.startswith('postgres://'): db_url = db_url.replace('postgres://', 'postgresql://', 1)
@@ -330,6 +335,9 @@ class Business(db.Model):
     pension_portal = db.Column(db.String(100))
     gst_sector = db.Column(db.String(20), default='general')
     gst_sector_type = db.Column(db.String(50))
+    ayrshare_api_key = db.Column(db.String(200))    # Ayrshare API key for social media
+    onboarding_complete = db.Column(db.Boolean, default=False)
+    user_role = db.Column(db.String(20), default='owner')  # owner / accountant / staff
     # Tax settings
     is_tax_registered = db.Column(db.Boolean, default=False)
     collect_tax_on_sales = db.Column(db.Boolean, default=False)
@@ -901,6 +909,42 @@ class PurchaseOrder(db.Model):
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     warehouse = db.relationship('Location', foreign_keys=[warehouse_id])
+
+
+class SocialPost(db.Model):
+    """Scheduled or published social media post"""
+    __tablename__ = 'social_posts'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    caption = db.Column(db.Text, nullable=False)
+    platforms = db.Column(db.String(200))           # JSON list: ["instagram","facebook","twitter"]
+    media_url = db.Column(db.Text)                  # Image/video URL or base64
+    media_type = db.Column(db.String(20))           # image / video / text
+    status = db.Column(db.String(20), default='DRAFT')  # DRAFT/SCHEDULED/PUBLISHED/FAILED
+    scheduled_at = db.Column(db.DateTime)
+    published_at = db.Column(db.DateTime)
+    ayrshare_post_id = db.Column(db.String(100))    # External API post ID
+    error_message = db.Column(db.Text)
+    hashtags = db.Column(db.Text)                   # Space-separated hashtags
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='social_posts')
+
+
+class CreditNote(db.Model):
+    """Credit note against an invoice"""
+    __tablename__ = 'credit_notes'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'))
+    credit_note_number = db.Column(db.String(50))
+    date_issued = db.Column(db.Date, default=date.today)
+    amount = db.Column(db.Numeric(12,2))
+    reason = db.Column(db.Text)
+    status = db.Column(db.String(20), default='ISSUED')
+    journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    invoice = db.relationship('Invoice', backref='credit_notes')
 
 with app.app_context():
     try:
@@ -3847,7 +3891,7 @@ def api_settings_update():
                   "tax_registration_number","gst_sector","gst_sector_type",
                   "bank_name","bank_account_name","bank_account_number","bank_swift",
                   "bank_iban","pension_portal","base_currency","invoice_prefix",
-                  "invoice_notes","invoice_terms"]
+                  "invoice_notes","invoice_terms","ayrshare_api_key"]
     for f in str_fields:
         if f in data and hasattr(business, f):
             setattr(business, f, str(data[f]).strip() if data[f] else "")
@@ -3933,6 +3977,361 @@ def invoice_pdf(inv_id):
         items=items, tax=tax, user=user,
         today=date.today())
     return html
+
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ONBOARDING WIZARD
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/onboarding")
+@login_required
+def onboarding():
+    user = current_user()
+    business = current_business()
+    if business and getattr(business, "onboarding_complete", False):
+        return redirect(url_for("dashboard"))
+    return render_template("onboarding.html", user=user, business=business)
+
+
+@app.route("/api/onboarding/complete", methods=["POST"])
+@login_required
+def api_onboarding_complete():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    # Apply all onboarding choices
+    if "user_role" in data:
+        business.user_role = data["user_role"]
+    if "gst_sector" in data:
+        business.gst_sector = data["gst_sector"]
+    if "gst_sector_type" in data:
+        business.gst_sector_type = data["gst_sector_type"]
+    if "is_tax_registered" in data:
+        business.is_tax_registered = bool(data["is_tax_registered"])
+    if "tax_registration_number" in data:
+        business.tax_registration_number = data["tax_registration_number"]
+    if "has_pos" in data:
+        business.has_pos = bool(data["has_pos"])
+    if "has_inventory" in data:
+        business.has_inventory = bool(data["has_inventory"])
+    if "has_payroll" in data:
+        business.has_payroll = bool(data["has_payroll"])
+    if "pension_registered" in data:
+        business.pension_registered = bool(data["pension_registered"])
+    if "has_service_charge" in data:
+        business.has_service_charge = bool(data["has_service_charge"])
+    business.onboarding_complete = True
+    db.session.commit()
+    return jsonify({"ok": True, "redirect": "/dashboard"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# MIRA GST RETURN (MIRA 205 / MIRA 206)
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/reports/gst-return")
+@business_required
+def report_gst_return():
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    from datetime import date
+    period = request.args.get("period","month")
+    today = date.today()
+    if period == "month":
+        start = date(today.year, today.month, 1); end = today
+        period_label = today.strftime("%B %Y")
+    elif period == "quarter":
+        q = (today.month-1)//3
+        start = date(today.year, q*3+1, 1); end = today
+        period_label = f"Q{q+1} {today.year}"
+    else:
+        try:
+            start = datetime.strptime(request.args.get("start",""), "%Y-%m-%d").date()
+            end = datetime.strptime(request.args.get("end",""), "%Y-%m-%d").date()
+            period_label = start.strftime("%d %b %Y") + " to " + end.strftime("%d %b %Y")
+        except:
+            start = date(today.year, today.month, 1); end = today
+            period_label = today.strftime("%B %Y")
+
+    # Box 1: Total supplies (all revenue)
+    total_supplies = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
+        LedgerEntry.business_id==business.id,
+        LedgerEntry.entry_type=="REVENUE",
+        LedgerEntry.timestamp >= datetime.combine(start, datetime.min.time()),
+        LedgerEntry.timestamp <= datetime.combine(end, datetime.max.time())
+    ).scalar() or 0)
+
+    # Box 2: Exempt / zero-rated (not implemented yet — 0)
+    exempt_supplies = 0.0
+
+    # Box 3: Taxable supplies
+    taxable_supplies = total_supplies - exempt_supplies
+
+    # Box 4: Output tax
+    output_tax = round(taxable_supplies * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)  # tax-inclusive
+
+    # Box 5: Total purchases (AP documents)
+    total_purchases = float(db.session.query(db.func.sum(Document.total_amount)).filter(
+        Document.business_id==business.id,
+        Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
+        Document.invoice_date >= start,
+        Document.invoice_date <= end
+    ).scalar() or 0)
+
+    # Box 6: Input tax (purchases from GST-registered suppliers)
+    input_tax = round(total_purchases * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
+
+    # Box 7: Net tax payable
+    net_tax = round(output_tax - input_tax, 2)
+
+    # Due date: 28th of following month
+    if end.month == 12:
+        due_date = date(end.year+1, 1, 28)
+    else:
+        due_date = date(end.year, end.month+1, 28)
+
+    return render_template("report_gst.html",
+        user=user, business=business, tax=tax,
+        period=period, period_label=period_label,
+        start=start, end=end, today=today, due_date=due_date,
+        total_supplies=total_supplies, exempt_supplies=exempt_supplies,
+        taxable_supplies=taxable_supplies, output_tax=output_tax,
+        total_purchases=total_purchases, input_tax=input_tax,
+        net_tax=net_tax)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CREDIT NOTES
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/invoice/<int:inv_id>/credit-note", methods=["POST"])
+@login_required
+def api_create_credit_note(inv_id):
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    data = request.get_json()
+    amount = float(data.get("amount", inv.total_amount or 0))
+    reason = data.get("reason","Credit note")
+    try:
+        # Generate credit note number
+        count = CreditNote.query.filter_by(business_id=business.id).count()
+        cn_number = (business.invoice_prefix or "INV") + "-CN-" + str(count+1).zfill(4)
+        cn = CreditNote(
+            business_id=business.id,
+            invoice_id=inv.id,
+            credit_note_number=cn_number,
+            amount=amount,
+            reason=reason,
+            status="ISSUED"
+        )
+        db.session.add(cn)
+        # Post reversal journal
+        lines = [
+            {"account_code":"4000","debit":amount,"credit":0,"description":"Credit note: "+cn_number},
+            {"account_code":"1100","debit":0,"credit":amount,"description":"AR reversed: "+inv.invoice_number}
+        ]
+        je = post_journal(business.id, user.id,
+                         "Credit Note "+cn_number+" for Invoice "+inv.invoice_number,
+                         cn_number, "CREDIT_NOTE", lines)
+        cn.journal_entry_id = je.id
+        # Update invoice
+        inv.amount_paid = float(inv.amount_paid or 0) + amount
+        if inv.amount_paid >= float(inv.total_amount or 0):
+            inv.status = "PAID"
+        db.session.commit()
+        return jsonify({"ok":True,"cn_number":cn_number,"message":"Credit note "+cn_number+" issued"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# SOCIAL MEDIA MANAGEMENT
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/social")
+@business_required
+def social():
+    user = current_user(); business = current_business()
+    posts = SocialPost.query.filter_by(business_id=business.id).order_by(
+        SocialPost.created_at.desc()).limit(50).all()
+    scheduled = [p for p in posts if p.status=="SCHEDULED"]
+    published = [p for p in posts if p.status=="PUBLISHED"]
+    drafts = [p for p in posts if p.status=="DRAFT"]
+    return render_template("social.html", user=user, business=business,
+                           posts=posts, scheduled=scheduled,
+                           published=published, drafts=drafts,
+                           has_ayrshare=bool(getattr(business,"ayrshare_api_key",None)))
+
+
+@app.route("/api/social/post", methods=["POST"])
+@login_required
+def api_social_post():
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    caption = (data.get("caption") or "").strip()
+    platforms = data.get("platforms", [])
+    scheduled_at_str = data.get("scheduled_at")
+    hashtags = data.get("hashtags","")
+    if not caption: return jsonify({"ok":False,"error":"Caption is required"})
+    if not platforms: return jsonify({"ok":False,"error":"Select at least one platform"})
+    try:
+        scheduled_at = datetime.strptime(scheduled_at_str, "%Y-%m-%dT%H:%M") if scheduled_at_str else None
+    except: scheduled_at = None
+
+    status = "SCHEDULED" if scheduled_at else "DRAFT"
+    post = SocialPost(
+        business_id=business.id,
+        caption=caption,
+        platforms=json.dumps(platforms),
+        hashtags=hashtags,
+        status=status,
+        scheduled_at=scheduled_at,
+        created_by=user.id
+    )
+    db.session.add(post)
+    db.session.commit()
+
+    # If no scheduled time and Ayrshare key exists — publish immediately
+    ayrshare_key = getattr(business, "ayrshare_api_key", None)
+    if not scheduled_at and ayrshare_key:
+        try:
+            full_caption = caption
+            if hashtags: full_caption += "\n\n" + hashtags
+            body = json.dumps({
+                "post": full_caption,
+                "platforms": platforms
+            }).encode()
+            req = urllib.request.Request(
+                "https://app.ayrshare.com/api/post",
+                data=body,
+                headers={"Content-Type":"application/json","Authorization":"Bearer "+ayrshare_key}
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read())
+                if result.get("status") == "success":
+                    post.status = "PUBLISHED"
+                    post.published_at = datetime.utcnow()
+                    post.ayrshare_post_id = str(result.get("id",""))
+                else:
+                    post.status = "FAILED"
+                    post.error_message = str(result.get("errors","Unknown error"))
+        except Exception as e:
+            post.status = "FAILED"
+            post.error_message = str(e)
+        db.session.commit()
+
+    return jsonify({"ok":True,"post_id":post.id,"status":post.status,
+                   "message":"Post " + post.status.lower()})
+
+
+@app.route("/api/social/<int:pid>/delete", methods=["POST"])
+@login_required
+def api_social_delete(pid):
+    business, err = api_business_guard()
+    if err: return err
+    post = SocialPost.query.filter_by(id=pid, business_id=business.id).first()
+    if not post: return jsonify({"ok":False,"error":"Not found"})
+    db.session.delete(post)
+    db.session.commit()
+    return jsonify({"ok":True})
+
+
+@app.route("/api/social/connect-ayrshare", methods=["POST"])
+@login_required
+def api_social_connect_ayrshare():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    key = (data.get("api_key") or "").strip()
+    if not key: return jsonify({"ok":False,"error":"API key required"})
+    # Test the key
+    try:
+        req = urllib.request.Request(
+            "https://app.ayrshare.com/api/user",
+            headers={"Authorization":"Bearer "+key}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+            if result.get("status") == "error":
+                return jsonify({"ok":False,"error":"Invalid API key"})
+        business.ayrshare_api_key = key
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Connected to Ayrshare"})
+    except Exception as e:
+        return jsonify({"ok":False,"error":"Could not verify key: "+str(e)[:100]})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# POS MULTI-TERMINAL
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/pos/terminal/<int:loc_id>")
+@business_required
+def pos_terminal(loc_id):
+    """POS for a specific location/terminal"""
+    user = current_user(); business = current_business()
+    location = Location.query.filter_by(id=loc_id, business_id=business.id).first()
+    if not location: return redirect(url_for("pos"))
+    products = Product.query.filter(
+        Product.business_id==business.id,
+        db.or_(Product.is_active==True, Product.is_active==None)
+    ).all()
+    for p in products:
+        # Get stock for this location
+        loc_stock = ProductLocation.query.filter_by(
+            product_id=p.id, location_id=loc_id).first()
+        p.display_stock = float(loc_stock.quantity if loc_stock else p.stock_level or 0)
+    bank_accounts = BankAccount.query.filter_by(business_id=business.id, is_active=True).all()
+    return render_template("pos.html", user=user, business=business,
+                           products=products, tax=business.tax_rules(),
+                           bank_accounts=bank_accounts,
+                           terminal=location,
+                           terminal_name=location.pos_terminal_name or location.name)
+
+
+@app.route("/api/location/<int:loc_id>/set-terminal", methods=["POST"])
+@login_required
+def api_set_pos_terminal(loc_id):
+    business, err = api_business_guard()
+    if err: return err
+    loc = Location.query.filter_by(id=loc_id, business_id=business.id).first()
+    if not loc: return jsonify({"ok":False,"error":"Location not found"})
+    data = request.get_json()
+    loc.is_pos_terminal = bool(data.get("is_pos_terminal", True))
+    loc.pos_terminal_name = data.get("terminal_name", loc.name)
+    loc.pos_receipt_header = data.get("receipt_header","")
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Terminal configured"})
+
+
+@app.route("/api/invoice/<int:inv_id>/send-email", methods=["POST"])
+@login_required
+def api_send_invoice_email(inv_id):
+    """Send invoice PDF link via email — placeholder for SMTP integration"""
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    data = request.get_json()
+    recipient = data.get("email","")
+    if not recipient: return jsonify({"ok":False,"error":"Email address required"})
+    # Generate invoice URL
+    invoice_url = f"https://ledgrglobal.com/invoice/{inv_id}/pdf"
+    # For now return the URL — full SMTP requires email credentials in settings
+    return jsonify({
+        "ok":True,
+        "message":"Invoice link ready — email sending requires SMTP setup in Settings",
+        "invoice_url":invoice_url,
+        "note":"Copy the link to share with your customer, or set up SMTP in Settings to enable direct sending"
+    })
 
 
 
