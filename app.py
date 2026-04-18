@@ -2370,10 +2370,10 @@ def api_employee_add():
     country = data.get("country_of_work", business.region or "MV")
     emp_type = data.get("employment_type", "local")
     salary = float(data.get("monthly_salary", 0))
-    rules = get_employment_rules(country)
-    # Auto-calculate pension
-    pension_emp = round(salary * rules.get("pension_employee_pct", 0) / 100, 2)
-    pension_er = round(salary * rules.get("pension_employer_pct", 0) / 100, 2)
+    # Country pension rules inline (get_employment_rules removed — using EMPLOYMENT_RULES directly)
+    _rules = EMPLOYMENT_RULES.get(country, EMPLOYMENT_RULES.get('MV', {}))
+    pension_emp = round(salary * _rules.get("pension_employee_pct", 7.0) / 100, 2)
+    pension_er = round(salary * _rules.get("pension_employer_pct", 7.0) / 100, 2)
     try:
         e = Employee(business_id=business.id, full_name=name)
         e.employee_id = data.get("employee_id", "EMP-" + str(Employee.query.filter_by(business_id=business.id).count() + 1).zfill(3))
@@ -3066,12 +3066,17 @@ def api_import_customers_csv():
                 for i,h in enumerate(hl):
                     if n in h: return headers[i]
             return None
-        name_col = find_col(['name','customer name','company','full name'], headers)
-        email_col = find_col(['email','e-mail','email address'], headers)
-        phone_col = find_col(['phone','telephone','mobile','contact'], headers)
-        balance_col = find_col(['balance','outstanding','amount due','open balance'], headers)
+        name_col = find_col(['name','customer name','company','full name','display name',
+                             'customer','contact name','client'], headers)
+        email_col = find_col(['email','e-mail','email address','mail'], headers)
+        phone_col = find_col(['phone','telephone','mobile','contact','cell'], headers)
+        balance_col = find_col(['balance','outstanding','amount due','open balance','current balance'], headers)
         if not name_col:
-            return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+            # Try first column as name
+            if headers:
+                name_col = headers[0]
+            else:
+                return jsonify({"ok":False,"error":"Could not find name column. Headers found: " + ", ".join(headers[:10]) + ". Make sure your CSV has a Name or Customer Name column."})
         imported = 0; skipped = 0
         for row in reader:
             name = (row.get(name_col) or "").strip()
@@ -3109,11 +3114,15 @@ def api_import_suppliers_csv():
                 for i,h in enumerate(hl):
                     if n in h: return headers[i]
             return None
-        name_col = find_col(['name','vendor name','supplier name','company'], headers)
-        email_col = find_col(['email','e-mail'], headers)
-        phone_col = find_col(['phone','telephone','mobile'], headers)
+        name_col = find_col(['name','vendor name','supplier name','company','display name',
+                             'vendor','supplier','contact name'], headers)
+        email_col = find_col(['email','e-mail','mail'], headers)
+        phone_col = find_col(['phone','telephone','mobile','cell'], headers)
         if not name_col:
-            return jsonify({"ok":False,"error":"Could not find name column"})
+            if headers:
+                name_col = headers[0]
+            else:
+                return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
         imported = 0; skipped = 0
         for row in reader:
             name = (row.get(name_col) or "").strip()
