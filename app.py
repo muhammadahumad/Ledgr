@@ -3206,50 +3206,80 @@ def api_bank_upload_csv():
 @app.route("/api/import/customers-csv", methods=["POST"])
 @login_required
 def api_import_customers_csv():
-    """Import customers from QB/Xero/Odoo CSV export"""
+    """Import customers from QB/Xero/Odoo CSV or Excel export"""
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
     csv_content = data.get("csv_content", "")
+    file_type = data.get("file_type", "csv")  # csv or xlsx
     if not csv_content:
-        return jsonify({"ok":False,"error":"No CSV content"})
+        return jsonify({"ok":False,"error":"No file content"})
     try:
-        import csv, io
-        reader = csv.DictReader(io.StringIO(csv_content))
-        headers = reader.fieldnames or []
+        import csv, io, base64
+
         def find_col(names, headers):
-            hl = [h.lower().strip().replace('"','').replace("'",'') for h in headers]
+            hl = [h.lower().strip().replace('"','').replace("'",'').replace('\ufeff','') for h in headers]
             for n in names:
                 for i,h in enumerate(hl):
                     if n in h: return headers[i]
             return None
-        # Clean headers of BOM and quotes
-        headers = [h.strip().replace('\ufeff','').replace('"','').replace("'",'') for h in (reader.fieldnames or [])]
+
+        rows = []
+        headers = []
+
+        if file_type == "xlsx":
+            # Parse Excel file
+            import openpyxl
+            file_bytes = base64.b64decode(csv_content)
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            if not all_rows:
+                return jsonify({"ok":False,"error":"Excel file is empty"})
+            # First row is headers
+            headers = [str(h or '').strip() for h in all_rows[0]]
+            for row in all_rows[1:]:
+                rows.append({headers[i]: str(v or '').strip() for i,v in enumerate(row) if i < len(headers)})
+        else:
+            # CSV — handle BOM and encoding
+            if csv_content.startswith('\ufeff'):
+                csv_content = csv_content[1:]
+            reader = csv.DictReader(io.StringIO(csv_content, newline=''))
+            raw_headers = reader.fieldnames or []
+            headers = [h.strip().replace('\ufeff','').replace('"','') for h in raw_headers]
+            for row in reader:
+                clean = {headers[i]: str(v or '').strip() for i,(k,v) in enumerate(row.items()) if i < len(headers)}
+                rows.append(clean)
+
         name_col = find_col(['name','customer name','company','full name','display name',
-                             'customer','contact name','client name','vendor'], headers)
+                             'customer','contact name','client name'], headers)
         email_col = find_col(['email','e-mail','email address','mail'], headers)
         phone_col = find_col(['phone','telephone','mobile','contact','cell'], headers)
-        balance_col = find_col(['balance','outstanding','amount due','open balance','current balance'], headers)
+        balance_col = find_col(['balance','outstanding','amount due','open balance'], headers)
+
         if not name_col:
-            # Try first column as name
-            if headers:
-                name_col = headers[0]
-            else:
-                return jsonify({"ok":False,"error":"Could not find name column. Headers found: " + ", ".join(headers[:10]) + ". Make sure your CSV has a Name or Customer Name column."})
+            name_col = headers[0] if headers else None
+        if not name_col:
+            return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+
         imported = 0; skipped = 0
-        for row in reader:
+        for row in rows:
             name = (row.get(name_col) or "").strip()
-            if not name: continue
+            if not name or name.lower() in ['name','customer name','total','subtotal']: continue
             existing = Customer.query.filter_by(business_id=business.id, name=name).first()
             if existing: skipped += 1; continue
+            try:
+                bal_raw = str(row.get(balance_col) or '0').replace(',','').replace('$','').strip()
+                balance = abs(float(bal_raw)) if bal_raw and bal_raw not in ['','—','-'] else 0
+            except: balance = 0
             c = Customer(business_id=business.id, name=name,
                         email=(row.get(email_col) or "").strip() if email_col else "",
                         phone=(row.get(phone_col) or "").strip() if phone_col else "",
-                        outstanding_balance=abs(float(str(row.get(balance_col) or 0).replace(',',''))) if balance_col else 0)
+                        outstanding_balance=balance)
             db.session.add(c); imported += 1
         db.session.commit()
         return jsonify({"ok":True,"imported":imported,"skipped":skipped,
-                       "message":str(imported) + " customers imported, " + str(skipped) + " skipped (already exist)"})
+                       "message":str(imported) + " customers imported, " + str(skipped) + " already existed"})
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
@@ -3258,35 +3288,54 @@ def api_import_customers_csv():
 @app.route("/api/import/suppliers-csv", methods=["POST"])
 @login_required
 def api_import_suppliers_csv():
-    """Import suppliers/vendors from QB/Xero/Odoo CSV export"""
+    """Import suppliers from QB/Xero/Odoo CSV or Excel export"""
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
-    csv_content = data.get("csv_content", "")
+    csv_content = data.get("csv_content","")
+    file_type = data.get("file_type","csv")
+    if not csv_content:
+        return jsonify({"ok":False,"error":"No file content"})
     try:
-        import csv, io
-        reader = csv.DictReader(io.StringIO(csv_content))
-        headers = reader.fieldnames or []
+        import csv, io, base64
+
         def find_col(names, headers):
-            hl = [h.lower().strip().replace('"','').replace("'",'') for h in headers]
+            hl = [h.lower().strip().replace('"','').replace("'",'').replace('\ufeff','') for h in headers]
             for n in names:
                 for i,h in enumerate(hl):
                     if n in h: return headers[i]
             return None
-        headers = [h.strip().replace('\ufeff','').replace('"','').replace("'",'') for h in (reader.fieldnames or [])]
+
+        rows = []; headers = []
+        if file_type == "xlsx":
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(csv_content)), read_only=True, data_only=True)
+            ws = wb.active
+            all_rows = list(ws.iter_rows(values_only=True))
+            if not all_rows: return jsonify({"ok":False,"error":"Empty file"})
+            headers = [str(h or '').strip() for h in all_rows[0]]
+            for row in all_rows[1:]:
+                rows.append({headers[i]: str(v or '').strip() for i,v in enumerate(row) if i < len(headers)})
+        else:
+            if csv_content.startswith('\ufeff'): csv_content = csv_content[1:]
+            reader = csv.DictReader(io.StringIO(csv_content, newline=''))
+            headers = [h.strip().replace('\ufeff','').replace('"','') for h in (reader.fieldnames or [])]
+            for row in reader:
+                rows.append({headers[i]: str(v or '').strip() for i,(k,v) in enumerate(row.items()) if i < len(headers)})
+
         name_col = find_col(['name','vendor name','supplier name','company','display name',
-                             'vendor','supplier','contact name','vendor/supplier'], headers)
+                             'vendor','supplier','contact name'], headers)
         email_col = find_col(['email','e-mail','mail'], headers)
-        phone_col = find_col(['phone','telephone','mobile','cell'], headers)
+        phone_col = find_col(['phone','telephone','mobile'], headers)
         if not name_col:
-            if headers:
-                name_col = headers[0]
-            else:
-                return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+            name_col = headers[0] if headers else None
+        if not name_col:
+            return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+
         imported = 0; skipped = 0
-        for row in reader:
+        for row in rows:
             name = (row.get(name_col) or "").strip()
-            if not name: continue
+            if not name or name.lower() in ['name','vendor name','total']: continue
             existing = Supplier.query.filter_by(business_id=business.id, name=name).first()
             if existing: skipped += 1; continue
             s = Supplier(business_id=business.id, name=name,
@@ -3294,7 +3343,8 @@ def api_import_suppliers_csv():
                         phone=(row.get(phone_col) or "").strip() if phone_col else "")
             db.session.add(s); imported += 1
         db.session.commit()
-        return jsonify({"ok":True,"imported":imported,"skipped":skipped})
+        return jsonify({"ok":True,"imported":imported,"skipped":skipped,
+                       "message":str(imported)+" suppliers imported, "+str(skipped)+" already existed"})
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
