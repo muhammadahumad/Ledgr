@@ -1,0 +1,96 @@
+{% extends "base.html" %}{% block title %}GST Return — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">GST Return — {{ 'MIRA 205' if business.gst_sector != 'tourism' else 'MIRA 206' }}</div>
+  <div class="page-sub">{{ business.display_name() }} · {{ period_label }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button onclick="window.print()" class="btn">🖨 Print</button>
+    <a href="/reports" class="btn">← Reports</a>
+  </div>
+</div>
+<div class="content">
+  <div class="card" style="margin-bottom:14px">
+    <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div><div class="field-label">Period</div>
+        <select class="select-input" name="period" onchange="this.form.submit()">
+          <option value="month" {% if period=='month' %}selected{% endif %}>This Month</option>
+          <option value="quarter" {% if period=='quarter' %}selected{% endif %}>This Quarter</option>
+          <option value="custom" {% if period=='custom' %}selected{% endif %}>Custom</option>
+        </select></div>
+      {% if period=='custom' %}
+      <div><div class="field-label">From</div><input class="field-input" type="date" name="start" value="{{ start }}"></div>
+      <div><div class="field-label">To</div><input class="field-input" type="date" name="end" value="{{ end }}"></div>
+      <button type="submit" class="btn btn-primary" style="align-self:flex-end">Apply</button>
+      {% endif %}
+    </form>
+  </div>
+
+  <div class="card" id="print-area" style="max-width:680px;margin:0 auto">
+    <!-- Header -->
+    <div style="text-align:center;padding-bottom:16px;border-bottom:2px solid var(--border);margin-bottom:20px">
+      {% if business.logo_data %}<img src="/api/business/logo" style="height:45px;object-fit:contain;margin:0 auto 8px;display:block">{% endif %}
+      <div style="font-size:16px;font-weight:700;color:var(--text)">{{ business.display_name() }}</div>
+      {% if business.is_tax_registered %}
+      <div style="font-size:11px;color:var(--text3)">{{ tax.tax_name }} TIN: {{ business.tax_registration_number or '—' }}</div>
+      {% endif %}
+      <div style="font-size:13px;font-weight:700;margin-top:10px">
+        {% if business.gst_sector == 'tourism' %}MIRA 206 — GST RETURN (TOURISM SECTOR){% else %}MIRA 205 — GST RETURN (GENERAL SECTOR){% endif %}
+      </div>
+      <div style="font-size:12px;color:var(--text2)">{{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}</div>
+      <div style="font-size:11px;color:var(--red);margin-top:4px">Filing due: {{ due_date.strftime('%d %b %Y') }}</div>
+    </div>
+
+    <!-- Output Tax -->
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mint);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px">Part A — Output Tax</div>
+    {% macro box(num, label, value, color='var(--text)') %}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="width:30px;height:30px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--text2)">{{ num }}</div>
+        <span style="font-size:13px;color:var(--text2)">{{ label }}</span>
+      </div>
+      <span style="font-family:var(--mono);font-weight:700;font-size:14px;color:{{ color }}">{{ tax.currency }} {{ "%.2f"|format(value) }}</span>
+    </div>
+    {% endmacro %}
+    {{ box(1, 'Total value of all supplies (Sales)', total_supplies) }}
+    {{ box(2, 'Zero-rated and exempt supplies', exempt_supplies, 'var(--text3)') }}
+    {{ box(3, 'Taxable supplies (Box 1 minus Box 2)', taxable_supplies) }}
+    {{ box(4, 'Output tax (' + (tax.tax_rate * 100)|round(1)|string + '% of Box 3)', output_tax, 'var(--mint)') }}
+
+    <!-- Input Tax -->
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:8px;margin-top:12px">Part B — Input Tax</div>
+    {{ box(5, 'Total value of purchases and expenses', total_purchases) }}
+    {{ box(6, 'Input tax claimed (purchases from GST-registered suppliers)', input_tax, '#60a5fa') }}
+
+    <!-- Net -->
+    <div style="margin-top:16px;padding:16px;border:2px solid {% if net_tax > 0 %}var(--red){% elif net_tax < 0 %}var(--mint){% else %}var(--border){% endif %};border-radius:9px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:700;font-size:14px;color:var(--text)">
+            {% if net_tax > 0 %}Box 7: Tax Payable to MIRA{% elif net_tax < 0 %}Box 7: Refund Claimable{% else %}Box 7: No Tax Due{% endif %}
+          </div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">Output tax (Box 4) minus Input tax (Box 6)</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:{% if net_tax > 0 %}var(--red){% elif net_tax < 0 %}var(--mint){% else %}var(--text3){% endif %}">
+          {{ tax.currency }} {{ "%.2f"|format(net_tax|abs) }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Instructions -->
+    <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:8px;font-size:11px;color:var(--text3)">
+      <div style="font-weight:600;color:var(--text2);margin-bottom:6px">📋 Filing Instructions</div>
+      <div>1. Log in to <strong>MIRAconnect</strong> at mira.gov.mv</div>
+      <div>2. Select <strong>{% if business.gst_sector == 'tourism' %}MIRA 206{% else %}MIRA 205{% endif %}</strong> from the GST Returns section</div>
+      <div>3. Enter the values above in the corresponding boxes</div>
+      <div>4. Submit and pay by <strong style="color:var(--red)">{{ due_date.strftime('%d %b %Y') }}</strong></div>
+      {% if business.gst_sector == 'tourism' %}
+      <div style="margin-top:6px;color:var(--amber)">⚠ Tourism sector returns must be prepared and paid in <strong>US Dollars (USD)</strong></div>
+      {% endif %}
+    </div>
+
+    <div style="margin-top:14px;font-size:10px;color:var(--text3);text-align:center">
+      Generated by LEDGR · {{ today.strftime('%d %b %Y') }} · Verify figures against your records before filing
+    </div>
+  </div>
+</div>
+<style>@media print{.sidebar,.topbar,.card:not(#print-area){display:none!important}}</style>
+{% endblock %}

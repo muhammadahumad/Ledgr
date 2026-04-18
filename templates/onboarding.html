@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Welcome to LEDGR</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.wizard{max-width:640px;width:100%;padding:32px;background:#1a1d2e;border-radius:16px;border:1px solid #2a2d3e}
+.logo{font-size:28px;font-weight:700;color:#10b981;letter-spacing:-1px;margin-bottom:8px}
+.logo span{color:#e2e8f0}
+.step{display:none}.step.active{display:block}
+.step-title{font-size:22px;font-weight:700;margin-bottom:6px;color:#fff}
+.step-sub{font-size:13px;color:#94a3b8;margin-bottom:24px}
+.option-grid{display:grid;gap:12px}
+.option{padding:16px;border:2px solid #2a2d3e;border-radius:10px;cursor:pointer;transition:all .15s}
+.option:hover{border-color:#10b981;background:rgba(16,185,129,.06)}
+.option.selected{border-color:#10b981;background:rgba(16,185,129,.1)}
+.option-title{font-weight:600;color:#fff;font-size:14px;margin-bottom:3px}
+.option-desc{font-size:11px;color:#64748b}
+.option-icon{font-size:24px;margin-bottom:8px}
+.progress{display:flex;gap:6px;margin-bottom:28px}
+.progress-dot{flex:1;height:3px;background:#2a2d3e;border-radius:2px}
+.progress-dot.done{background:#10b981}
+.btn{padding:10px 24px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s}
+.btn-primary{background:#10b981;color:#fff}
+.btn-primary:hover{background:#059669}
+.btn-back{background:transparent;color:#64748b;border:1px solid #2a2d3e}
+.btn-back:hover{color:#e2e8f0}
+.btn-row{display:flex;justify-content:space-between;margin-top:24px}
+.field-label{font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.field-input{width:100%;padding:10px 12px;background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;color:#e2e8f0;font-size:13px}
+.field-input:focus{outline:none;border-color:#10b981}
+.toggle-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #1e2233}
+.toggle-label{font-size:13px;color:#e2e8f0;font-weight:500}
+.toggle-desc{font-size:11px;color:#64748b}
+.sector-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+</style>
+</head>
+<body>
+<div class="wizard">
+  <div class="logo">L<span>EDGR</span></div>
+  <div style="font-size:11px;color:#64748b;margin-bottom:20px">Business Financial OS</div>
+
+  <div class="progress" id="progress">
+    <div class="progress-dot done" id="pd-1"></div>
+    <div class="progress-dot" id="pd-2"></div>
+    <div class="progress-dot" id="pd-3"></div>
+    <div class="progress-dot" id="pd-4"></div>
+    <div class="progress-dot" id="pd-5"></div>
+  </div>
+
+  <!-- Step 1: Role -->
+  <div class="step active" id="step-1">
+    <div class="step-title">Who are you setting this up for?</div>
+    <div class="step-sub">This determines your default view and the tools we surface first.</div>
+    <div class="option-grid">
+      <div class="option" id="role-owner" onclick="selectRole('owner')">
+        <div class="option-icon">👔</div>
+        <div class="option-title">Business Owner / Manager</div>
+        <div class="option-desc">I run the business and want to see revenue, expenses, and key numbers at a glance. Keep it simple.</div>
+      </div>
+      <div class="option" id="role-accountant" onclick="selectRole('accountant')">
+        <div class="option-icon">📊</div>
+        <div class="option-title">Accountant / Bookkeeper</div>
+        <div class="option-desc">I handle the books. Give me full access to journal entries, trial balance, and compliance reports.</div>
+      </div>
+      <div class="option" id="role-staff" onclick="selectRole('staff')">
+        <div class="option-icon">🧾</div>
+        <div class="option-title">Staff / Operations</div>
+        <div class="option-desc">I handle day-to-day — invoices, POS, purchases. Limit access to accounting internals.</div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <div></div>
+      <button class="btn btn-primary" onclick="nextStep(1)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 2: Country & Tax Sector -->
+  <div class="step" id="step-2">
+    <div class="step-title">Tax Registration</div>
+    <div class="step-sub">This determines your invoice format and GST/VAT rates. You can change this later in Settings.</div>
+
+    <div style="margin-bottom:16px">
+      <div class="field-label">Country of Operation</div>
+      <select class="field-input" id="ob-country" onchange="updateTaxSector()">
+        <option value="MV">🇲🇻 Maldives</option>
+        <option value="AE">🇦🇪 UAE</option>
+        <option value="SA">🇸🇦 Saudi Arabia</option>
+        <option value="PK">🇵🇰 Pakistan</option>
+        <option value="IN">🇮🇳 India</option>
+        <option value="OM">🇴🇲 Oman</option>
+        <option value="ID">🇮🇩 Indonesia</option>
+        <option value="EG">🇪🇬 Egypt</option>
+      </select>
+    </div>
+
+    <!-- Maldives GST sector (shown only for MV) -->
+    <div id="mv-sector" style="margin-bottom:16px">
+      <div class="field-label">GST Sector</div>
+      <div class="sector-grid">
+        <div class="option selected" id="sector-general" onclick="selectSector('general')">
+          <div class="option-title">General Sector</div>
+          <div class="option-desc">GST 8% · Filed in MVR<br>Retail, trading, F&B, services, construction</div>
+        </div>
+        <div class="option" id="sector-tourism" onclick="selectSector('tourism')">
+          <div class="option-title">Tourism Sector</div>
+          <div class="option-desc">T-GST 17% · Filed in USD<br>Resorts, hotels, guesthouses, dive schools, spas, travel agents</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toggle-row">
+      <div><div class="toggle-label">GST / VAT Registered</div>
+      <div class="toggle-desc">Required to issue tax invoices and claim input tax</div></div>
+      <label style="cursor:pointer"><input type="checkbox" id="ob-tax-reg" onchange="toggleTaxRegOnboarding(this.checked)" style="accent-color:#10b981;width:16px;height:16px"></label>
+    </div>
+    <div id="ob-tin-row" style="display:none;margin-top:12px">
+      <div class="field-label" id="ob-tin-label">GST TIN (MIRA)</div>
+      <input class="field-input" id="ob-tin" placeholder="Your tax registration number">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="prevStep(2)">← Back</button>
+      <button class="btn btn-primary" onclick="nextStep(2)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Business Type & Modules -->
+  <div class="step" id="step-3">
+    <div class="step-title">What does your business do?</div>
+    <div class="step-sub">We activate the right modules. You can change these anytime in Settings.</div>
+    <div class="toggle-row">
+      <div><div class="toggle-label">⚡ Point of Sale (POS)</div>
+      <div class="toggle-desc">Retail counter, café, shop — sell products and services directly</div></div>
+      <label style="cursor:pointer"><input type="checkbox" id="ob-pos" checked style="accent-color:#10b981;width:16px;height:16px"></label>
+    </div>
+    <div class="toggle-row">
+      <div><div class="toggle-label">📦 Inventory Management</div>
+      <div class="toggle-desc">Track stock levels, reorder points, multiple warehouses</div></div>
+      <label style="cursor:pointer"><input type="checkbox" id="ob-inventory" style="accent-color:#10b981;width:16px;height:16px"></label>
+    </div>
+    <div class="toggle-row">
+      <div><div class="toggle-label">👥 HR & Payroll</div>
+      <div class="toggle-desc">Employee records, visa tracking, payroll processing</div></div>
+      <label style="cursor:pointer"><input type="checkbox" id="ob-payroll" style="accent-color:#10b981;width:16px;height:16px"></label>
+    </div>
+    <div class="toggle-row">
+      <div><div class="toggle-label">🧾 Service Charge</div>
+      <div class="toggle-desc">Auto-add service charge (10% or custom) to POS and invoices</div></div>
+      <label style="cursor:pointer"><input type="checkbox" id="ob-sc" style="accent-color:#10b981;width:16px;height:16px"></label>
+    </div>
+    <div class="toggle-row" style="border:none">
+      <div><div class="toggle-label">💰 Pension / MPAO</div>
+      <div class="toggle-desc">Calculate mandatory pension contributions in payroll (MV: 7%+7%)</div></div>
+      <label style="cursor:pointer"><input type="checkbox" id="ob-pension" checked style="accent-color:#10b981;width:16px;height:16px"></label>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="prevStep(3)">← Back</button>
+      <button class="btn btn-primary" onclick="nextStep(3)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 4: Chart of Accounts -->
+  <div class="step" id="step-4">
+    <div class="step-title">Accounting Setup</div>
+    <div class="step-sub">LEDGR uses a standard double-entry chart of accounts. We have already set it up for you.</div>
+    <div style="background:#0f1117;border-radius:10px;padding:16px;margin-bottom:16px">
+      <div style="font-size:12px;color:#94a3b8;margin-bottom:10px;font-weight:600">YOUR CHART OF ACCOUNTS INCLUDES</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+        <div style="color:#10b981">✓ 1000 Cash on Hand</div>
+        <div style="color:#10b981">✓ 1010 Bank Account</div>
+        <div style="color:#10b981">✓ 1100 Accounts Receivable</div>
+        <div style="color:#10b981">✓ 2000 Accounts Payable</div>
+        <div style="color:#10b981">✓ 3000 Owner's Equity</div>
+        <div style="color:#10b981">✓ 4000 Sales Revenue</div>
+        <div style="color:#10b981">✓ 5000 Cost of Goods</div>
+        <div style="color:#10b981">✓ 6000–6900 Operating Expenses</div>
+      </div>
+    </div>
+    <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:12px;font-size:12px;color:#94a3b8">
+      <strong style="color:#10b981">Migration from QuickBooks / Xero?</strong><br>
+      Go to <strong>Reports → Data Import</strong> after setup to import your customers, suppliers, and opening balances as a CSV export from your old system.
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-back" onclick="prevStep(4)">← Back</button>
+      <button class="btn btn-primary" onclick="nextStep(4)">Continue →</button>
+    </div>
+  </div>
+
+  <!-- Step 5: All done -->
+  <div class="step" id="step-5">
+    <div style="text-align:center;padding:20px 0">
+      <div style="font-size:48px;margin-bottom:16px">🚀</div>
+      <div class="step-title" style="text-align:center">You are ready!</div>
+      <div class="step-sub" style="text-align:center;margin-bottom:24px">LEDGR is configured for your business. Your dashboard is waiting.</div>
+      <div style="background:#0f1117;border-radius:10px;padding:16px;text-align:left;margin-bottom:24px;font-size:12px">
+        <div style="font-weight:600;color:#94a3b8;margin-bottom:10px">QUICK START CHECKLIST</div>
+        <div style="color:#10b981;margin-bottom:6px">→ Settings: Add your business logo and bank details</div>
+        <div style="color:#10b981;margin-bottom:6px">→ Customers: Add your first customer or import from QB</div>
+        <div style="color:#10b981;margin-bottom:6px">→ Invoices: Create your first invoice and download PDF</div>
+        <div style="color:#64748b">→ Bank: Upload your bank statement CSV for reconciliation</div>
+      </div>
+      <button class="btn btn-primary" onclick="completeOnboarding()" style="padding:14px 40px;font-size:15px">Enter LEDGR →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var state = { role:'owner', gst_sector:'general', gst_sector_type:'', country:'MV',
+              is_tax_registered:false, tax_tin:'', has_pos:true, has_inventory:false,
+              has_payroll:false, has_service_charge:false, pension_registered:true };
+var currentStep = 1;
+
+function selectRole(r) {
+  state.role = r;
+  ['owner','accountant','staff'].forEach(function(x) {
+    document.getElementById('role-'+x).classList.toggle('selected', x===r);
+  });
+}
+
+function selectSector(s) {
+  state.gst_sector = s;
+  document.getElementById('sector-general').classList.toggle('selected', s==='general');
+  document.getElementById('sector-tourism').classList.toggle('selected', s==='tourism');
+}
+
+function toggleTaxRegOnboarding(checked) {
+  state.is_tax_registered = checked;
+  document.getElementById('ob-tin-row').style.display = checked ? 'block' : 'none';
+}
+
+function updateTaxSector() {
+  var country = document.getElementById('ob-country').value;
+  state.country = country;
+  document.getElementById('mv-sector').style.display = country === 'MV' ? 'block' : 'none';
+  var tinLabels = {'MV':'GST TIN (MIRA)','AE':'TRN (FTA)','SA':'VAT Number (ZATCA)',
+                   'PK':'NTN (FBR)','IN':'GSTIN','OM':'Tax ID','ID':'NPWP','EG':'Tax ID'};
+  document.getElementById('ob-tin-label').textContent = tinLabels[country] || 'Tax ID';
+}
+
+function nextStep(from) {
+  // Collect state
+  if (from === 2) {
+    state.gst_sector = document.getElementById('sector-general').classList.contains('selected') ? 'general' : 'tourism';
+    state.is_tax_registered = document.getElementById('ob-tax-reg').checked;
+    state.tax_tin = document.getElementById('ob-tin').value;
+  }
+  if (from === 3) {
+    state.has_pos = document.getElementById('ob-pos').checked;
+    state.has_inventory = document.getElementById('ob-inventory').checked;
+    state.has_payroll = document.getElementById('ob-payroll').checked;
+    state.has_service_charge = document.getElementById('ob-sc').checked;
+    state.pension_registered = document.getElementById('ob-pension').checked;
+  }
+  showStep(from + 1);
+}
+
+function prevStep(from) { showStep(from - 1); }
+
+function showStep(n) {
+  document.querySelectorAll('.step').forEach(function(s) { s.classList.remove('active'); });
+  document.getElementById('step-'+n).classList.add('active');
+  currentStep = n;
+  for (var i=1; i<=5; i++) {
+    document.getElementById('pd-'+i).style.background = i <= n ? '#10b981' : '#2a2d3e';
+  }
+}
+
+function completeOnboarding() {
+  var btn = event.target; btn.disabled=true; btn.textContent='Setting up...';
+  fetch('/api/onboarding/complete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      user_role: state.role,
+      gst_sector: state.gst_sector,
+      is_tax_registered: state.is_tax_registered,
+      tax_registration_number: state.tax_tin,
+      has_pos: state.has_pos,
+      has_inventory: state.has_inventory,
+      has_payroll: state.has_payroll,
+      has_service_charge: state.has_service_charge,
+      pension_registered: state.pension_registered
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok) window.location.href='/dashboard';
+    else { btn.disabled=false; btn.textContent='Enter LEDGR →'; alert('Error: '+res.error); }
+  });
+}
+</script>
+</body>
+</html>
