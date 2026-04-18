@@ -139,6 +139,60 @@ PLANS = {
     'pro':     {'name':'Pro',     'price':15,'uploads':500,  'businesses':10},
     'business':{'name':'Business','price':35,'uploads':99999,'businesses':99999},
 }
+
+def get_employment_rules(country_code):
+    """Get employment rules for a country"""
+    return EMPLOYMENT_RULES.get(country_code, EMPLOYMENT_RULES.get('MV', {
+        'pension_employer_pct': 7.0, 'pension_employee_pct': 7.0,
+        'currency': 'MVR'
+    }))
+
+
+def calculate_employee_costs(employee, country_code='MV'):
+    """Calculate true monthly cost of an employee including all statutory contributions"""
+    salary = float(employee.monthly_salary or 0)
+    allowances = (float(employee.allowances or 0) +
+                  float(employee.housing_allowance or 0) +
+                  float(employee.transport_allowance or 0))
+    gross = salary + allowances
+
+    # Country-specific statutory rates 2026
+    country_rates = {
+        'MV': {'pension_emp': 7.0,  'pension_er': 7.0,  'social': 0.0,  'gratuity_days': 0},
+        'AE': {'pension_emp': 0.0,  'pension_er': 12.5, 'social': 0.0,  'gratuity_days': 21},
+        'SA': {'pension_emp': 9.75, 'pension_er': 9.75, 'social': 2.0,  'gratuity_days': 0},
+        'PK': {'pension_emp': 1.0,  'pension_er': 5.0,  'social': 0.0,  'gratuity_days': 0},
+        'IN': {'pension_emp': 12.0, 'pension_er': 12.0, 'social': 0.75, 'gratuity_days': 15},
+        'OM': {'pension_emp': 7.0,  'pension_er': 11.5, 'social': 0.0,  'gratuity_days': 15},
+        'ID': {'pension_emp': 1.0,  'pension_er': 4.0,  'social': 0.3,  'gratuity_days': 0},
+        'EG': {'pension_emp': 11.0, 'pension_er': 18.75,'social': 1.0,  'gratuity_days': 0},
+        'CN': {'pension_emp': 8.0,  'pension_er': 16.0, 'social': 0.5,  'gratuity_days': 0},
+    }
+
+    r = country_rates.get(country_code, country_rates['MV'])
+    pension_employee = round(gross * r['pension_emp'] / 100, 2)
+    pension_employer = round(gross * r['pension_er'] / 100, 2)
+    social_insurance = round(gross * r['social'] / 100, 2)
+    visa_amort = round(float(employee.quota_fee_paid or 0) / 12, 2)
+    insurance_amort = round(float(employee.insurance_cost or 0) / 12, 2)
+    gratuity_monthly = round((salary / 30) * r['gratuity_days'] / 12, 2) if r['gratuity_days'] > 0 else 0.0
+    true_monthly_cost = gross + pension_employer + social_insurance + visa_amort + insurance_amort + gratuity_monthly
+
+    return {
+        'base_salary': salary,
+        'allowances': allowances,
+        'gross': round(gross, 2),
+        'net_salary': round(gross - pension_employee, 2),
+        'pension_employee': pension_employee,
+        'pension_employer': pension_employer,
+        'social_insurance': social_insurance,
+        'visa_amortized': visa_amort,
+        'insurance_amortized': insurance_amort,
+        'gratuity_monthly': gratuity_monthly,
+        'true_monthly_cost': round(true_monthly_cost, 2),
+    }
+
+
 DEFAULT_COA = {
     'ASSET':    [('1000','Cash on Hand'),('1010','Bank Account - Primary'),('1020','Bank Account - Secondary'),
                  ('1100','Accounts Receivable'),('1110','Customer Tabs (Credit Sales)'),
@@ -731,6 +785,91 @@ class PayrollRun(db.Model):
     created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     business = db.relationship('Business', backref='payroll_runs')
+
+
+class StockTransfer(db.Model):
+    """Inter-warehouse stock transfer with full audit trail"""
+    __tablename__ = 'stock_transfers'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('inventory.id'), nullable=False)
+    from_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
+    to_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
+    quantity = db.Column(db.Numeric(12,3), nullable=False)
+    transfer_date = db.Column(db.Date, default=date.today)
+    reference = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), default='COMPLETED')
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    product = db.relationship('Product', backref='transfers')
+    from_location = db.relationship('Location', foreign_keys=[from_location_id])
+    to_location = db.relationship('Location', foreign_keys=[to_location_id])
+
+
+class PurchaseOrder(db.Model):
+    """Purchase order from supplier"""
+    __tablename__ = 'purchase_orders'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    po_number = db.Column(db.String(50))
+    order_date = db.Column(db.Date, default=date.today)
+    expected_date = db.Column(db.Date)
+    received_date = db.Column(db.Date)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
+    status = db.Column(db.String(20), default='DRAFT')
+    currency = db.Column(db.String(3), default='MVR')
+    subtotal = db.Column(db.Numeric(12,2), default=0)
+    tax_amount = db.Column(db.Numeric(12,2), default=0)
+    total_amount = db.Column(db.Numeric(12,2), default=0)
+    items = db.Column(db.Text, default='[]')
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    warehouse = db.relationship('Location', foreign_keys=[warehouse_id])
+
+
+
+class StockTransfer(db.Model):
+    """Inter-warehouse stock transfer with full audit trail"""
+    __tablename__ = 'stock_transfers'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('inventory.id'), nullable=False)
+    from_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
+    to_location_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=False)
+    quantity = db.Column(db.Numeric(12,3), nullable=False)
+    transfer_date = db.Column(db.Date, default=date.today)
+    reference = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(20), default='COMPLETED')
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    product = db.relationship('Product', backref='transfers')
+    from_location = db.relationship('Location', foreign_keys=[from_location_id])
+    to_location = db.relationship('Location', foreign_keys=[to_location_id])
+
+
+class PurchaseOrder(db.Model):
+    """Purchase order from supplier to restock inventory"""
+    __tablename__ = 'purchase_orders'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    po_number = db.Column(db.String(50))
+    order_date = db.Column(db.Date, default=date.today)
+    expected_date = db.Column(db.Date)
+    received_date = db.Column(db.Date)
+    warehouse_id = db.Column(db.Integer, db.ForeignKey('locations.id'), nullable=True)
+    status = db.Column(db.String(20), default='DRAFT')
+    currency = db.Column(db.String(3), default='MVR')
+    subtotal = db.Column(db.Numeric(12,2), default=0)
+    tax_amount = db.Column(db.Numeric(12,2), default=0)
+    total_amount = db.Column(db.Numeric(12,2), default=0)
+    items = db.Column(db.Text, default='[]')
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    warehouse = db.relationship('Location', foreign_keys=[warehouse_id])
 
 with app.app_context():
     try:
@@ -3061,13 +3200,15 @@ def api_import_customers_csv():
         reader = csv.DictReader(io.StringIO(csv_content))
         headers = reader.fieldnames or []
         def find_col(names, headers):
-            hl = [h.lower().strip() for h in headers]
+            hl = [h.lower().strip().replace('"','').replace("'",'') for h in headers]
             for n in names:
                 for i,h in enumerate(hl):
                     if n in h: return headers[i]
             return None
+        # Clean headers of BOM and quotes
+        headers = [h.strip().replace('\ufeff','').replace('"','').replace("'",'') for h in (reader.fieldnames or [])]
         name_col = find_col(['name','customer name','company','full name','display name',
-                             'customer','contact name','client'], headers)
+                             'customer','contact name','client name','vendor'], headers)
         email_col = find_col(['email','e-mail','email address','mail'], headers)
         phone_col = find_col(['phone','telephone','mobile','contact','cell'], headers)
         balance_col = find_col(['balance','outstanding','amount due','open balance','current balance'], headers)
@@ -3109,13 +3250,14 @@ def api_import_suppliers_csv():
         reader = csv.DictReader(io.StringIO(csv_content))
         headers = reader.fieldnames or []
         def find_col(names, headers):
-            hl = [h.lower().strip() for h in headers]
+            hl = [h.lower().strip().replace('"','').replace("'",'') for h in headers]
             for n in names:
                 for i,h in enumerate(hl):
                     if n in h: return headers[i]
             return None
+        headers = [h.strip().replace('\ufeff','').replace('"','').replace("'",'') for h in (reader.fieldnames or [])]
         name_col = find_col(['name','vendor name','supplier name','company','display name',
-                             'vendor','supplier','contact name'], headers)
+                             'vendor','supplier','contact name','vendor/supplier'], headers)
         email_col = find_col(['email','e-mail','mail'], headers)
         phone_col = find_col(['phone','telephone','mobile','cell'], headers)
         if not name_col:
