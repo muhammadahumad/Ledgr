@@ -32,9 +32,9 @@
       </div>
       <div class="upload-zone" id="cust-drop" onclick="document.getElementById('cust-file').click()" ondragover="event.preventDefault()" ondrop="handleDrop('cust',event)" style="margin-bottom:8px;cursor:pointer;padding:20px">
         <div style="font-size:20px;margin-bottom:4px">↑</div>
-        <div style="font-size:12px;color:var(--text2)">Drop CSV or click to upload</div>
+        <div style="font-size:12px;color:var(--text2)">Drop CSV or Excel (.xlsx) or click to upload</div>
       </div>
-      <input type="file" id="cust-file" accept=".csv,text/csv" style="display:none" onchange="previewCSV('cust',this)">
+      <input type="file" id="cust-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="previewCSV('cust',this)">
       <div id="cust-preview" style="display:none;margin-bottom:8px;font-size:11px;color:var(--mint)"></div>
       <button class="btn btn-primary" id="cust-import-btn" style="display:none;width:100%" onclick="importCSV('customers')">Import Customers</button>
       <div id="cust-msg" style="margin-top:8px;font-size:12px;display:none"></div>
@@ -50,9 +50,9 @@
       </div>
       <div class="upload-zone" id="sup-drop" onclick="document.getElementById('sup-file').click()" ondragover="event.preventDefault()" ondrop="handleDrop('sup',event)" style="margin-bottom:8px;cursor:pointer;padding:20px">
         <div style="font-size:20px;margin-bottom:4px">↑</div>
-        <div style="font-size:12px;color:var(--text2)">Drop CSV or click to upload</div>
+        <div style="font-size:12px;color:var(--text2)">Drop CSV or Excel (.xlsx) or click to upload</div>
       </div>
-      <input type="file" id="sup-file" accept=".csv,text/csv" style="display:none" onchange="previewCSV('sup',this)">
+      <input type="file" id="sup-file" accept=".csv,.xlsx,.xls,text/csv" style="display:none" onchange="previewCSV('sup',this)">
       <div id="sup-preview" style="display:none;margin-bottom:8px;font-size:11px;color:var(--mint)"></div>
       <button class="btn btn-primary" id="sup-import-btn" style="display:none;width:100%" onclick="importCSV('suppliers')">Import Suppliers</button>
       <div id="sup-msg" style="margin-top:8px;font-size:12px;display:none"></div>
@@ -128,44 +128,63 @@ function previewCSV(prefix, input) {
   if (input.files.length) processFile(prefix, input.files[0]);
 }
 
+var fileTypes = {};  // store whether csv or xlsx per prefix
+
 function processFile(prefix, file) {
+  var isXlsx = file.name.match(/\.xlsx?$/i);
+  fileTypes[prefix] = isXlsx ? 'xlsx' : 'csv';
   var reader = new FileReader();
   reader.onload = function(e) {
-    csvContents[prefix] = e.target.result;
-    var lines = e.target.result.split('\n').filter(Boolean);
+    csvContents[prefix] = isXlsx
+      ? btoa(String.fromCharCode.apply(null, new Uint8Array(e.target.result)))
+      : e.target.result;
     var preview = document.getElementById(prefix + '-preview');
-    preview.textContent = '✓ ' + file.name + ' — ' + (lines.length-1) + ' records detected';
+    // Estimate row count
+    var rowCount = isXlsx ? '?' : (e.target.result.split('\n').filter(Boolean).length - 1);
+    preview.textContent = '✓ ' + file.name + (rowCount !== '?' ? ' — ' + rowCount + ' records detected' : ' — Excel file ready');
     preview.style.display = 'block';
     document.getElementById(prefix + '-import-btn').style.display = 'block';
   };
-  reader.readAsText(file);
+  if (isXlsx) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file);
+  }
 }
 
 function importCSV(type) {
   var prefix = type === 'customers' ? 'cust' : 'sup';
-  var csv = csvContents[prefix];
-  if (!csv) { alert('No file selected'); return; }
+  var content = csvContents[prefix];
+  var ftype = fileTypes[prefix] || 'csv';
+  if (!content) { alert('No file selected'); return; }
   var btn = document.getElementById(prefix + '-import-btn');
-  btn.disabled = true; btn.textContent = 'Importing...';
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
   var endpoint = type === 'customers' ? '/api/import/customers-csv' : '/api/import/suppliers-csv';
   fetch(endpoint, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({csv_content: csv})
-  }).then(function(r){return r.json();}).then(function(res){
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({csv_content: content, file_type: ftype})
+  }).then(function(r){ return r.json(); }).then(function(res) {
     var m = document.getElementById(prefix + '-msg');
     m.style.display = 'block';
     if (res.ok) {
       m.style.color = 'var(--mint)';
       m.textContent = '✓ ' + res.message;
+      btn.textContent = '✓ Done';
     } else {
       m.style.color = 'var(--red)';
       m.textContent = 'Error: ' + res.error;
       btn.disabled = false;
-      btn.textContent = 'Import ' + (type==='customers'?'Customers':'Suppliers');
-      // Show first row of CSV as hint
-      var lines = (csvContents[prefix]||'').split('\n').slice(0,2);
-      if(lines[0]) m.textContent += '\n\nFirst row of your CSV: ' + lines[0];
+      btn.textContent = 'Import ' + (type === 'customers' ? 'Customers' : 'Suppliers');
     }
+  }).catch(function(err) {
+    var m = document.getElementById(prefix + '-msg');
+    m.style.display = 'block';
+    m.style.color = 'var(--red)';
+    m.textContent = 'Connection error. Please try again.';
+    btn.disabled = false;
+    btn.textContent = 'Import ' + (type === 'customers' ? 'Customers' : 'Suppliers');
   });
 }
 

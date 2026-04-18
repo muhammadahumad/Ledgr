@@ -13,6 +13,30 @@
     <div class="stat-card"><div class="stat-label">Payroll Runs This Year</div><div class="stat-value">{{ payroll_history|length }}</div></div>
   </div>
 
+  <!-- Pension Settings -->
+  <div class="card" style="margin-bottom:14px;border-color:{% if business.pension_registered %}rgba(16,185,129,.3){% else %}rgba(239,68,68,.2){% endif %}">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="font-weight:600;color:var(--text)">Pension Registration</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">
+          {% if business.pension_registered %}
+            ✓ Registered — pension deducted at 7% employer + 7% employee
+          {% else %}
+            ✗ Not registered — pension not calculated in payroll
+          {% endif %}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:var(--text3)">
+          {% if business.pension_registered %}Portal: {{ business.pension_portal or 'Koshaaru (MPAO)' }}{% endif %}
+        </span>
+        <button onclick="togglePension()" class="btn btn-sm" style="border-color:{% if business.pension_registered %}var(--mint){% else %}var(--red){% endif %}">
+          {% if business.pension_registered %}✓ Enrolled{% else %}✗ Not Enrolled{% endif %}
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Employee payroll summary -->
   <div class="card" style="margin-bottom:14px;padding:0">
     <div style="padding:14px 16px;border-bottom:1px solid var(--border)"><div class="card-title" style="margin:0">Employee Payroll Summary</div></div>
@@ -62,6 +86,23 @@
 </div>
 {% endblock %}
 {% block scripts %}<script>
+function togglePension() {
+  var current = '{{ "true" if business.pension_registered else "false" }}';
+  var newVal = current === 'true' ? false : true;
+  var msg = newVal
+    ? 'Enable pension deductions? 7% employer + 7% employee will be calculated.'
+    : 'Disable pension? This business will not have pension calculated in payroll.';
+  if (!confirm(msg)) return;
+  fetch('/api/settings/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({pension_registered: newVal})
+  }).then(function(r){ return r.json(); }).then(function(res) {
+    if (res.ok) location.reload();
+    else alert('Error: ' + res.error);
+  });
+}
+
 function runPayroll() {
   var month = new Date().toISOString().slice(0,7);
   if (!confirm('Run payroll for ' + month + '?\n\nThis will:\n• Calculate net pay for all active employees\n• Post journal entries for salaries and pension\n• Save a payroll run record\n\nContinue?')) return;
