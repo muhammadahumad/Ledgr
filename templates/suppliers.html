@@ -70,7 +70,6 @@
     <div id="s-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
-{% endblock %}
 <!-- Edit Supplier Modal -->
 <div id="edit-sup-modal" class="modal-overlay">
   <div class="modal" style="max-width:480px">
@@ -92,6 +91,7 @@
   </div>
 </div>
 
+{% endblock %}
 {% block scripts %}<script>
 function filterSup(q){q=q.toLowerCase();document.querySelectorAll('.sup-row').forEach(r=>r.style.display=r.dataset.n.includes(q)?'':'none');}
 function addSupplier(){var name=document.getElementById('s-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/supplier/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,tax_id:document.getElementById('s-taxid').value,phone:document.getElementById('s-phone').value,email:document.getElementById('s-email').value,address:document.getElementById('s-address').value,currency:document.getElementById('s-currency').value,payment_terms:document.getElementById('s-terms').value,notes:document.getElementById('s-notes').value})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{var m=document.getElementById('s-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
