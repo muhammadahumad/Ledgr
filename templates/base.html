@@ -224,7 +224,9 @@ a:hover{text-decoration:underline}
 
   <!-- HR & PAYROLL -->
   <div class="nav-section">HR & Payroll</div>
-  <a href="/hr" class="nav-item {% if request.path.startswith('/hr') or request.path=='/payroll' %}active{% endif %}"><span class="ni">👥</span>HR & Payroll</a>
+  <a href="/hr" class="nav-item {% if request.path=='/hr' %}active{% endif %}"><span class="ni">👥</span>HR Dashboard</a>
+  <a href="/payroll" class="nav-item {% if request.path=='/payroll' %}active{% endif %}" style="padding-left:28px"><span class="ni">＋</span>Add Employee</a>
+  <a href="/hr/payroll" class="nav-item {% if request.path=='/hr/payroll' %}active{% endif %}" style="padding-left:28px"><span class="ni">▶</span>Payroll Run</a>
 
   <!-- REPORTS -->
   <div class="nav-section">Reports</div>

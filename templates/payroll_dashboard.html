@@ -1,0 +1,82 @@
+{% extends "base.html" %}{% block title %}Payroll Dashboard — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Payroll Dashboard</div><div class="page-sub">{{ employees|length }} employees · Monthly cost {{ tax.currency }} {{ "%.2f"|format(total_monthly_cost) }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="runPayroll()">▶ Run Payroll</button>
+    <a href="/hr" class="btn">← HR Dashboard</a>
+  </div>
+</div>
+<div class="content">
+  <div class="stat-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:14px">
+    <div class="stat-card"><div class="stat-label">Active Employees</div><div class="stat-value">{{ employees|length }}</div></div>
+    <div class="stat-card" style="border-color:rgba(239,68,68,.3)"><div class="stat-label">Monthly Payroll Cost</div><div class="stat-value" style="font-size:18px;color:var(--red)">{{ tax.currency }} {{ "%.2f"|format(total_monthly_cost) }}</div><div class="stat-sub">Inc. employer contributions</div></div>
+    <div class="stat-card"><div class="stat-label">Payroll Runs This Year</div><div class="stat-value">{{ payroll_history|length }}</div></div>
+  </div>
+
+  <!-- Employee payroll summary -->
+  <div class="card" style="margin-bottom:14px;padding:0">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)"><div class="card-title" style="margin:0">Employee Payroll Summary</div></div>
+    <table class="table">
+      <thead><tr><th>Employee</th><th>Type</th><th>Gross</th><th>Pension (EE)</th><th>Net Salary</th><th>Pension (ER)</th><th>True Cost</th></tr></thead>
+      <tbody>
+      {% for e in employees %}
+      {% set costs = e.total_cost() %}
+      <tr>
+        <td><a href="/hr/employee/{{ e.id }}" style="color:var(--text);font-weight:500;text-decoration:none">{{ e.full_name }}</a></td>
+        <td><span class="badge badge-{% if e.employment_type=='foreign' %}amber{% else %}gray{% endif %}" style="font-size:10px">{{ e.employment_type|title if e.employment_type else 'Local' }}</span></td>
+        <td style="font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format((e.monthly_salary or 0)|float + (e.allowances or 0)|float) }}</td>
+        <td style="font-family:var(--mono);color:var(--red)">({{ tax.currency }} {{ "%.2f"|format((e.pension_employee or 0)|float) }})</td>
+        <td style="font-family:var(--mono);color:var(--mint);font-weight:600">{{ tax.currency }} {{ "%.2f"|format((e.monthly_salary or 0)|float - (e.pension_employee or 0)|float) }}</td>
+        <td style="font-family:var(--mono);color:var(--amber)">{{ tax.currency }} {{ "%.2f"|format((e.pension_employer or 0)|float) }}</td>
+        <td style="font-family:var(--mono);font-weight:600">{{ tax.currency }} {{ "%.2f"|format(costs) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Payroll run history -->
+  <div class="card" style="padding:0">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)"><div class="card-title" style="margin:0">Payroll Run History</div></div>
+    {% if payroll_history %}
+    <table class="table">
+      <thead><tr><th>Month</th><th style="text-align:right">Gross</th><th style="text-align:right">Employer Contrib</th><th style="text-align:right">Net Payable</th><th>Employees</th><th>Run Date</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for run in payroll_history %}
+      <tr>
+        <td style="font-weight:600;color:var(--text)">{{ run.month }}</td>
+        <td style="text-align:right;font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format(run.total_gross or 0) }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--amber)">{{ tax.currency }} {{ "%.2f"|format(run.total_employer_contrib or 0) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(run.total_net or 0) }}</td>
+        <td>{{ run.employees_processed }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ run.created_at.strftime('%d %b %Y %H:%M') if run.created_at else '—' }}</td>
+        <td><span class="badge badge-green" style="font-size:10px">{{ run.status }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:40px;color:var(--text3);font-size:12px">No payroll runs yet. Click Run Payroll to process this month.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+function runPayroll() {
+  var month = new Date().toISOString().slice(0,7);
+  if (!confirm('Run payroll for ' + month + '?\n\nThis will:\n• Calculate net pay for all active employees\n• Post journal entries for salaries and pension\n• Save a payroll run record\n\nContinue?')) return;
+  var btn = event.target; btn.disabled=true; btn.textContent='Processing...';
+  fetch('/api/hr/payroll-run', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({month: month})
+  }).then(function(r){return r.json();}).then(function(res){
+    if(res.ok){
+      alert('✓ ' + res.message + '\n\nGross: ' + res.total_gross + '\nNet Payable: ' + res.total_net_payable);
+      location.reload();
+    } else {
+      alert('Error: ' + res.error);
+      btn.disabled=false; btn.textContent='▶ Run Payroll';
+    }
+  });
+}
+</script>{% endblock %}

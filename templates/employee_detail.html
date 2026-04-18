@@ -1,0 +1,116 @@
+{% extends "base.html" %}{% block title %}{{ employee.full_name }} — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">{{ employee.full_name }}</div><div class="page-sub">{{ employee.position or 'Employee' }} · {{ employee.department or '' }}</div></div>
+  <div style="display:flex;gap:8px">
+    <a href="/hr/employee/{{ employee.id }}/edit" class="btn btn-primary">Edit Employee</a>
+    <a href="/hr" class="btn">← HR Dashboard</a>
+  </div>
+</div>
+<div class="content">
+
+  <!-- Compliance Alerts -->
+  {% set alerts = employee.compliance_alerts() %}
+  {% if alerts %}
+  <div class="card" style="border-color:rgba(239,68,68,.4);margin-bottom:14px">
+    <div class="card-title" style="color:var(--red)">⚠ Compliance Alerts</div>
+    {% for a in alerts %}
+    <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="color:var(--text)">{{ a.msg }}</span>
+      <span class="badge badge-{% if a.days <= 14 %}red{% else %}amber{% endif %}">{{ a.days }} days</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
+
+    <!-- Personal Info -->
+    <div class="card">
+      <div class="card-title">Personal Information</div>
+      {% macro row(label, value) %}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="color:var(--text3)">{{ label }}</span>
+        <span style="color:var(--text);font-weight:500">{{ value or '—' }}</span>
+      </div>
+      {% endmacro %}
+      {{ row('Employee ID', employee.employee_id) }}
+      {{ row('Nationality', employee.nationality) }}
+      {{ row('ID Card', employee.id_card_number) }}
+      {{ row('Passport', employee.passport_number) }}
+      {{ row('Phone', employee.phone) }}
+      {{ row('Email', employee.email) }}
+      {{ row('Emergency Contact', employee.emergency_contact) }}
+      {{ row('Bank', (employee.bank_name or '') + ' ' + (employee.bank_account or '')) }}
+    </div>
+
+    <!-- Employment -->
+    <div class="card">
+      <div class="card-title">Employment & Documents</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <span class="badge badge-{% if employee.employment_type=='foreign' %}amber{% else %}green{% endif %}">{{ employee.employment_type|title if employee.employment_type else 'Local' }}</span>
+        <span class="badge badge-gray">{{ employee.contract_type|title if employee.contract_type else 'Permanent' }}</span>
+      </div>
+      {% macro drow(label, val, warn_days=None) %}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="color:var(--text3)">{{ label }}</span>
+        {% if val %}
+        <span style="color:{% if warn_days and warn_days <= 45 %}var(--red){% else %}var(--text){% endif %};font-weight:500">
+          {{ val }}{% if warn_days %} ({{ warn_days }}d){% endif %}
+        </span>
+        {% else %}<span style="color:var(--text3)">—</span>{% endif %}
+      </div>
+      {% endmacro %}
+      {{ drow('Start Date', employee.start_date.strftime('%d %b %Y') if employee.start_date else None) }}
+      {{ drow('End Date', employee.end_date.strftime('%d %b %Y') if employee.end_date else 'Permanent') }}
+      {{ drow('Visa No.', employee.visa_number) }}
+      {{ drow('Visa Expiry', employee.visa_expiry.strftime('%d %b %Y') if employee.visa_expiry else None, employee.days_to_visa_expiry()) }}
+      {{ drow('Work Permit', employee.work_permit_number) }}
+      {{ drow('Permit Expiry', employee.work_permit_expiry.strftime('%d %b %Y') if employee.work_permit_expiry else None) }}
+      {{ drow('Medical Expiry', employee.medical_expiry.strftime('%d %b %Y') if employee.medical_expiry else None, employee.days_to_medical_expiry()) }}
+      {{ drow('Insurance', employee.insurance_provider) }}
+      {{ drow('Insurance Expiry', employee.insurance_expiry.strftime('%d %b %Y') if employee.insurance_expiry else None) }}
+      {{ drow('Quota Slot', employee.quota_slot_number) }}
+    </div>
+
+    <!-- Cost Breakdown -->
+    <div class="card" style="border-color:rgba(16,185,129,.3)">
+      <div class="card-title">True Monthly Cost</div>
+      <div style="font-size:28px;font-weight:700;color:var(--mint);font-family:var(--mono);margin-bottom:12px">{{ tax.currency }} {{ "%.2f"|format(costs.true_monthly_cost) }}</div>
+      {% macro crow(label, val, color='var(--text)') %}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="color:var(--text3)">{{ label }}</span>
+        <span style="font-family:var(--mono);color:{{ color }}">{{ tax.currency }} {{ "%.2f"|format(val) }}</span>
+      </div>
+      {% endmacro %}
+      {{ crow('Base Salary', costs.base_salary) }}
+      {{ crow('Allowances', costs.allowances) }}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:2px solid var(--border);font-size:12px;font-weight:600">
+        <span>Gross Pay</span><span style="font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format(costs.gross) }}</span>
+      </div>
+      {{ crow('Pension (Employee -7%)', costs.pension_employee, 'var(--red)') }}
+      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:2px solid var(--border);font-size:13px;font-weight:700">
+        <span>Net Salary</span><span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(costs.net_salary) }}</span>
+      </div>
+      {{ crow('Pension (Employer)', costs.pension_employer, 'var(--amber)') }}
+      {{ crow('Social Insurance', costs.social_insurance, 'var(--amber)') }}
+      {{ crow('Visa/Quota (amortized)', costs.visa_amortized, 'var(--amber)') }}
+      {{ crow('Insurance (amortized)', costs.insurance_amortized, 'var(--amber)') }}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;font-weight:700;border-top:2px solid var(--mint);margin-top:4px">
+        <span>True Monthly Cost</span><span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(costs.true_monthly_cost) }}</span>
+      </div>
+      <div style="margin-top:8px;padding:8px;background:var(--bg);border-radius:6px;font-size:11px;color:var(--text3)">
+        Security Deposit: {{ tax.currency }} {{ "%.2f"|format(employee.security_deposit or 0) }} (refundable — not included in cost)
+      </div>
+    </div>
+
+  </div>
+
+  {% if employee.notes %}
+  <div class="card" style="margin-top:14px">
+    <div class="card-title">Notes</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.7">{{ employee.notes }}</div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

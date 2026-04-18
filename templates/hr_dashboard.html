@@ -70,7 +70,7 @@
         <th>Employee</th><th>Type</th><th>Position</th>
         <th>Visa Expiry</th><th>Medical</th><th>Work Permit</th>
         <th style="text-align:right">Net Salary</th><th style="text-align:right">True Cost</th>
-        <th>Status</th>
+        <th>Status</th><th></th>
       </tr></thead>
       <tbody>
       {% for e in employees %}
@@ -101,6 +101,7 @@
           <span class="badge badge-green" style="font-size:10px">✓ OK</span>
           {% endif %}
         </td>
+        <td><a href="/hr/employee/{{ e.id }}" class="btn btn-sm">View</a></td>
       </tr>
       {% endfor %}
       </tbody>
