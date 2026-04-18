@@ -7,7 +7,7 @@
 <div class="card">
   <div class="card-title">Supplier Database <input class="field-input" id="search-sup" placeholder="Search..." style="width:200px;font-size:11px;padding:4px 8px" oninput="filterSup(this.value)"></div>
   {% if suppliers %}
-  <table class="table"><thead><tr><th>Name</th><th>Tax ID</th><th>Phone</th><th>Email</th><th>Currency</th><th>Total Purchases</th><th>Source</th></tr></thead><tbody>
+  <table class="table"><thead><tr><th>Name</th><th>Tax ID</th><th>Phone</th><th>Email</th><th>Currency</th><th>Total Purchases</th><th>Source</th><th></th></tr></thead><tbody>
   {% for s in suppliers %}<tr class="sup-row" data-n="{{ s.name|lower }}">
     <td style="color:var(--text);font-weight:500">{{ s.name }}</td>
     <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ s.tax_id or '—' }}</td>
@@ -16,6 +16,10 @@
     <td>{{ s.currency }}</td>
     <td style="font-family:var(--mono);color:var(--mint);font-weight:500">{{ s.currency }} {{ "%.2f"|format(s.total_purchases) }}</td>
     <td><span class="badge badge-{% if s.auto_detected %}blue{% else %}gray{% endif %}">{% if s.auto_detected %}Auto{% else %}Manual{% endif %}</span></td>
+    <td><div style="display:flex;gap:4px">
+      <button class="btn btn-sm" onclick="editSup({{ s.id }},'{{ s.name|replace("'","\\'") }}','{{ s.email or '' }}','{{ s.phone or '' }}','{{ s.tax_id or '' }}')" style="color:var(--amber);border-color:var(--amber)">Edit</button>
+      <button class="btn btn-sm" onclick="deleteSup({{ s.id }},'{{ s.name|replace("'","\\'") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
+    </div></td>
   </tr>{% endfor %}
   </tbody></table>
   {% else %}
@@ -67,7 +71,72 @@
   </div>
 </div>
 {% endblock %}
+<!-- Edit Supplier Modal -->
+<div id="edit-sup-modal" class="modal-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">Edit Supplier <button class="modal-close" onclick="closeModal('edit-sup-modal')">×</button></div>
+    <input type="hidden" id="edit-sup-id">
+    <div class="field-row">
+      <div><div class="field-label">Name *</div><input class="field-input" id="edit-sup-name"></div>
+      <div><div class="field-label">Tax ID</div><input class="field-input" id="edit-sup-taxid"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Email</div><input class="field-input" id="edit-sup-email"></div>
+      <div><div class="field-label">Phone</div><input class="field-input" id="edit-sup-phone"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="saveEditSup()">Save Changes</button>
+      <button class="btn" onclick="closeModal('edit-sup-modal')">Cancel</button>
+    </div>
+    <div id="edit-sup-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
 {% block scripts %}<script>
 function filterSup(q){q=q.toLowerCase();document.querySelectorAll('.sup-row').forEach(r=>r.style.display=r.dataset.n.includes(q)?'':'none');}
 function addSupplier(){var name=document.getElementById('s-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/supplier/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,tax_id:document.getElementById('s-taxid').value,phone:document.getElementById('s-phone').value,email:document.getElementById('s-email').value,address:document.getElementById('s-address').value,currency:document.getElementById('s-currency').value,payment_terms:document.getElementById('s-terms').value,notes:document.getElementById('s-notes').value})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{var m=document.getElementById('s-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
+
+function editSup(id, name, email, phone, taxid) {
+  document.getElementById('edit-sup-id').value = id;
+  document.getElementById('edit-sup-name').value = name;
+  document.getElementById('edit-sup-email').value = email;
+  document.getElementById('edit-sup-phone').value = phone;
+  document.getElementById('edit-sup-taxid').value = taxid;
+  openModal('edit-sup-modal');
+}
+
+function saveEditSup() {
+  var id = document.getElementById('edit-sup-id').value;
+  var name = document.getElementById('edit-sup-name').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
+  fetch('/api/supplier/' + id + '/edit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      email: document.getElementById('edit-sup-email').value,
+      phone: document.getElementById('edit-sup-phone').value,
+      tax_id: document.getElementById('edit-sup-taxid').value
+    })
+  }).then(r => r.json()).then(res => {
+    if (res.ok) { closeModal('edit-sup-modal'); location.reload(); }
+    else {
+      var m = document.getElementById('edit-sup-msg');
+      m.style.display='block'; m.style.color='var(--red)';
+      m.textContent = 'Error: ' + res.error;
+      btn.disabled = false; btn.textContent = 'Save Changes';
+    }
+  });
+}
+
+function deleteSup(id, name) {
+  if (!confirm('Delete supplier "' + name + '"?\n\nSuppliers with transactions will be archived instead of deleted.')) return;
+  fetch('/api/supplier/' + id + '/delete', {method: 'POST'})
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok) { alert('✓ ' + res.message); location.reload(); }
+      else alert('Error: ' + res.error);
+    });
+}
 </script>{% endblock %}

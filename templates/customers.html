@@ -58,7 +58,12 @@
           {% if (c.outstanding_balance or 0) > 0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}
         </td>
         <td><span class="badge badge-{% if c.is_vip %}amber{% else %}gray{% endif %}">{{ 'VIP' if c.is_vip else 'Regular' }}</span></td>
-        <td><button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button> <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a></td>
+        <td><div style="display:flex;gap:4px">
+          <button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button>
+          <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a>
+          <button class="btn btn-sm" onclick="editCust({{ c.id }},'{{ c.name|replace("'","\'") }}','{{ c.email or '' }}','{{ c.phone or '' }}','{{ c.address or '' }}')" style="color:var(--amber);border-color:var(--amber)">Edit</button>
+          <button class="btn btn-sm" onclick="deleteCust({{ c.id }},'{{ c.name|replace("'","\'") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
+        </div></td>
       </tr>
       {% endfor %}
       </tbody>
@@ -161,6 +166,27 @@
   <div class="modal" style="max-width:560px">
     <div class="modal-title"><span id="d-name"></span><button class="modal-close" onclick="closeModal('detail-modal')">×</button></div>
     <div id="d-content"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+<!-- Edit Customer Modal -->
+<div id="edit-cust-modal" class="modal-overlay">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-title">Edit Customer <button class="modal-close" onclick="closeModal('edit-cust-modal')">×</button></div>
+    <input type="hidden" id="edit-cust-id">
+    <div class="field-group"><div class="field-label">Name *</div><input class="field-input" id="edit-cust-name"></div>
+    <div class="field-row">
+      <div><div class="field-label">Email</div><input class="field-input" id="edit-cust-email"></div>
+      <div><div class="field-label">Phone</div><input class="field-input" id="edit-cust-phone"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="edit-cust-address"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="saveEditCust()">Save Changes</button>
+      <button class="btn" onclick="closeModal('edit-cust-modal')">Cancel</button>
+    </div>
+    <div id="edit-cust-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
 
@@ -287,5 +313,49 @@ function viewCust(id) {
     document.getElementById('d-content').innerHTML = h;
     openModal('detail-modal');
   });
+}
+
+function editCust(id, name, email, phone, address) {
+  document.getElementById('edit-cust-id').value = id;
+  document.getElementById('edit-cust-name').value = name;
+  document.getElementById('edit-cust-email').value = email;
+  document.getElementById('edit-cust-phone').value = phone;
+  document.getElementById('edit-cust-address').value = address;
+  openModal('edit-cust-modal');
+}
+
+function saveEditCust() {
+  var id = document.getElementById('edit-cust-id').value;
+  var name = document.getElementById('edit-cust-name').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
+  fetch('/api/customer/' + id + '/edit', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      email: document.getElementById('edit-cust-email').value,
+      phone: document.getElementById('edit-cust-phone').value,
+      address: document.getElementById('edit-cust-address').value
+    })
+  }).then(r => r.json()).then(res => {
+    if (res.ok) { closeModal('edit-cust-modal'); location.reload(); }
+    else {
+      var m = document.getElementById('edit-cust-msg');
+      m.style.display = 'block'; m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + res.error;
+      btn.disabled = false; btn.textContent = 'Save Changes';
+    }
+  });
+}
+
+function deleteCust(id, name) {
+  if (!confirm('Delete customer "' + name + '"?\n\nIf they have invoices they will be archived instead of permanently deleted.')) return;
+  fetch('/api/customer/' + id + '/delete', {method: 'POST'})
+    .then(r => r.json())
+    .then(res => {
+      if (res.ok) { alert('✓ ' + res.message); location.reload(); }
+      else alert('Error: ' + res.error);
+    });
 }
 </script>{% endblock %}
