@@ -3206,148 +3206,266 @@ def api_bank_upload_csv():
 @app.route("/api/import/customers-csv", methods=["POST"])
 @login_required
 def api_import_customers_csv():
-    """Import customers from QB/Xero/Odoo CSV or Excel export"""
+    """Import customers from QB/Xero/Odoo CSV or Excel — handles all formats"""
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
     csv_content = data.get("csv_content", "")
-    file_type = data.get("file_type", "csv")  # csv or xlsx
+    file_type = data.get("file_type", "csv")
     if not csv_content:
-        return jsonify({"ok":False,"error":"No file content"})
+        return jsonify({"ok": False, "error": "No file content provided"})
     try:
         import csv, io, base64
 
+        KNOWN_HEADER_KEYWORDS = ['name','email','phone','customer','company','display',
+                                  'first','last','balance','address','city','country',
+                                  'mobile','fax','notes','type','contact']
+
+        def is_header_row(row_values):
+            """Check if a row looks like column headers"""
+            non_empty = [str(v).strip().lower() for v in row_values if v and str(v).strip()]
+            if not non_empty: return False
+            matches = sum(1 for v in non_empty
+                         if any(kw in v for kw in KNOWN_HEADER_KEYWORDS))
+            return matches >= 2
+
         def find_col(names, headers):
-            hl = [h.lower().strip().replace('"','').replace("'",'').replace('\ufeff','') for h in headers]
+            hl = [str(h).lower().strip() for h in headers]
             for n in names:
-                for i,h in enumerate(hl):
-                    if n in h: return headers[i]
+                for i, h in enumerate(hl):
+                    if n == h: return i  # exact match first
+            for n in names:
+                for i, h in enumerate(hl):
+                    if n in h: return i  # then partial
             return None
+
+        def clean_val(v):
+            if v is None: return ""
+            return str(v).strip()
 
         rows = []
         headers = []
 
         if file_type == "xlsx":
-            # Parse Excel file
             import openpyxl
             file_bytes = base64.b64decode(csv_content)
             wb = openpyxl.load_workbook(io.BytesIO(file_bytes), read_only=True, data_only=True)
             ws = wb.active
-            all_rows = list(ws.iter_rows(values_only=True))
-            if not all_rows:
-                return jsonify({"ok":False,"error":"Excel file is empty"})
-            # First row is headers
-            headers = [str(h or '').strip() for h in all_rows[0]]
-            for row in all_rows[1:]:
-                rows.append({headers[i]: str(v or '').strip() for i,v in enumerate(row) if i < len(headers)})
+            all_rows = [list(row) for row in ws.iter_rows(values_only=True)]
+
+            # Find real header row — QB puts report title in row 1
+            header_row_idx = None
+            for i, row in enumerate(all_rows):
+                if is_header_row(row):
+                    header_row_idx = i
+                    break
+
+            if header_row_idx is None:
+                return jsonify({"ok": False, "error": "Could not find column headers in Excel file. Make sure the file has headers like Name, Email, Phone."})
+
+            headers = [clean_val(h) for h in all_rows[header_row_idx]]
+            for row in all_rows[header_row_idx + 1:]:
+                if not any(row): continue  # skip empty rows
+                rows.append([clean_val(v) for v in row])
         else:
-            # CSV — handle BOM and encoding
-            if csv_content.startswith('\ufeff'):
+            # CSV — handle BOM, encoding, newline issues
+            if csv_content.startswith("\ufeff"):
                 csv_content = csv_content[1:]
-            reader = csv.DictReader(io.StringIO(csv_content, newline=''))
-            raw_headers = reader.fieldnames or []
-            headers = [h.strip().replace('\ufeff','').replace('"','') for h in raw_headers]
-            for row in reader:
-                clean = {headers[i]: str(v or '').strip() for i,(k,v) in enumerate(row.items()) if i < len(headers)}
-                rows.append(clean)
+            reader = csv.reader(io.StringIO(csv_content, newline=""))
+            all_rows = list(reader)
+            # Find header row
+            header_row_idx = None
+            for i, row in enumerate(all_rows):
+                if is_header_row(row):
+                    header_row_idx = i
+                    break
+            if header_row_idx is None:
+                return jsonify({"ok": False, "error": "Could not find headers. Headers found: " + str(all_rows[0] if all_rows else [])})
+            headers = [h.strip() for h in all_rows[header_row_idx]]
+            for row in all_rows[header_row_idx + 1:]:
+                if not any(v.strip() for v in row): continue
+                rows.append(row)
 
-        name_col = find_col(['name','customer name','company','full name','display name',
-                             'customer','contact name','client name'], headers)
-        email_col = find_col(['email','e-mail','email address','mail'], headers)
-        phone_col = find_col(['phone','telephone','mobile','contact','cell'], headers)
-        balance_col = find_col(['balance','outstanding','amount due','open balance'], headers)
+        # Find column indices
+        display_name_idx = find_col(['display name'], headers)
+        first_name_idx = find_col(['first name', 'firstname'], headers)
+        last_name_idx = find_col(['last name', 'lastname'], headers)
+        customer_idx = find_col(['customer'], headers)
+        company_idx = find_col(['company name', 'company'], headers)
+        email_idx = find_col(['email', 'e-mail'], headers)
+        phone_idx = find_col(['phone', 'mobile', 'telephone'], headers)
+        balance_idx = find_col(['balance', 'open balance', 'amount due', 'outstanding'], headers)
 
-        if not name_col:
-            name_col = headers[0] if headers else None
-        if not name_col:
-            return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+        # Name column priority: Display Name > Customer > First+Last > Company
+        name_idx = display_name_idx if display_name_idx is not None else customer_idx
 
-        imported = 0; skipped = 0
-        for row in rows:
-            name = (row.get(name_col) or "").strip()
-            if not name or name.lower() in ['name','customer name','total','subtotal']: continue
+        imported = 0
+        skipped = 0
+        errors = []
+
+        for row_data in rows:
+            # Pad row if shorter than headers
+            while len(row_data) < len(headers):
+                row_data.append("")
+
+            def get(idx):
+                if idx is None or idx >= len(row_data): return ""
+                return clean_val(row_data[idx])
+
+            # Build name
+            name = ""
+            if name_idx is not None:
+                name = get(name_idx)
+            if not name and first_name_idx is not None:
+                first = get(first_name_idx)
+                last = get(last_name_idx) if last_name_idx is not None else ""
+                name = (first + " " + last).strip()
+            if not name and company_idx is not None:
+                name = get(company_idx)
+            name = name.strip()
+
+            # Skip empty names, header-like rows, total rows
+            if not name: continue
+            if name.lower() in ['name','customer','display name','total','subtotal',
+                                  'customer contact list','']: continue
+            if len(name) < 2: continue
+
+            # Check duplicate
             existing = Customer.query.filter_by(business_id=business.id, name=name).first()
-            if existing: skipped += 1; continue
-            try:
-                bal_raw = str(row.get(balance_col) or '0').replace(',','').replace('$','').strip()
-                balance = abs(float(bal_raw)) if bal_raw and bal_raw not in ['','—','-'] else 0
-            except: balance = 0
-            c = Customer(business_id=business.id, name=name,
-                        email=(row.get(email_col) or "").strip() if email_col else "",
-                        phone=(row.get(phone_col) or "").strip() if phone_col else "",
-                        outstanding_balance=balance)
-            db.session.add(c); imported += 1
+            if existing:
+                skipped += 1
+                continue
+
+            # Parse balance
+            balance = 0.0
+            if balance_idx is not None:
+                try:
+                    bal_str = get(balance_idx).replace(",","").replace("$","").replace("MVR","").strip()
+                    if bal_str and bal_str not in ["-","—",""]:
+                        balance = abs(float(bal_str))
+                except: pass
+
+            c = Customer(
+                business_id=business.id,
+                name=name,
+                email=get(email_idx) if email_idx is not None else "",
+                phone=get(phone_idx) if phone_idx is not None else "",
+                outstanding_balance=balance
+            )
+            db.session.add(c)
+            imported += 1
+
         db.session.commit()
-        return jsonify({"ok":True,"imported":imported,"skipped":skipped,
-                       "message":str(imported) + " customers imported, " + str(skipped) + " already existed"})
+        return jsonify({
+            "ok": True,
+            "imported": imported,
+            "skipped": skipped,
+            "message": str(imported) + " customers imported, " + str(skipped) + " already existed"
+        })
+
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
+        import traceback
+        return jsonify({"ok": False, "error": str(e), "detail": traceback.format_exc()[-300:]})
+
+
 
 
 @app.route("/api/import/suppliers-csv", methods=["POST"])
 @login_required
 def api_import_suppliers_csv():
-    """Import suppliers from QB/Xero/Odoo CSV or Excel export"""
+    """Import suppliers from QB/Xero/Odoo CSV or Excel — handles all formats"""
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
-    csv_content = data.get("csv_content","")
-    file_type = data.get("file_type","csv")
+    csv_content = data.get("csv_content", "")
+    file_type = data.get("file_type", "csv")
     if not csv_content:
-        return jsonify({"ok":False,"error":"No file content"})
+        return jsonify({"ok": False, "error": "No file content"})
     try:
         import csv, io, base64
 
+        KNOWN_HEADER_KEYWORDS = ['name','email','phone','vendor','supplier','company',
+                                  'display','first','last','balance','address','contact','mobile']
+
+        def is_header_row(row_values):
+            non_empty = [str(v).strip().lower() for v in row_values if v and str(v).strip()]
+            if not non_empty: return False
+            return sum(1 for v in non_empty if any(kw in v for kw in KNOWN_HEADER_KEYWORDS)) >= 2
+
         def find_col(names, headers):
-            hl = [h.lower().strip().replace('"','').replace("'",'').replace('\ufeff','') for h in headers]
+            hl = [str(h).lower().strip() for h in headers]
             for n in names:
-                for i,h in enumerate(hl):
-                    if n in h: return headers[i]
+                for i, h in enumerate(hl):
+                    if n == h: return i
+            for n in names:
+                for i, h in enumerate(hl):
+                    if n in h: return i
             return None
 
+        def clean_val(v):
+            return str(v).strip() if v is not None else ""
+
         rows = []; headers = []
+
         if file_type == "xlsx":
             import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(csv_content)), read_only=True, data_only=True)
+            wb = openpyxl.load_workbook(io.BytesIO(base64.b64decode(csv_content)),
+                                         read_only=True, data_only=True)
             ws = wb.active
-            all_rows = list(ws.iter_rows(values_only=True))
-            if not all_rows: return jsonify({"ok":False,"error":"Empty file"})
-            headers = [str(h or '').strip() for h in all_rows[0]]
-            for row in all_rows[1:]:
-                rows.append({headers[i]: str(v or '').strip() for i,v in enumerate(row) if i < len(headers)})
+            all_rows = [list(r) for r in ws.iter_rows(values_only=True)]
+            header_row_idx = next((i for i, r in enumerate(all_rows) if is_header_row(r)), None)
+            if header_row_idx is None:
+                return jsonify({"ok": False, "error": "Cannot find headers in Excel file"})
+            headers = [clean_val(h) for h in all_rows[header_row_idx]]
+            rows = [[clean_val(v) for v in r] for r in all_rows[header_row_idx+1:] if any(r)]
         else:
-            if csv_content.startswith('\ufeff'): csv_content = csv_content[1:]
-            reader = csv.DictReader(io.StringIO(csv_content, newline=''))
-            headers = [h.strip().replace('\ufeff','').replace('"','') for h in (reader.fieldnames or [])]
-            for row in reader:
-                rows.append({headers[i]: str(v or '').strip() for i,(k,v) in enumerate(row.items()) if i < len(headers)})
+            if csv_content.startswith("\ufeff"): csv_content = csv_content[1:]
+            all_rows = list(csv.reader(io.StringIO(csv_content, newline="")))
+            header_row_idx = next((i for i, r in enumerate(all_rows) if is_header_row(r)), None)
+            if header_row_idx is None:
+                return jsonify({"ok": False, "error": "Cannot find headers in CSV"})
+            headers = [h.strip() for h in all_rows[header_row_idx]]
+            rows = [r for r in all_rows[header_row_idx+1:] if any(v.strip() for v in r)]
 
-        name_col = find_col(['name','vendor name','supplier name','company','display name',
-                             'vendor','supplier','contact name'], headers)
-        email_col = find_col(['email','e-mail','mail'], headers)
-        phone_col = find_col(['phone','telephone','mobile'], headers)
-        if not name_col:
-            name_col = headers[0] if headers else None
-        if not name_col:
-            return jsonify({"ok":False,"error":"Could not find name column. Headers: " + ", ".join(headers[:10])})
+        display_idx = find_col(['display name'], headers)
+        vendor_idx = find_col(['vendor', 'supplier name', 'supplier'], headers)
+        first_idx = find_col(['first name','firstname'], headers)
+        last_idx = find_col(['last name','lastname'], headers)
+        company_idx = find_col(['company name','company'], headers)
+        email_idx = find_col(['email','e-mail'], headers)
+        phone_idx = find_col(['phone','mobile','telephone'], headers)
+        name_idx = display_idx if display_idx is not None else vendor_idx
 
         imported = 0; skipped = 0
-        for row in rows:
-            name = (row.get(name_col) or "").strip()
-            if not name or name.lower() in ['name','vendor name','total']: continue
+        for row_data in rows:
+            while len(row_data) < len(headers): row_data.append("")
+            def get(idx):
+                return clean_val(row_data[idx]) if idx is not None and idx < len(row_data) else ""
+            name = get(name_idx) if name_idx is not None else ""
+            if not name and first_idx is not None:
+                name = (get(first_idx) + " " + get(last_idx)).strip()
+            if not name and company_idx is not None:
+                name = get(company_idx)
+            name = name.strip()
+            if not name or len(name) < 2: continue
+            if name.lower() in ['vendor','supplier','display name','name','total',
+                                  'vendor contact list','']: continue
             existing = Supplier.query.filter_by(business_id=business.id, name=name).first()
             if existing: skipped += 1; continue
-            s = Supplier(business_id=business.id, name=name,
-                        email=(row.get(email_col) or "").strip() if email_col else "",
-                        phone=(row.get(phone_col) or "").strip() if phone_col else "")
-            db.session.add(s); imported += 1
+            db.session.add(Supplier(
+                business_id=business.id, name=name,
+                email=get(email_idx) if email_idx is not None else "",
+                phone=get(phone_idx) if phone_idx is not None else ""
+            ))
+            imported += 1
         db.session.commit()
-        return jsonify({"ok":True,"imported":imported,"skipped":skipped,
-                       "message":str(imported)+" suppliers imported, "+str(skipped)+" already existed"})
+        return jsonify({"ok": True, "imported": imported, "skipped": skipped,
+                       "message": str(imported) + " suppliers imported, " + str(skipped) + " already existed"})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
+        return jsonify({"ok": False, "error": str(e)})
+
 
 
 @app.route("/import")
