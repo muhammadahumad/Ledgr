@@ -3869,7 +3869,8 @@ def api_supplier_edit(sid):
     s = Supplier.query.filter_by(id=sid, business_id=business.id).first()
     if not s: return jsonify({"ok":False,"error":"Supplier not found"})
     data = request.get_json()
-    for field in ["name","email","phone","address","tax_id","currency","payment_terms","notes"]:
+    for field in ["name","email","phone","address","tax_id","currency",
+                  "payment_terms","notes","registration_number","bank_account"]:
         if field in data: setattr(s, field, data[field])
     try:
         db.session.commit()
