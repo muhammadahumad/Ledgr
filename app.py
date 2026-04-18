@@ -32,10 +32,20 @@ ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', 'muahumadhu@gmail.com')
 
 # ── Config dicts ──────────────────────────────────────────────────────────────
 TAX_RULES = {
-    'MV': {'name':'Maldives','currency':'MVR','tax_name':'GST','tax_rate':0.08,
-           'tax_rate_tourism':0.17,'authority':'MIRA','tin_format':'XXXXXXXGSTXXX',
-           'threshold':1000000,'filing':'monthly',
-           'requires_dual_tin':True,'rtl':False},
+    'MV': {
+        'name':'Maldives','currency':'MVR','tax_name':'GST','tax_rate':0.08,
+        'tax_rate_tourism':0.17,'authority':'MIRA','tin_format':'XXXXXXXGSTXXX',
+        'threshold':1000000,'filing':'monthly','requires_dual_tin':True,'rtl':False,
+        'sectors': {
+            'general': {'name':'General Sector GST','rate':0.08,'currency':'MVR',
+                       'applies_to':'All general goods and services'},
+            'tourism': {'name':'Tourism Sector T-GST','rate':0.17,'currency':'USD',
+                       'applies_to':'Resorts, hotels, guesthouses, dive schools, spas, water sports, travel agents, tourist vessels'}
+        },
+        'tourism_businesses': ['resort','hotel','guesthouse','tourist_vessel','dive_school',
+                               'spa','water_sports','travel_agency','picnic_island',
+                               'yacht_marina','tourist_restaurant']
+    },
     'AE': {'name':'UAE','currency':'AED','tax_name':'VAT','tax_rate':0.05,
            'authority':'FTA','tin_format':'100XXXXXXXXXXXX',
            'threshold':375000,'filing':'quarterly',
@@ -776,6 +786,9 @@ class Location(db.Model):
     address = db.Column(db.Text)
     location_type = db.Column(db.String(20), default='branch')  # branch / warehouse / outlet / virtual
     is_warehouse = db.Column(db.Boolean, default=False)
+    is_pos_terminal = db.Column(db.Boolean, default=False)
+    pos_terminal_name = db.Column(db.String(100))  # e.g. "Café Counter", "Main Bar"
+    pos_receipt_header = db.Column(db.Text)  # Custom receipt header per terminal
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     business = db.relationship('Business', backref='locations')
@@ -1328,6 +1341,13 @@ def api_business_settings():
     bool_fields = ['has_pos','has_inventory','has_payroll','has_full_accounting',
                    'has_multi_location','has_service_charge','has_expiry_tracking',
                    'is_tax_registered','collect_tax_on_sales','pension_registered']
+    str_fields = ['gst_sector','gst_sector_type','display_name','address_line1',
+                  'phone','email','website','bank_name','bank_account_name',
+                  'bank_account_number','bank_swift','tax_registration_number',
+                  'pension_portal']
+    for field in str_fields:
+        if field in data and hasattr(business, field):
+            setattr(business, field, data[field])
     for field in bool_fields:
         if field in data:
             setattr(business, field, bool(data[field]))
@@ -2696,14 +2716,8 @@ def api_supplier_add():
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
 
-
-@app.route("/api/supplier/<int:sid>/delete", methods=["POST"])
-@login_required
-def api_supplier_delete(sid):
-    business, err = api_business_guard()
-    if err: return err
-    s = Supplier.query.filter_by(id=sid, business_id=business.id).first()
-    if not s: return jsonify({"ok":False,"error":"Not found"})
+def api_supplier_delete_old(sid):
+    return jsonify({"ok":False,"error":"Use new delete route"})
     if s.has_transactions:
         return jsonify({"ok":False,"error":"Cannot delete — supplier has transactions. Archive instead."})
     s.is_active = False
@@ -3795,6 +3809,95 @@ def payroll_dashboard():
     return render_template("payroll_dashboard.html", user=user, business=business,
                            employees=employees, total_monthly_cost=total_monthly_cost,
                            payroll_history=payroll_history, tax=business.tax_rules())
+
+
+
+
+# ── Customer & Supplier Edit / Delete ─────────────────────────────────────────
+
+@app.route("/api/customer/<int:cid>/edit", methods=["POST"])
+@login_required
+def api_customer_edit(cid):
+    business, err = api_business_guard()
+    if err: return err
+    c = Customer.query.filter_by(id=cid, business_id=business.id).first()
+    if not c: return jsonify({"ok":False,"error":"Customer not found"})
+    data = request.get_json()
+    for field in ["name","email","phone","address","city","tax_id","customer_type",
+                  "is_tax_registered","country","registration_number"]:
+        if field in data:
+            if field == "is_tax_registered":
+                setattr(c, field, bool(data[field]))
+            else:
+                setattr(c, field, data[field])
+    try:
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Customer updated"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/customer/<int:cid>/delete", methods=["POST"])
+@login_required
+def api_customer_delete(cid):
+    business, err = api_business_guard()
+    if err: return err
+    c = Customer.query.filter_by(id=cid, business_id=business.id).first()
+    if not c: return jsonify({"ok":False,"error":"Customer not found"})
+    # Soft delete — check for invoices first
+    has_invoices = Invoice.query.filter_by(business_id=business.id, customer_id=cid).first()
+    if has_invoices:
+        # Soft delete only
+        c.is_active = False
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Customer archived (has invoices — cannot permanently delete)"})
+    try:
+        db.session.delete(c)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Customer deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/supplier/<int:sid>/edit", methods=["POST"])
+@login_required
+def api_supplier_edit(sid):
+    business, err = api_business_guard()
+    if err: return err
+    s = Supplier.query.filter_by(id=sid, business_id=business.id).first()
+    if not s: return jsonify({"ok":False,"error":"Supplier not found"})
+    data = request.get_json()
+    for field in ["name","email","phone","address","tax_id","currency","payment_terms","notes"]:
+        if field in data: setattr(s, field, data[field])
+    try:
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Supplier updated"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/supplier/<int:sid>/delete", methods=["POST"])
+@login_required
+def api_supplier_delete_v2(sid):
+    business, err = api_business_guard()
+    if err: return err
+    s = Supplier.query.filter_by(id=sid, business_id=business.id).first()
+    if not s: return jsonify({"ok":False,"error":"Supplier not found"})
+    has_docs = Document.query.filter_by(business_id=business.id, vendor_name=s.name).first()
+    if has_docs or s.has_transactions:
+        s.is_active = False
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Supplier archived (has transactions)"})
+    try:
+        db.session.delete(s)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Supplier deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
 
 
 
