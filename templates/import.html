@@ -25,9 +25,10 @@
     <div class="card">
       <div class="card-title">👥 Import Customers</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
-        QB: Reports → Customer Contact List → Export to CSV<br>
-        Xero: Contacts → Filter Customers → Export<br>
-        Required columns: Name, Email (optional), Phone (optional), Balance (optional)
+        <strong>QB Online:</strong> Reports → Customer Contact List → Export to CSV<br>
+        <strong>Xero:</strong> Contacts → Filter by Customers → Export to CSV<br>
+        <strong>Odoo:</strong> Contacts → Customers → Action → Export → select Name, Email, Phone<br>
+        Required: any column with "Name" in the header · Optional: Email, Phone, Balance
       </div>
       <div class="upload-zone" id="cust-drop" onclick="document.getElementById('cust-file').click()" ondragover="event.preventDefault()" ondrop="handleDrop('cust',event)" style="margin-bottom:8px;cursor:pointer;padding:20px">
         <div style="font-size:20px;margin-bottom:4px">↑</div>
@@ -43,9 +44,9 @@
     <div class="card">
       <div class="card-title">🏪 Import Suppliers / Vendors</div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px">
-        QB: Reports → Vendor Contact List → Export to CSV<br>
-        Xero: Contacts → Filter Suppliers → Export<br>
-        Required columns: Name, Email (optional), Phone (optional)
+        <strong>QB Online:</strong> Reports → Vendor Contact List → Export to CSV<br>
+        <strong>Xero:</strong> Contacts → Filter by Suppliers → Export to CSV<br>
+        Required: any column with "Name" or "Vendor" in the header
       </div>
       <div class="upload-zone" id="sup-drop" onclick="document.getElementById('sup-file').click()" ondragover="event.preventDefault()" ondrop="handleDrop('sup',event)" style="margin-bottom:8px;cursor:pointer;padding:20px">
         <div style="font-size:20px;margin-bottom:4px">↑</div>
@@ -161,6 +162,9 @@ function importCSV(type) {
       m.textContent = 'Error: ' + res.error;
       btn.disabled = false;
       btn.textContent = 'Import ' + (type==='customers'?'Customers':'Suppliers');
+      // Show first row of CSV as hint
+      var lines = (csvContents[prefix]||'').split('\n').slice(0,2);
+      if(lines[0]) m.textContent += '\n\nFirst row of your CSV: ' + lines[0];
     }
   });
 }
