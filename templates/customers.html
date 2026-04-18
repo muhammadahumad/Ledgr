@@ -1,345 +1,275 @@
 {% extends "base.html" %}{% block title %}Customers — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
-  <div>
-    <div class="page-title">Customers</div>
-    <div class="page-sub">{{ customers|length }} customers · {{ vip_count }} VIP · {{ business.base_currency }} {{ "%.2f"|format(total_outstanding) }} outstanding</div>
-  </div>
-  <div style="display:flex;gap:8px">
-    <input class="field-input" placeholder="Search customers..." oninput="filterRows(this.value)" style="width:200px">
-    <button class="btn btn-primary" onclick="openModal('add-cust-modal')">+ Add Customer</button>
-  </div>
+  <div><div class="page-title">Customers</div><div class="page-sub">{{ customers|length }} registered</div></div>
+  <button class="btn btn-primary" onclick="openModal('add-cust-modal')">+ Add Customer</button>
 </div>
 <div class="content">
-  {% if not customers %}
-  <div class="card" style="text-align:center;padding:60px 0">
-    <div style="font-size:40px;margin-bottom:12px">👥</div>
-    <div style="font-weight:600;color:var(--text2);margin-bottom:6px">No customers yet</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:16px">Add customers to track purchases, manage credit and issue tax invoices</div>
-    <button class="btn btn-primary" onclick="openModal('add-cust-modal')">Add first customer</button>
-  </div>
-  {% else %}
   <div class="card" style="padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+      <input class="field-input" id="cust-search" placeholder="Search customers..." oninput="filterCusts(this.value)" style="max-width:280px">
+    </div>
+    {% if customers %}
     <table class="table">
       <thead><tr>
-        <th>Name</th>
-        <th>Type</th>
-        <th>Contact</th>
-        <th>Tax ID / TIN</th>
-        <th style="text-align:right">Total Spent</th>
-        <th style="text-align:right">Outstanding</th>
-        <th>Status</th>
-        <th></th>
+        <th>Registered Name</th><th>TIN / Tax Reg</th><th>Type</th>
+        <th>Phone</th><th>Email</th><th>Country</th>
+        <th style="text-align:right">Outstanding</th><th></th>
       </tr></thead>
-      <tbody>
+      <tbody id="cust-tbody">
       {% for c in customers %}
-      <tr class="cust-row" data-n="{{ c.name|lower }}" data-p="{{ c.phone or '' }}">
-        <td>
-          <div style="font-weight:500;color:var(--text)">{{ c.name }}{% if c.is_vip %} <span style="color:var(--mint)">⭐</span>{% endif %}</div>
-          {% if c.email %}<div style="font-size:11px;color:var(--text3)">{{ c.email }}</div>{% endif %}
+      <tr class="cust-row" data-n="{{ c.name|lower }}">
+        <td style="font-weight:500;color:var(--text)">{{ c.name }}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--mint)">{{ c.tax_id or '—' }}</td>
+        <td><span class="badge badge-gray" style="font-size:10px">{{ c.customer_type|title if c.customer_type else 'Individual' }}</span></td>
+        <td style="color:var(--text2);font-size:12px">{{ c.phone or '—' }}</td>
+        <td style="color:var(--text2);font-size:11px">{{ c.email or '—' }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ c.country or 'MV' }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;color:{% if c.outstanding_balance > 0 %}var(--red){% else %}var(--text3){% endif %}">
+          {% if c.outstanding_balance > 0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}
         </td>
         <td>
-          <span class="badge badge-{% if c.customer_type=='business' %}blue{% else %}gray{% endif %}">
-            {{ 'Business' if c.customer_type=='business' else 'Individual' }}
-          </span>
+          <div style="display:flex;gap:4px">
+            <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a>
+            <button class="btn btn-sm" onclick="editCust({{ c.id }})" style="color:var(--amber);border-color:var(--amber)">Edit</button>
+            <button class="btn btn-sm" onclick="deleteCust({{ c.id }},'{{ c.name|replace(\"'\",\"\\\\'\") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
+          </div>
         </td>
-        <td style="font-size:12px;color:var(--text2)">
-          {% if c.phone %}{{ c.phone }}{% endif %}
-          {% if c.city %}<div style="font-size:11px;color:var(--text3)">{{ c.city }}{% if c.country %}, {{ c.country }}{% endif %}</div>{% endif %}
-        </td>
-        <td>
-          {% if c.tax_id %}
-          <span style="font-family:var(--mono);font-size:11px;color:var(--mint)">{{ c.tax_id }}</span>
-          {% else %}
-          <span style="font-size:11px;color:var(--text3)">—</span>
-          {% endif %}
-        </td>
-        <td style="text-align:right;font-family:var(--mono);color:var(--mint)">{{ business.base_currency }} {{ "%.2f"|format(c.total_spent or 0) }}</td>
-        <td style="text-align:right;font-family:var(--mono);color:{% if (c.outstanding_balance or 0) > 0 %}var(--red){% else %}var(--text3){% endif %}">
-          {% if (c.outstanding_balance or 0) > 0 %}{{ business.base_currency }} {{ "%.2f"|format(c.outstanding_balance) }}{% else %}—{% endif %}
-        </td>
-        <td><span class="badge badge-{% if c.is_vip %}amber{% else %}gray{% endif %}">{{ 'VIP' if c.is_vip else 'Regular' }}</span></td>
-        <td><div style="display:flex;gap:4px">
-          <button class="btn btn-sm" onclick="viewCust({{ c.id }})">View</button>
-          <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a>
-          <button class="btn btn-sm" onclick="editCust({{ c.id }},'{{ c.name|replace("'","\'") }}','{{ c.email or '' }}','{{ c.phone or '' }}','{{ c.address or '' }}')" style="color:var(--amber);border-color:var(--amber)">Edit</button>
-          <button class="btn btn-sm" onclick="deleteCust({{ c.id }},'{{ c.name|replace("'","\'") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
-        </div></td>
       </tr>
       {% endfor %}
       </tbody>
     </table>
+    {% else %}
+    <div style="text-align:center;padding:60px;color:var(--text3)">
+      <div style="font-size:32px;margin-bottom:12px">◎</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:14px">No customers yet</div>
+      <button class="btn btn-primary" onclick="openModal('add-cust-modal')">Add First Customer</button>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 
 <!-- Add Customer Modal -->
 <div id="add-cust-modal" class="modal-overlay">
   <div class="modal" style="max-width:560px">
     <div class="modal-title">Add Customer <button class="modal-close" onclick="closeModal('add-cust-modal')">×</button></div>
-
-    <!-- Customer type toggle -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
-      <div id="type-individual" onclick="setType('individual')"
-        style="padding:10px 14px;border:2px solid var(--mint);background:rgba(16,185,129,.08);border-radius:8px;cursor:pointer;text-align:center">
-        <div style="font-size:18px">👤</div>
-        <div style="font-size:12px;font-weight:600;color:var(--text)">Individual</div>
-        <div style="font-size:10px;color:var(--text3)">Walk-in / personal</div>
-      </div>
-      <div id="type-business" onclick="setType('business')"
-        style="padding:10px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;text-align:center">
-        <div style="font-size:18px">🏢</div>
-        <div style="font-size:12px;font-weight:600;color:var(--text)">Business</div>
-        <div style="font-size:10px;color:var(--text3)">Company / B2B</div>
-      </div>
-    </div>
-
-    <!-- Basic info -->
     <div class="field-row">
-      <div><div class="field-label">Full Name / Company Name *</div><input class="field-input" id="c-name" placeholder="Ahmed Hassan / ABC Trading Pvt Ltd"></div>
-      <div><div class="field-label">Phone</div><input class="field-input" id="c-phone" placeholder="+960 7XX XXXX"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Email</div><input class="field-input" id="c-email" placeholder="customer@email.com"></div>
-      <div><div class="field-label">City</div><input class="field-input" id="c-city" placeholder="Male'"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Address</div><input class="field-input" id="c-address" placeholder="Street / Island / Area"></div>
-      <div><div class="field-label">Country</div>
-        <select class="select-input" id="c-country">
-          <option value="MV">Maldives</option>
-          <option value="AE">UAE</option>
-          <option value="SA">Saudi Arabia</option>
-          <option value="PK">Pakistan</option>
-          <option value="OM">Oman</option>
-          <option value="IN">India</option>
-          <option value="EG">Egypt</option>
-          <option value="ID">Indonesia</option>
-          <option value="CN">China</option>
-          <option value="OTHER">Other</option>
+      <div style="flex:2"><div class="field-label">Registered Business / Full Name *</div><input class="field-input" id="c-name" placeholder="As per trade license or ID"></div>
+      <div><div class="field-label">Type</div>
+        <select class="select-input" id="c-type" onchange="toggleTaxType(this.value)">
+          <option value="individual">Individual</option>
+          <option value="business">Business</option>
         </select>
       </div>
     </div>
-
-    <!-- Tax fields — shown for all, mandatory hint for business -->
-    <div id="tax-section" style="background:rgba(16,185,129,.05);border:1px solid rgba(16,185,129,.2);border-radius:8px;padding:12px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:600;color:var(--mint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">
-        Tax & Compliance
-        <span id="tin-mandatory-badge" style="display:none;margin-left:8px;background:var(--red);color:#fff;padding:1px 6px;border-radius:4px;font-size:9px">MANDATORY</span>
-      </div>
-      <div class="field-row">
-        <div>
-          <div class="field-label" id="tin-label">GST TIN</div>
-          <input class="field-input" id="c-taxid" placeholder="XXXXXXXGSTXXX" style="font-family:var(--mono)">
-          <div id="tin-hint" style="font-size:10px;color:var(--text3);margin-top:3px">Required on all Maldives tax invoices</div>
-        </div>
-        <div id="regno-wrap">
-          <div class="field-label">Company Reg. No.</div>
-          <input class="field-input" id="c-regno" placeholder="C-XXXXXX" style="font-family:var(--mono)">
-        </div>
-      </div>
-    </div>
-
-    <!-- VIP + credit -->
     <div class="field-row">
-      <div>
-        <div class="field-label">Credit Limit ({{ business.base_currency }})</div>
-        <input class="field-input" type="number" id="c-credit" placeholder="0.00" step="0.01">
+      <div><div class="field-label">Country</div>
+        <select class="select-input" id="c-country" onchange="updateTINLabel(this.value)">
+          <option value="MV">🇲🇻 Maldives</option>
+          <option value="AE">🇦🇪 UAE</option>
+          <option value="SA">🇸🇦 Saudi Arabia</option>
+          <option value="PK">🇵🇰 Pakistan</option>
+          <option value="IN">🇮🇳 India</option>
+          <option value="OM">🇴🇲 Oman</option>
+          <option value="ID">🇮🇩 Indonesia</option>
+          <option value="EG">🇪🇬 Egypt</option>
+          <option value="CN">🇨🇳 China</option>
+        </select>
       </div>
-      <div style="display:flex;align-items:flex-end;padding-bottom:2px">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
-          <input type="checkbox" id="c-vip" style="accent-color:var(--mint);width:15px;height:15px"> Mark as VIP customer
-        </label>
+      <div id="tin-field">
+        <div class="field-label" id="tin-label">GST TIN (MIRA)</div>
+        <input class="field-input" id="c-tin" placeholder="XXXXXXXGSTXXX">
       </div>
     </div>
-    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="c-notes" placeholder="Preferences, payment terms, special instructions..."></div>
-
-    <div style="display:flex;gap:8px;margin-top:4px">
-      <button class="btn btn-primary" onclick="addCust()">Save Customer</button>
+    <div id="biz-reg-row" style="display:none" class="field-row">
+      <div><div class="field-label">Registration Number</div><input class="field-input" id="c-regno" placeholder="Business Reg. No."></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Address</div><input class="field-input" id="c-address" placeholder="Street, Island / City"></div>
+      <div><div class="field-label">City</div><input class="field-input" id="c-city" placeholder="Malé, Dubai, etc."></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="c-phone" placeholder="+960 XXXXXXX"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="c-email" placeholder="billing@company.com"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Opening Balance</div><input class="field-input" type="number" id="c-balance" placeholder="0.00" step="0.01"></div>
+      <div><div class="field-label">Credit Limit</div><input class="field-input" type="number" id="c-credit" placeholder="0.00" step="0.01"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" onclick="addCust()">Add Customer</button>
       <button class="btn" onclick="closeModal('add-cust-modal')">Cancel</button>
     </div>
-    <div id="c-msg" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
-  </div>
-</div>
-
-<!-- View Customer Modal -->
-<div id="detail-modal" class="modal-overlay">
-  <div class="modal" style="max-width:560px">
-    <div class="modal-title"><span id="d-name"></span><button class="modal-close" onclick="closeModal('detail-modal')">×</button></div>
-    <div id="d-content"></div>
+    <div id="c-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
 
 <!-- Edit Customer Modal -->
 <div id="edit-cust-modal" class="modal-overlay">
-  <div class="modal" style="max-width:480px">
+  <div class="modal" style="max-width:560px">
     <div class="modal-title">Edit Customer <button class="modal-close" onclick="closeModal('edit-cust-modal')">×</button></div>
-    <input type="hidden" id="edit-cust-id">
-    <div class="field-group"><div class="field-label">Name *</div><input class="field-input" id="edit-cust-name"></div>
+    <input type="hidden" id="ec-id">
     <div class="field-row">
-      <div><div class="field-label">Email</div><input class="field-input" id="edit-cust-email"></div>
-      <div><div class="field-label">Phone</div><input class="field-input" id="edit-cust-phone"></div>
+      <div style="flex:2"><div class="field-label">Registered Name *</div><input class="field-input" id="ec-name"></div>
+      <div><div class="field-label">Type</div>
+        <select class="select-input" id="ec-type">
+          <option value="individual">Individual</option>
+          <option value="business">Business</option>
+        </select>
+      </div>
     </div>
-    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="edit-cust-address"></div>
-    <div style="display:flex;gap:8px;margin-top:8px">
+    <div class="field-row">
+      <div><div class="field-label">Country</div>
+        <select class="select-input" id="ec-country">
+          <option value="MV">🇲🇻 Maldives</option>
+          <option value="AE">🇦🇪 UAE</option>
+          <option value="SA">🇸🇦 Saudi Arabia</option>
+          <option value="PK">🇵🇰 Pakistan</option>
+          <option value="IN">🇮🇳 India</option>
+          <option value="OM">🇴🇲 Oman</option>
+          <option value="ID">🇮🇩 Indonesia</option>
+          <option value="EG">🇪🇬 Egypt</option>
+          <option value="CN">🇨🇳 China</option>
+        </select>
+      </div>
+      <div><div class="field-label">TIN / Tax Registration</div><input class="field-input" id="ec-tin" placeholder="Tax identification number"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Registration Number</div><input class="field-input" id="ec-regno" placeholder="Business reg. no."></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Address</div><input class="field-input" id="ec-address"></div>
+      <div><div class="field-label">City</div><input class="field-input" id="ec-city"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="ec-phone"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="ec-email"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-primary" onclick="saveEditCust()">Save Changes</button>
       <button class="btn" onclick="closeModal('edit-cust-modal')">Cancel</button>
     </div>
-    <div id="edit-cust-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    <div id="ec-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
-
 {% endblock %}
+
 {% block scripts %}<script>
-// Country TIN config
-var TIN_CONFIG = {
-  'MV': {label:'GST TIN',placeholder:'XXXXXXXGSTXXX',hint:'Required on all Maldives tax invoices (MIRA)',mandatory:true},
-  'AE': {label:'TRN',placeholder:'100XXXXXXXXXXXX',hint:'15-digit Tax Registration Number (FTA)',mandatory:true},
-  'SA': {label:'VAT Number',placeholder:'3XXXXXXXXXXXXX3',hint:'15-digit VAT number (ZATCA)',mandatory:true},
-  'PK': {label:'NTN / STRN',placeholder:'XXXXXXX-X',hint:'FBR National Tax Number',mandatory:true},
-  'OM': {label:'VATIN',placeholder:'OMXXXXXXXXXXXXXXX',hint:'Oman VAT Identification Number',mandatory:true},
-  'IN': {label:'GSTIN',placeholder:'XXXXXXXXXXXXXXX',hint:'15-character GST Identification Number',mandatory:true},
-  'EG': {label:'Tax Reg. Number',placeholder:'XXXXXXXXX',hint:'9-digit ETA Tax Registration',mandatory:true},
-  'ID': {label:'NPWP',placeholder:'XX.XXX.XXX.X-XXX.XXX',hint:'Indonesia Tax ID Number',mandatory:true},
-  'CN': {label:'Fapiao Tax ID',placeholder:'XXXXXXXXXXXXXXXXXX',hint:'18-digit Unified Social Credit Code',mandatory:true},
-  'OTHER': {label:'Tax ID / TIN',placeholder:'Tax ID number',hint:'Tax identification number',mandatory:false}
+var TIN_LABELS = {
+  'MV':'GST TIN (MIRA)','AE':'TRN (FTA)','SA':'VAT Number (ZATCA)',
+  'PK':'NTN / STRN (FBR)','IN':'GSTIN (GSTN)','OM':'Tax ID (Tax Oman)',
+  'ID':'NPWP (DGT)','EG':'Tax ID (ETA)','CN':'Unified Social Credit Code'
 };
 
-var customerType = 'individual';
+var TIN_PLACEHOLDERS = {
+  'MV':'XXXXXXXGSTXXX','AE':'100XXXXXXXXXXXX','SA':'3XXXXXXXXXXXXX3',
+  'PK':'XXXXXXX-X','IN':'XXAAAAAAAAAAXXX','OM':'OMXXXXXXXXXXXXXXX',
+  'ID':'XX.XXX.XXX.X-XXX.XXX','EG':'XXXXXXXXX','CN':'XXXXXXXXXXXXXXXXXX'
+};
 
-function setType(type) {
-  customerType = type;
-  var ind = document.getElementById('type-individual');
-  var biz = document.getElementById('type-business');
-  if (type === 'individual') {
-    ind.style.border = '2px solid var(--mint)';
-    ind.style.background = 'rgba(16,185,129,.08)';
-    biz.style.border = '1px solid var(--border)';
-    biz.style.background = '';
-    document.getElementById('regno-wrap').style.display = 'none';
-    document.getElementById('tin-mandatory-badge').style.display = 'none';
-  } else {
-    biz.style.border = '2px solid var(--mint)';
-    biz.style.background = 'rgba(16,185,129,.08)';
-    ind.style.border = '1px solid var(--border)';
-    ind.style.background = '';
-    document.getElementById('regno-wrap').style.display = '';
-    document.getElementById('tin-mandatory-badge').style.display = 'inline';
-  }
+// Store customer data for edit modal
+var CUST_DATA = {
+  {% for c in customers %}
+  {{ c.id }}: {
+    name: {{ c.name|tojson }},
+    type: {{ (c.customer_type or 'individual')|tojson }},
+    country: {{ (c.country or 'MV')|tojson }},
+    tin: {{ (c.tax_id or '')|tojson }},
+    regno: {{ (c.registration_number or '')|tojson }},
+    address: {{ (c.address or '')|tojson }},
+    city: {{ (c.city or '')|tojson }},
+    phone: {{ (c.phone or '')|tojson }},
+    email: {{ (c.email or '')|tojson }}
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+};
+
+function updateTINLabel(country) {
+  var label = document.getElementById('tin-label');
+  var input = document.getElementById('c-tin');
+  if (label) label.textContent = TIN_LABELS[country] || 'Tax ID';
+  if (input) input.placeholder = TIN_PLACEHOLDERS[country] || '';
 }
 
-function updateTINFields() {
-  var country = document.getElementById('c-country').value;
-  var cfg = TIN_CONFIG[country] || TIN_CONFIG['OTHER'];
-  document.getElementById('tin-label').textContent = cfg.label;
-  document.getElementById('c-taxid').placeholder = cfg.placeholder;
-  document.getElementById('tin-hint').textContent = cfg.hint;
-  if (cfg.mandatory) {
-    document.getElementById('tin-mandatory-badge').style.display = customerType === 'business' ? 'inline' : 'none';
-  }
+function toggleTaxType(type) {
+  document.getElementById('biz-reg-row').style.display = type === 'business' ? 'flex' : 'none';
 }
-document.getElementById('c-country').addEventListener('change', updateTINFields);
 
-function filterRows(q) {
+function filterCusts(q) {
   q = q.toLowerCase();
   document.querySelectorAll('.cust-row').forEach(function(r) {
-    r.style.display = (r.dataset.n.includes(q) || r.dataset.p.includes(q)) ? '' : 'none';
+    r.style.display = r.dataset.n.includes(q) ? '' : 'none';
   });
 }
 
 function addCust() {
   var name = document.getElementById('c-name').value.trim();
-  if (!name) { alert('Customer name is required'); return; }
-  var taxId = document.getElementById('c-taxid').value.trim();
-  var country = document.getElementById('c-country').value;
-  var cfg = TIN_CONFIG[country] || TIN_CONFIG['OTHER'];
-  // Warn if business and TIN missing
-  if (customerType === 'business' && cfg.mandatory && !taxId) {
-    if (!confirm('Tax ID (' + cfg.label + ') is mandatory for ' + country + ' business customers on tax invoices. Save without it?')) return;
-  }
+  if (!name) { alert('Registered name is required'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
   fetch('/api/customer/add', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       name: name,
+      customer_type: document.getElementById('c-type').value,
+      country: document.getElementById('c-country').value,
+      tax_id: document.getElementById('c-tin').value,
+      registration_number: document.getElementById('c-regno').value,
+      address: document.getElementById('c-address').value,
+      city: document.getElementById('c-city').value,
       phone: document.getElementById('c-phone').value,
       email: document.getElementById('c-email').value,
-      city: document.getElementById('c-city').value,
-      address: document.getElementById('c-address').value,
-      country: country,
-      customer_type: customerType,
-      tax_id: taxId,
-      registration_number: document.getElementById('c-regno').value,
-      is_vip: document.getElementById('c-vip').checked,
-      notes: document.getElementById('c-notes').value
+      outstanding_balance: parseFloat(document.getElementById('c-balance').value) || 0
     })
-  }).then(function(r) { return r.json(); })
-  .then(function(res) {
-    if (res.ok) { location.reload(); }
+  }).then(r => r.json()).then(res => {
+    if (res.ok) { closeModal('add-cust-modal'); location.reload(); }
     else {
       var m = document.getElementById('c-msg');
+      m.style.display = 'block'; m.style.color = 'var(--red)';
       m.textContent = 'Error: ' + res.error;
-      m.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Add Customer';
     }
   });
 }
 
-function viewCust(id) {
-  fetch('/api/customer/' + id).then(function(r) { return r.json(); }).then(function(res) {
-    if (!res.ok) return;
-    document.getElementById('d-name').textContent = res.name + (res.is_vip ? ' ⭐' : '');
-    var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:12px">';
-    h += '<div><div class="field-label">Phone</div><div style="color:var(--text)">' + (res.phone || '—') + '</div></div>';
-    h += '<div><div class="field-label">Email</div><div style="color:var(--text)">' + (res.email || '—') + '</div></div>';
-    h += '<div><div class="field-label">Type</div><div style="color:var(--text)">' + (res.customer_type === 'business' ? '🏢 Business' : '👤 Individual') + '</div></div>';
-    h += '<div><div class="field-label">Country</div><div style="color:var(--text)">' + (res.country || '—') + '</div></div>';
-    if (res.tax_id) h += '<div style="grid-column:1/-1"><div class="field-label">Tax ID / TIN</div><div style="color:var(--mint);font-family:var(--mono);font-size:13px">' + esc(res.tax_id) + '</div></div>';
-    if (res.address) h += '<div style="grid-column:1/-1"><div class="field-label">Address</div><div style="color:var(--text2)">' + esc(res.address) + (res.city ? ', ' + res.city : '') + '</div></div>';
-    h += '<div><div class="field-label">Total Spent</div><div style="color:var(--mint);font-weight:700;font-size:16px;font-family:var(--mono)">' + fmt(res.total_spent) + '</div></div>';
-    h += '<div><div class="field-label">Outstanding</div><div style="color:' + (res.outstanding_balance > 0 ? 'var(--red)' : 'var(--text3)') + ';font-family:var(--mono)">' + fmt(res.outstanding_balance) + '</div></div>';
-    h += '<div><div class="field-label">Visits</div><div style="color:var(--text);font-size:15px;font-weight:700">' + (res.visit_count || 0) + '</div></div>';
-    h += '<div><div class="field-label">Last Visit</div><div style="color:var(--text)">' + (res.last_visit || 'Never') + '</div></div>';
-    h += '</div>';
-    if (res.notes) h += '<div style="padding:8px 12px;background:var(--bg);border-radius:7px;font-size:11px;color:var(--text2);margin-bottom:12px">📝 ' + esc(res.notes) + '</div>';
-    if (res.recent_sales && res.recent_sales.length) {
-      h += '<div style="font-size:10px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Recent Sales</div>';
-      res.recent_sales.forEach(function(s) {
-        h += '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">'
-          + '<div><div style="color:var(--text)">' + (s.note || 'Sale') + '</div><div style="color:var(--text3)">' + s.date + ' · ' + s.method + '</div></div>'
-          + '<div style="color:var(--mint);font-family:var(--mono);font-weight:500">' + fmt(s.amount) + '</div></div>';
-      });
-    }
-    document.getElementById('d-content').innerHTML = h;
-    openModal('detail-modal');
-  });
-}
-
-function editCust(id, name, email, phone, address) {
-  document.getElementById('edit-cust-id').value = id;
-  document.getElementById('edit-cust-name').value = name;
-  document.getElementById('edit-cust-email').value = email;
-  document.getElementById('edit-cust-phone').value = phone;
-  document.getElementById('edit-cust-address').value = address;
+function editCust(id) {
+  var d = CUST_DATA[id];
+  if (!d) { alert('Customer data not found'); return; }
+  document.getElementById('ec-id').value = id;
+  document.getElementById('ec-name').value = d.name;
+  document.getElementById('ec-type').value = d.type;
+  document.getElementById('ec-country').value = d.country;
+  document.getElementById('ec-tin').value = d.tin;
+  document.getElementById('ec-regno').value = d.regno;
+  document.getElementById('ec-address').value = d.address;
+  document.getElementById('ec-city').value = d.city;
+  document.getElementById('ec-phone').value = d.phone;
+  document.getElementById('ec-email').value = d.email;
   openModal('edit-cust-modal');
 }
 
 function saveEditCust() {
-  var id = document.getElementById('edit-cust-id').value;
-  var name = document.getElementById('edit-cust-name').value.trim();
-  if (!name) { alert('Name is required'); return; }
+  var id = document.getElementById('ec-id').value;
+  var name = document.getElementById('ec-name').value.trim();
+  if (!name) { alert('Registered name is required'); return; }
   var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
   fetch('/api/customer/' + id + '/edit', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       name: name,
-      email: document.getElementById('edit-cust-email').value,
-      phone: document.getElementById('edit-cust-phone').value,
-      address: document.getElementById('edit-cust-address').value
+      customer_type: document.getElementById('ec-type').value,
+      country: document.getElementById('ec-country').value,
+      tax_id: document.getElementById('ec-tin').value,
+      registration_number: document.getElementById('ec-regno').value,
+      address: document.getElementById('ec-address').value,
+      city: document.getElementById('ec-city').value,
+      phone: document.getElementById('ec-phone').value,
+      email: document.getElementById('ec-email').value
     })
   }).then(r => r.json()).then(res => {
     if (res.ok) { closeModal('edit-cust-modal'); location.reload(); }
     else {
-      var m = document.getElementById('edit-cust-msg');
+      var m = document.getElementById('ec-msg');
       m.style.display = 'block'; m.style.color = 'var(--red)';
       m.textContent = 'Error: ' + res.error;
       btn.disabled = false; btn.textContent = 'Save Changes';
@@ -348,11 +278,11 @@ function saveEditCust() {
 }
 
 function deleteCust(id, name) {
-  if (!confirm('Delete customer "' + name + '"?\n\nIf they have invoices they will be archived instead of permanently deleted.')) return;
+  if (!confirm('Delete "' + name + '"?\n\nIf they have invoices they will be archived.')) return;
   fetch('/api/customer/' + id + '/delete', {method: 'POST'})
     .then(r => r.json())
     .then(res => {
-      if (res.ok) { alert('✓ ' + res.message); location.reload(); }
+      if (res.ok) { location.reload(); }
       else alert('Error: ' + res.error);
     });
 }

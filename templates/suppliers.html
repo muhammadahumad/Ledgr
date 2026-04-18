@@ -1,129 +1,234 @@
 {% extends "base.html" %}{% block title %}Suppliers — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
-  <div><div class="page-title">Suppliers</div><div class="page-sub">{{ suppliers|length }} suppliers · Auto-populated from uploaded invoices</div></div>
+  <div><div class="page-title">Suppliers</div><div class="page-sub">{{ suppliers|length }} registered</div></div>
   <button class="btn btn-primary" onclick="openModal('add-sup-modal')">+ Add Supplier</button>
 </div>
 <div class="content">
-<div class="card">
-  <div class="card-title">Supplier Database <input class="field-input" id="search-sup" placeholder="Search..." style="width:200px;font-size:11px;padding:4px 8px" oninput="filterSup(this.value)"></div>
-  {% if suppliers %}
-  <table class="table"><thead><tr><th>Name</th><th>Tax ID</th><th>Phone</th><th>Email</th><th>Currency</th><th>Total Purchases</th><th>Source</th><th></th></tr></thead><tbody>
-  {% for s in suppliers %}<tr class="sup-row" data-n="{{ s.name|lower }}">
-    <td style="color:var(--text);font-weight:500">{{ s.name }}</td>
-    <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ s.tax_id or '—' }}</td>
-    <td style="color:var(--text3)">{{ s.phone or '—' }}</td>
-    <td style="color:var(--text3);font-size:11px">{{ s.email or '—' }}</td>
-    <td>{{ s.currency }}</td>
-    <td style="font-family:var(--mono);color:var(--mint);font-weight:500">{{ s.currency }} {{ "%.2f"|format(s.total_purchases) }}</td>
-    <td><span class="badge badge-{% if s.auto_detected %}blue{% else %}gray{% endif %}">{% if s.auto_detected %}Auto{% else %}Manual{% endif %}</span></td>
-    <td><div style="display:flex;gap:4px">
-      <button class="btn btn-sm" onclick="editSup({{ s.id }},'{{ s.name|replace("'","\\'") }}','{{ s.email or '' }}','{{ s.phone or '' }}','{{ s.tax_id or '' }}')" style="color:var(--amber);border-color:var(--amber)">Edit</button>
-      <button class="btn btn-sm" onclick="deleteSup({{ s.id }},'{{ s.name|replace("'","\\'") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
-    </div></td>
-  </tr>{% endfor %}
-  </tbody></table>
-  {% else %}
-  <div style="text-align:center;padding:40px 0;color:var(--text3)">
-    <div style="font-size:28px;margin-bottom:10px">🏭</div>
-    <div style="font-weight:500;color:var(--text2);margin-bottom:6px">No suppliers yet</div>
-    <div style="font-size:11px;margin-bottom:14px">Upload a bill or receipt and suppliers will be automatically detected</div>
-    <div style="display:flex;gap:8px;justify-content:center">
-      <a href="/upload" class="btn btn-primary">Upload Document</a>
-      <button class="btn" onclick="openModal('add-sup-modal')">Add Manually</button>
+  <div class="card" style="padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;gap:8px">
+      <input class="field-input" id="sup-search" placeholder="Search suppliers..." oninput="filterSups(this.value)" style="max-width:280px">
     </div>
+    {% if suppliers %}
+    <table class="table">
+      <thead><tr>
+        <th>Registered Name</th><th>TIN / Tax Reg</th>
+        <th>Phone</th><th>Email</th><th>Currency</th>
+        <th style="text-align:right">Total Purchases</th><th></th>
+      </tr></thead>
+      <tbody id="sup-tbody">
+      {% for s in suppliers %}
+      <tr class="sup-row" data-n="{{ s.name|lower }}">
+        <td style="font-weight:500;color:var(--text)">{{ s.name }}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--mint)">{{ s.tax_id or '—' }}</td>
+        <td style="color:var(--text2);font-size:12px">{{ s.phone or '—' }}</td>
+        <td style="color:var(--text2);font-size:11px">{{ s.email or '—' }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ s.currency or business.base_currency }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--mint)">
+          {{ s.currency or business.base_currency }} {{ "%.2f"|format(s.total_purchases or 0) }}
+        </td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="editSup({{ s.id }})" style="color:var(--amber);border-color:var(--amber)">Edit</button>
+            <button class="btn btn-sm" onclick="deleteSup({{ s.id }},'{{ s.name|replace(\"'\",\"\\\\'\") }}')" style="color:var(--red);border-color:var(--red)">Delete</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:60px;color:var(--text3)">
+      <div style="font-size:32px;margin-bottom:12px">🏪</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:14px">No suppliers yet</div>
+      <div style="font-size:11px;margin-bottom:16px">Suppliers are auto-detected when you upload bills, or add manually</div>
+      <button class="btn btn-primary" onclick="openModal('add-sup-modal')">Add Supplier</button>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
-</div>
 </div>
 
+<!-- Add Supplier Modal -->
 <div id="add-sup-modal" class="modal-overlay">
-  <div class="modal" style="max-width:540px">
+  <div class="modal" style="max-width:560px">
     <div class="modal-title">Add Supplier <button class="modal-close" onclick="closeModal('add-sup-modal')">×</button></div>
     <div class="field-row">
-      <div><div class="field-label">Supplier Name *</div><input class="field-input" id="s-name" placeholder="ABC Trading Pvt Ltd"></div>
-      <div><div class="field-label">Tax ID / TIN</div><input class="field-input" id="s-taxid" placeholder="{{ tax.tin_format }}"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Phone</div><input class="field-input" id="s-phone" placeholder="+960 XXX XXXX"></div>
-      <div><div class="field-label">Email</div><input class="field-input" id="s-email" placeholder="supplier@email.com"></div>
-    </div>
-    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="s-address" placeholder="Full address"></div>
-    <div class="field-row">
+      <div style="flex:2"><div class="field-label">Registered Business Name *</div><input class="field-input" id="s-name" placeholder="As per trade license"></div>
       <div><div class="field-label">Currency</div>
         <select class="select-input" id="s-currency">
-          {% for c in ['MVR','USD','AED','PKR','LKR','INR','CNY'] %}
-          <option value="{{ c }}" {% if c==business.base_currency %}selected{% endif %}>{{ c }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div><div class="field-label">Payment Terms</div>
-        <select class="select-input" id="s-terms">
-          <option>Net 30</option><option>Net 15</option><option>Net 60</option><option>Cash on Delivery</option><option>Advance Payment</option>
+          <option value="MVR">MVR</option><option value="USD">USD</option>
+          <option value="AED">AED</option><option value="SAR">SAR</option>
+          <option value="PKR">PKR</option><option value="INR">INR</option>
+          <option value="OMR">OMR</option><option value="EUR">EUR</option>
+          <option value="GBP">GBP</option>
         </select>
       </div>
     </div>
-    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="s-notes" placeholder="Any notes about this supplier"></div>
-    <div style="display:flex;gap:8px;margin-top:4px">
+    <div class="field-row">
+      <div><div class="field-label">TIN / VAT / Tax Reg. Number</div><input class="field-input" id="s-taxid" placeholder="Supplier's tax registration number"></div>
+      <div><div class="field-label">Business Reg. Number</div><input class="field-input" id="s-regno" placeholder="Trade license / reg. number"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="s-address" placeholder="Registered address"></div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="s-phone" placeholder="+960 XXXXXXX"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="s-email" placeholder="accounts@supplier.com"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Payment Terms</div>
+        <select class="select-input" id="s-terms">
+          <option value="Due on Receipt">Due on Receipt</option>
+          <option value="Net 15">Net 15</option>
+          <option value="Net 30" selected>Net 30</option>
+          <option value="Net 45">Net 45</option>
+          <option value="Net 60">Net 60</option>
+        </select>
+      </div>
+      <div><div class="field-label">Bank Account (optional)</div><input class="field-input" id="s-bank" placeholder="For payment reference"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="s-notes" placeholder="Any notes..."></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-primary" onclick="addSupplier()">Add Supplier</button>
       <button class="btn" onclick="closeModal('add-sup-modal')">Cancel</button>
     </div>
     <div id="s-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
+
 <!-- Edit Supplier Modal -->
 <div id="edit-sup-modal" class="modal-overlay">
-  <div class="modal" style="max-width:480px">
+  <div class="modal" style="max-width:560px">
     <div class="modal-title">Edit Supplier <button class="modal-close" onclick="closeModal('edit-sup-modal')">×</button></div>
-    <input type="hidden" id="edit-sup-id">
+    <input type="hidden" id="es-id">
     <div class="field-row">
-      <div><div class="field-label">Name *</div><input class="field-input" id="edit-sup-name"></div>
-      <div><div class="field-label">Tax ID</div><input class="field-input" id="edit-sup-taxid"></div>
+      <div style="flex:2"><div class="field-label">Registered Business Name *</div><input class="field-input" id="es-name"></div>
+      <div><div class="field-label">Currency</div>
+        <select class="select-input" id="es-currency">
+          <option value="MVR">MVR</option><option value="USD">USD</option>
+          <option value="AED">AED</option><option value="SAR">SAR</option>
+          <option value="PKR">PKR</option><option value="INR">INR</option>
+          <option value="OMR">OMR</option><option value="EUR">EUR</option>
+          <option value="GBP">GBP</option>
+        </select>
+      </div>
     </div>
     <div class="field-row">
-      <div><div class="field-label">Email</div><input class="field-input" id="edit-sup-email"></div>
-      <div><div class="field-label">Phone</div><input class="field-input" id="edit-sup-phone"></div>
+      <div><div class="field-label">TIN / VAT / Tax Reg. Number</div><input class="field-input" id="es-taxid"></div>
+      <div><div class="field-label">Business Reg. Number</div><input class="field-input" id="es-regno"></div>
     </div>
-    <div style="display:flex;gap:8px;margin-top:8px">
+    <div class="field-group"><div class="field-label">Address</div><input class="field-input" id="es-address"></div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div><input class="field-input" id="es-phone"></div>
+      <div><div class="field-label">Email</div><input class="field-input" id="es-email"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Payment Terms</div>
+        <select class="select-input" id="es-terms">
+          <option value="Due on Receipt">Due on Receipt</option>
+          <option value="Net 15">Net 15</option>
+          <option value="Net 30">Net 30</option>
+          <option value="Net 45">Net 45</option>
+          <option value="Net 60">Net 60</option>
+        </select>
+      </div>
+      <div><div class="field-label">Notes</div><input class="field-input" id="es-notes"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
       <button class="btn btn-primary" onclick="saveEditSup()">Save Changes</button>
       <button class="btn" onclick="closeModal('edit-sup-modal')">Cancel</button>
     </div>
-    <div id="edit-sup-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    <div id="es-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
-
 {% endblock %}
-{% block scripts %}<script>
-function filterSup(q){q=q.toLowerCase();document.querySelectorAll('.sup-row').forEach(r=>r.style.display=r.dataset.n.includes(q)?'':'none');}
-function addSupplier(){var name=document.getElementById('s-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/supplier/add',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,tax_id:document.getElementById('s-taxid').value,phone:document.getElementById('s-phone').value,email:document.getElementById('s-email').value,address:document.getElementById('s-address').value,currency:document.getElementById('s-currency').value,payment_terms:document.getElementById('s-terms').value,notes:document.getElementById('s-notes').value})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{var m=document.getElementById('s-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
 
-function editSup(id, name, email, phone, taxid) {
-  document.getElementById('edit-sup-id').value = id;
-  document.getElementById('edit-sup-name').value = name;
-  document.getElementById('edit-sup-email').value = email;
-  document.getElementById('edit-sup-phone').value = phone;
-  document.getElementById('edit-sup-taxid').value = taxid;
+{% block scripts %}<script>
+var SUP_DATA = {
+  {% for s in suppliers %}
+  {{ s.id }}: {
+    name: {{ s.name|tojson }},
+    currency: {{ (s.currency or business.base_currency)|tojson }},
+    tax_id: {{ (s.tax_id or '')|tojson }},
+    address: {{ (s.address or '')|tojson }},
+    phone: {{ (s.phone or '')|tojson }},
+    email: {{ (s.email or '')|tojson }},
+    payment_terms: {{ (s.payment_terms or 'Net 30')|tojson }},
+    notes: {{ (s.notes or '')|tojson }}
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+};
+
+function filterSups(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('.sup-row').forEach(function(r) {
+    r.style.display = r.dataset.n.includes(q) ? '' : 'none';
+  });
+}
+
+function addSupplier() {
+  var name = document.getElementById('s-name').value.trim();
+  if (!name) { alert('Registered business name is required'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
+  fetch('/api/supplier/add', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name: name,
+      currency: document.getElementById('s-currency').value,
+      tax_id: document.getElementById('s-taxid').value,
+      address: document.getElementById('s-address').value,
+      phone: document.getElementById('s-phone').value,
+      email: document.getElementById('s-email').value,
+      payment_terms: document.getElementById('s-terms').value,
+      notes: document.getElementById('s-notes').value
+    })
+  }).then(r => r.json()).then(res => {
+    if (res.ok) { closeModal('add-sup-modal'); location.reload(); }
+    else {
+      var m = document.getElementById('s-msg');
+      m.style.display = 'block'; m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + res.error;
+      btn.disabled = false; btn.textContent = 'Add Supplier';
+    }
+  });
+}
+
+function editSup(id) {
+  var d = SUP_DATA[id];
+  if (!d) { alert('Supplier data not found'); return; }
+  document.getElementById('es-id').value = id;
+  document.getElementById('es-name').value = d.name;
+  document.getElementById('es-currency').value = d.currency;
+  document.getElementById('es-taxid').value = d.tax_id;
+  document.getElementById('es-address').value = d.address;
+  document.getElementById('es-phone').value = d.phone;
+  document.getElementById('es-email').value = d.email;
+  document.getElementById('es-terms').value = d.payment_terms;
+  document.getElementById('es-notes').value = d.notes;
   openModal('edit-sup-modal');
 }
 
 function saveEditSup() {
-  var id = document.getElementById('edit-sup-id').value;
-  var name = document.getElementById('edit-sup-name').value.trim();
-  if (!name) { alert('Name is required'); return; }
+  var id = document.getElementById('es-id').value;
+  var name = document.getElementById('es-name').value.trim();
+  if (!name) { alert('Registered business name is required'); return; }
   var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
   fetch('/api/supplier/' + id + '/edit', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({
       name: name,
-      email: document.getElementById('edit-sup-email').value,
-      phone: document.getElementById('edit-sup-phone').value,
-      tax_id: document.getElementById('edit-sup-taxid').value
+      currency: document.getElementById('es-currency').value,
+      tax_id: document.getElementById('es-taxid').value,
+      address: document.getElementById('es-address').value,
+      phone: document.getElementById('es-phone').value,
+      email: document.getElementById('es-email').value,
+      payment_terms: document.getElementById('es-terms').value,
+      notes: document.getElementById('es-notes').value
     })
   }).then(r => r.json()).then(res => {
     if (res.ok) { closeModal('edit-sup-modal'); location.reload(); }
     else {
-      var m = document.getElementById('edit-sup-msg');
-      m.style.display='block'; m.style.color='var(--red)';
+      var m = document.getElementById('es-msg');
+      m.style.display = 'block'; m.style.color = 'var(--red)';
       m.textContent = 'Error: ' + res.error;
       btn.disabled = false; btn.textContent = 'Save Changes';
     }
@@ -131,11 +236,11 @@ function saveEditSup() {
 }
 
 function deleteSup(id, name) {
-  if (!confirm('Delete supplier "' + name + '"?\n\nSuppliers with transactions will be archived instead of deleted.')) return;
+  if (!confirm('Delete "' + name + '"?\n\nSuppliers with transactions will be archived.')) return;
   fetch('/api/supplier/' + id + '/delete', {method: 'POST'})
     .then(r => r.json())
     .then(res => {
-      if (res.ok) { alert('✓ ' + res.message); location.reload(); }
+      if (res.ok) { location.reload(); }
       else alert('Error: ' + res.error);
     });
 }
