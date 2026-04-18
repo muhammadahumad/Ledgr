@@ -310,7 +310,10 @@ class Business(db.Model):
     # Invoice settings
     invoice_prefix = db.Column(db.String(10), default='INV')
     quote_prefix = db.Column(db.String(10), default='QUO')
-    invoice_notes = db.Column(db.Text)               # Default payment terms
+    invoice_notes = db.Column(db.Text)
+    invoice_terms = db.Column(db.Text)
+    country_full = db.Column(db.String(100), default='Maldives')
+    bank_iban = db.Column(db.String(50))
     invoice_counter = db.Column(db.Integer, default=0)
     quote_counter = db.Column(db.Integer, default=0)
     # Module toggles
@@ -323,8 +326,10 @@ class Business(db.Model):
     service_charge_rate = db.Column(db.Numeric(5,4), default=0.10)
     has_expiry_tracking = db.Column(db.Boolean, default=False)
     has_multi_location = db.Column(db.Boolean, default=False)
-    pension_registered = db.Column(db.Boolean, default=True)   # Optional — not all businesses pay pension
-    pension_portal = db.Column(db.String(100))                 # e.g. Koshaaru, EPFO, GOSI
+    pension_registered = db.Column(db.Boolean, default=True)
+    pension_portal = db.Column(db.String(100))
+    gst_sector = db.Column(db.String(20), default='general')
+    gst_sector_type = db.Column(db.String(50))
     # Tax settings
     is_tax_registered = db.Column(db.Boolean, default=False)
     collect_tax_on_sales = db.Column(db.Boolean, default=False)
