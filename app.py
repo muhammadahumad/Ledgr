@@ -140,6 +140,57 @@ PLANS = {
     'business':{'name':'Business','price':35,'uploads':99999,'businesses':99999},
 }
 
+# ── Employment Rules per Country (2026) ──────────────────────────────────────
+EMPLOYMENT_RULES = {
+    'MV': {
+        'pension_employer_pct': 7.0, 'pension_employee_pct': 7.0,
+        'social_insurance': False, 'gratuity': False, 'quota_system': True,
+        'quota_fee': 2000, 'slot_fee': 350, 'security_deposit': 3000,
+        'medical_required': True, 'insurance_required': True,
+        'pension_portal': 'Koshaaru (MPAO)', 'currency': 'MVR'
+    },
+    'AE': {
+        'pension_employer_pct': 12.5, 'pension_employee_pct': 5.0,
+        'social_insurance': True, 'gratuity': True, 'gratuity_days_per_year': 21,
+        'quota_system': True, 'localization_ratio': 10.0, 'localization_fine': 7000,
+        'wps_required': True, 'insurance_required': True,
+        'pension_portal': 'GPSSA', 'currency': 'AED'
+    },
+    'SA': {
+        'pension_employer_pct': 9.75, 'pension_employee_pct': 9.75,
+        'social_insurance': True, 'gratuity': True, 'gratuity_days_per_year': 21,
+        'quota_system': True, 'wps_required': True,
+        'pension_portal': 'GOSI', 'currency': 'SAR'
+    },
+    'PK': {
+        'pension_employer_pct': 5.0, 'pension_employee_pct': 1.0,
+        'social_insurance': True, 'gratuity': True, 'quota_system': False,
+        'pension_portal': 'EOBI', 'currency': 'PKR'
+    },
+    'IN': {
+        'pension_employer_pct': 12.0, 'pension_employee_pct': 12.0,
+        'social_insurance': True, 'gratuity': True, 'gratuity_days_per_year': 15,
+        'quota_system': False, 'pension_portal': 'EPFO/ESIC', 'currency': 'INR'
+    },
+    'OM': {
+        'pension_employer_pct': 11.5, 'pension_employee_pct': 7.0,
+        'social_insurance': True, 'gratuity': True, 'quota_system': True,
+        'pension_portal': 'PASI', 'currency': 'OMR'
+    },
+    'ID': {
+        'pension_employer_pct': 4.0, 'pension_employee_pct': 1.0,
+        'social_insurance': True, 'gratuity': True, 'quota_system': True,
+        'pension_portal': 'BPJS', 'currency': 'IDR'
+    },
+    'EG': {
+        'pension_employer_pct': 18.75, 'pension_employee_pct': 11.0,
+        'social_insurance': True, 'gratuity': False, 'quota_system': True,
+        'pension_portal': 'NSSF', 'currency': 'EGP'
+    },
+}
+
+
+
 def get_employment_rules(country_code):
     """Get employment rules for a country"""
     return EMPLOYMENT_RULES.get(country_code, EMPLOYMENT_RULES.get('MV', {
@@ -2471,10 +2522,15 @@ def api_employee_add():
     country = data.get("country_of_work", business.region or "MV")
     emp_type = data.get("employment_type", "local")
     salary = float(data.get("monthly_salary", 0))
-    # Country pension rules inline (get_employment_rules removed — using EMPLOYMENT_RULES directly)
-    _rules = EMPLOYMENT_RULES.get(country, EMPLOYMENT_RULES.get('MV', {}))
-    pension_emp = round(salary * _rules.get("pension_employee_pct", 7.0) / 100, 2)
-    pension_er = round(salary * _rules.get("pension_employer_pct", 7.0) / 100, 2)
+    # Pension rates by country — inlined to avoid global scope issues
+    _pension_rates = {
+        'MV':{'ee':7.0,'er':7.0},'AE':{'ee':5.0,'er':12.5},'SA':{'ee':9.75,'er':9.75},
+        'PK':{'ee':1.0,'er':5.0},'IN':{'ee':12.0,'er':12.0},'OM':{'ee':7.0,'er':11.5},
+        'ID':{'ee':1.0,'er':4.0},'EG':{'ee':11.0,'er':18.75},'CN':{'ee':8.0,'er':16.0},
+    }
+    _r = _pension_rates.get(country, _pension_rates['MV'])
+    pension_emp = round(salary * _r['ee'] / 100, 2)
+    pension_er = round(salary * _r['er'] / 100, 2)
     try:
         e = Employee(business_id=business.id, full_name=name)
         e.employee_id = data.get("employee_id", "EMP-" + str(Employee.query.filter_by(business_id=business.id).count() + 1).zfill(3))
