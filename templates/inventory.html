@@ -1,37 +1,370 @@
 {% extends "base.html" %}{% block title %}Inventory — LEDGR{% endblock %}{% block content %}
-<div class="topbar"><div><div class="page-title">Inventory</div><div class="page-sub">{{ products|length }} products · {{ low_stock|length }} low stock alerts</div></div><button class="btn btn-primary" onclick="openModal('add-prod-modal')">+ Add Product</button></div>
-<div class="content">
-{% if low_stock %}<div class="alert alert-warn">{{ low_stock|length }} product(s) at or below reorder level: {{ low_stock|map(attribute='name')|join(', ') }}</div>{% endif %}
-<div class="card">
-  <div class="card-title">Products</div>
-  {% if products %}
-  <table class="table"><thead><tr><th>SKU</th><th>Name</th><th>Category</th><th>Stock</th><th>Cost</th><th>Price</th><th>Status</th></tr></thead><tbody>
-  {% for p in products %}<tr>
-    <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ p.sku or '—' }}</td>
-    <td style="color:var(--text);font-weight:500">{{ p.name }}</td>
-    <td style="color:var(--text3)">{{ p.category or '—' }}</td>
-    <td style="font-weight:600;font-family:var(--mono);color:{% if p.stock_level<=0 %}var(--red){% elif p.stock_level<=p.reorder_level %}var(--amber){% else %}var(--mint){% endif %}">{{ p.stock_level }}</td>
-    <td style="font-family:var(--mono)">{{ p.currency }} {{ "%.2f"|format(p.unit_cost) }}</td>
-    <td style="font-family:var(--mono)">{{ p.currency }} {{ "%.2f"|format(p.unit_price) }}</td>
-    <td>{% if p.stock_level<=0 %}<span class="badge badge-red">Out</span>{% elif p.stock_level<=p.reorder_level %}<span class="badge badge-amber">Low</span>{% else %}<span class="badge badge-green">OK</span>{% endif %}</td>
-  </tr>{% endfor %}
-  </tbody></table>
-  {% else %}
-  <div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">▦</div><div style="font-weight:500;color:var(--text2);margin-bottom:14px">No products yet</div><button class="btn btn-primary" onclick="openModal('add-prod-modal')">Add first product</button></div>
-  {% endif %}
-</div>
-</div>
-<div id="add-prod-modal" class="modal-overlay">
-  <div class="modal">
-    <div class="modal-title">Add Product <button class="modal-close" onclick="closeModal('add-prod-modal')">×</button></div>
-    <div class="field-row"><div><div class="field-label">Product Name *</div><input class="field-input" id="p-name" placeholder="Steel Pipe 1/2 inch"></div><div><div class="field-label">SKU</div><input class="field-input" id="p-sku" placeholder="SKU-001"></div></div>
-    <div class="field-row"><div><div class="field-label">Category</div><input class="field-input" id="p-cat" placeholder="Materials"></div><div><div class="field-label">Stock Level</div><input class="field-input" type="number" id="p-stock" value="0"></div></div>
-    <div class="field-row"><div><div class="field-label">Cost Price</div><input class="field-input" type="number" id="p-cost" step="0.01" value="0"></div><div><div class="field-label">Sell Price</div><input class="field-input" type="number" id="p-price" step="0.01" value="0"></div></div>
-    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" onclick="addProd()">Add Product</button><button class="btn" onclick="closeModal('add-prod-modal')">Cancel</button></div>
-    <div id="p-msg" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
+<div class="topbar">
+  <div><div class="page-title">Inventory</div>
+  <div class="page-sub">{{ products|length }} products · {{ low_stock|length }} low stock</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="openModal('add-prod-modal')">+ Add Product</button>
+    <a href="/inventory/dashboard" class="btn">Dashboard →</a>
   </div>
 </div>
+<div class="content">
+
+  <!-- Low stock alert -->
+  {% if low_stock %}
+  <div style="padding:10px 14px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;margin-bottom:14px;font-size:12px;color:var(--amber)">
+    ⚠ {{ low_stock|length }} product{{ 's' if low_stock|length > 1 }} at or below reorder level:
+    {{ low_stock|map(attribute='name')|join(', ') }}
+  </div>
+  {% endif %}
+
+  <!-- Filter bar -->
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+    <input class="field-input" id="prod-search" placeholder="Search products..." oninput="filterProds(this.value)" style="max-width:240px">
+    <select class="select-input" id="cat-filter" onchange="filterProds(document.getElementById('prod-search').value)" style="max-width:160px">
+      <option value="">All categories</option>
+      {% set cats = products|map(attribute='category')|select|unique|list %}
+      {% for cat in cats %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+    </select>
+    <select class="select-input" id="stock-filter" onchange="filterProds(document.getElementById('prod-search').value)" style="max-width:160px">
+      <option value="">All stock</option>
+      <option value="low">Low / Out of stock</option>
+      <option value="ok">In stock</option>
+    </select>
+  </div>
+
+  <div class="card" style="padding:0">
+    {% if products %}
+    <table class="table" id="prod-table">
+      <thead><tr>
+        <th>Name</th><th>SKU</th><th>Category</th>
+        <th style="text-align:right">Stock</th><th style="text-align:right">Reorder</th>
+        <th style="text-align:right">Cost</th><th style="text-align:right">Price</th>
+        <th style="text-align:right">Margin</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody id="prod-tbody">
+      {% for p in products %}
+      {% set margin = ((p.unit_price|float - p.unit_cost|float) / p.unit_price|float * 100) if p.unit_price|float > 0 else 0 %}
+      <tr class="prod-row" data-name="{{ p.name|lower }}" data-cat="{{ p.category|lower }}" data-stock="{{ p.stock_level }}">
+        <td>
+          <div style="font-weight:500;color:var(--text)">{{ p.name }}</div>
+          {% if p.description %}<div style="font-size:10px;color:var(--text3)">{{ p.description[:60] }}</div>{% endif %}
+        </td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ p.sku or '—' }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ p.category or '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:{% if p.stock_level<=0 %}var(--red){% elif p.stock_level<=p.reorder_level %}var(--amber){% else %}var(--mint){% endif %}">
+          {{ p.stock_level }} {{ p.unit }}
+        </td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--text3)">{{ p.reorder_level }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px">{{ p.currency }} {{ "%.2f"|format(p.unit_cost) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px;font-weight:600">{{ p.currency }} {{ "%.2f"|format(p.unit_price) }}</td>
+        <td style="text-align:right;font-size:11px;color:{% if margin > 30 %}var(--mint){% elif margin > 0 %}var(--amber){% else %}var(--red){% endif %}">{{ "%.1f"|format(margin) }}%</td>
+        <td>
+          {% if p.stock_level <= 0 %}<span class="badge badge-red" style="font-size:10px">Out</span>
+          {% elif p.stock_level <= p.reorder_level %}<span class="badge badge-amber" style="font-size:10px">Low</span>
+          {% else %}<span class="badge badge-green" style="font-size:10px">OK</span>{% endif %}
+        </td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="editProd({{ p.id }})">Edit</button>
+            <button class="btn btn-sm" onclick="adjustStock({{ p.id }}, '{{ p.name|replace("'","\\'") }}', {{ p.stock_level }})" style="color:var(--blue);border-color:var(--blue)">Adjust</button>
+            <button class="btn btn-sm" onclick="archiveProd({{ p.id }}, '{{ p.name|replace("'","\\'") }}')" style="color:var(--red);border-color:var(--red)">Archive</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:60px;color:var(--text3)">
+      <div style="font-size:36px;margin-bottom:12px">📦</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:6px">No products yet</div>
+      <div style="font-size:12px;margin-bottom:16px">Add products to track stock, use in POS, and link to invoices</div>
+      <button class="btn btn-primary" onclick="openModal('add-prod-modal')">Add First Product</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Add Product Modal -->
+<div id="add-prod-modal" class="modal-overlay">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-title">Add Product <button class="modal-close" onclick="closeModal('add-prod-modal')">×</button></div>
+    <div class="field-row">
+      <div style="flex:2"><div class="field-label">Product Name *</div><input class="field-input" id="np-name" placeholder="e.g. Steel Pipe 1/2 inch"></div>
+      <div><div class="field-label">Unit</div>
+        <select class="select-input" id="np-unit">
+          <option value="pcs">pcs</option><option value="kg">kg</option>
+          <option value="g">g</option><option value="litre">litre</option>
+          <option value="ml">ml</option><option value="box">box</option>
+          <option value="bag">bag</option><option value="set">set</option>
+          <option value="m">m</option><option value="sqm">sqm</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">SKU / Code</div><input class="field-input" id="np-sku" placeholder="Auto-generated if empty"></div>
+      <div><div class="field-label">Barcode</div><input class="field-input" id="np-barcode" placeholder="EAN / UPC"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Category</div><input class="field-input" id="np-cat" placeholder="e.g. Food, Materials, Electronics"></div>
+      <div><div class="field-label">Supplier</div>
+        <select class="select-input" id="np-supplier">
+          <option value="">No supplier</option>
+          {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Opening Stock</div><input class="field-input" type="number" id="np-stock" value="0" step="0.001"></div>
+      <div><div class="field-label">Reorder Level</div><input class="field-input" type="number" id="np-reorder" value="10" step="0.001"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Cost Price *</div><input class="field-input" type="number" id="np-cost" step="0.01" value="0" oninput="calcMargin()"></div>
+      <div><div class="field-label">Selling Price *</div><input class="field-input" type="number" id="np-price" step="0.01" value="0" oninput="calcMargin()"></div>
+    </div>
+    <div id="margin-preview" style="font-size:11px;color:var(--text3);margin:-4px 0 8px;text-align:right"></div>
+    <div class="field-group"><div class="field-label">Description</div>
+      <input class="field-input" id="np-desc" placeholder="Optional product description"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" onclick="saveProd(null)">Add Product</button>
+      <button class="btn" onclick="closeModal('add-prod-modal')">Cancel</button>
+    </div>
+    <div id="np-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
+<!-- Edit Product Modal -->
+<div id="edit-prod-modal" class="modal-overlay">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-title">Edit Product <button class="modal-close" onclick="closeModal('edit-prod-modal')">×</button></div>
+    <input type="hidden" id="ep-id">
+    <div class="field-row">
+      <div style="flex:2"><div class="field-label">Product Name *</div><input class="field-input" id="ep-name"></div>
+      <div><div class="field-label">Unit</div>
+        <select class="select-input" id="ep-unit">
+          <option value="pcs">pcs</option><option value="kg">kg</option>
+          <option value="g">g</option><option value="litre">litre</option>
+          <option value="ml">ml</option><option value="box">box</option>
+          <option value="bag">bag</option><option value="set">set</option>
+          <option value="m">m</option><option value="sqm">sqm</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">SKU</div><input class="field-input" id="ep-sku"></div>
+      <div><div class="field-label">Barcode</div><input class="field-input" id="ep-barcode"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Category</div><input class="field-input" id="ep-cat"></div>
+      <div><div class="field-label">Reorder Level</div><input class="field-input" type="number" id="ep-reorder" step="0.001"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Cost Price</div><input class="field-input" type="number" id="ep-cost" step="0.01" oninput="calcEditMargin()"></div>
+      <div><div class="field-label">Selling Price</div><input class="field-input" type="number" id="ep-price" step="0.01" oninput="calcEditMargin()"></div>
+    </div>
+    <div id="edit-margin" style="font-size:11px;color:var(--text3);margin:-4px 0 8px;text-align:right"></div>
+    <div class="field-group"><div class="field-label">Description</div><input class="field-input" id="ep-desc"></div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" onclick="saveEditProd()">Save Changes</button>
+      <button class="btn" onclick="closeModal('edit-prod-modal')">Cancel</button>
+    </div>
+    <div id="ep-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
+<!-- Stock Adjustment Modal -->
+<div id="adjust-modal" class="modal-overlay">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">Adjust Stock <button class="modal-close" onclick="closeModal('adjust-modal')">×</button></div>
+    <input type="hidden" id="adj-id">
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:12px" id="adj-name"></div>
+    <div class="field-group">
+      <div class="field-label">Current Stock</div>
+      <div id="adj-current" style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--mint)"></div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Adjustment Type</div>
+      <select class="select-input" id="adj-type">
+        <option value="set">Set to exact amount</option>
+        <option value="add">Add stock (received)</option>
+        <option value="sub">Remove stock (damage/loss)</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Amount</div>
+      <input class="field-input" type="number" id="adj-amount" step="0.001" placeholder="Enter quantity">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Reason</div>
+      <input class="field-input" id="adj-reason" placeholder="Stock count, damage, return...">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" onclick="saveAdjustment()">Apply Adjustment</button>
+      <button class="btn" onclick="closeModal('adjust-modal')">Cancel</button>
+    </div>
+    <div id="adj-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
 {% endblock %}
+
 {% block scripts %}<script>
-function addProd(){var name=document.getElementById('p-name').value.trim();if(!name){alert('Name required');return;}fetch('/api/inventory/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name,sku:document.getElementById('p-sku').value,category:document.getElementById('p-cat').value,stock_level:parseInt(document.getElementById('p-stock').value)||0,unit_cost:parseFloat(document.getElementById('p-cost').value)||0,unit_price:parseFloat(document.getElementById('p-price').value)||0,reorder_level:10})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{document.getElementById('p-msg').textContent='Error: '+res.error;document.getElementById('p-msg').style.display='block';}});}
+// Product data for edit modal
+var PROD_DATA = {
+  {% for p in products %}
+  {{ p.id }}: {
+    name: {{ p.name|tojson }}, sku: {{ (p.sku or '')|tojson }},
+    barcode: {{ (p.barcode or '')|tojson }}, category: {{ (p.category or '')|tojson }},
+    unit: {{ (p.unit or 'pcs')|tojson }}, stock: {{ p.stock_level|float }},
+    cost: {{ p.unit_cost|float }}, price: {{ p.unit_price|float }},
+    reorder: {{ p.reorder_level|float }}, desc: {{ (p.description or '')|tojson }}
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+};
+
+function calcMargin() {
+  var cost = parseFloat(document.getElementById('np-cost').value)||0;
+  var price = parseFloat(document.getElementById('np-price').value)||0;
+  var el = document.getElementById('margin-preview');
+  if(price > 0) {
+    var m = ((price-cost)/price*100).toFixed(1);
+    var profit = (price-cost).toFixed(2);
+    el.textContent = 'Margin: ' + m + '% · Profit per unit: ' + profit;
+    el.style.color = m > 0 ? 'var(--mint)' : 'var(--red)';
+  } else { el.textContent = ''; }
+}
+
+function calcEditMargin() {
+  var cost = parseFloat(document.getElementById('ep-cost').value)||0;
+  var price = parseFloat(document.getElementById('ep-price').value)||0;
+  var el = document.getElementById('edit-margin');
+  if(price > 0) {
+    el.textContent = 'Margin: ' + ((price-cost)/price*100).toFixed(1) + '%';
+    el.style.color = cost < price ? 'var(--mint)' : 'var(--red)';
+  } else { el.textContent = ''; }
+}
+
+function saveProd(id) {
+  var name = document.getElementById('np-name').value.trim();
+  if(!name){alert('Product name is required');return;}
+  var btn = event.target; btn.disabled=true; btn.textContent='Saving...';
+  fetch('/api/inventory/update', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name:name, sku:document.getElementById('np-sku').value,
+      barcode:document.getElementById('np-barcode').value,
+      category:document.getElementById('np-cat').value,
+      unit:document.getElementById('np-unit').value,
+      supplier_id:document.getElementById('np-supplier').value||null,
+      stock_level:parseFloat(document.getElementById('np-stock').value)||0,
+      reorder_level:parseFloat(document.getElementById('np-reorder').value)||10,
+      unit_cost:parseFloat(document.getElementById('np-cost').value)||0,
+      unit_price:parseFloat(document.getElementById('np-price').value)||0,
+      description:document.getElementById('np-desc').value
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('add-prod-modal');location.reload();}
+    else{
+      var m=document.getElementById('np-msg');m.style.display='block';
+      m.style.color='var(--red)';m.textContent='Error: '+res.error;
+      btn.disabled=false;btn.textContent='Add Product';
+    }
+  });
+}
+
+function editProd(id) {
+  var d = PROD_DATA[id];
+  if(!d){alert('Product data not found');return;}
+  document.getElementById('ep-id').value=id;
+  document.getElementById('ep-name').value=d.name;
+  document.getElementById('ep-sku').value=d.sku;
+  document.getElementById('ep-barcode').value=d.barcode;
+  document.getElementById('ep-cat').value=d.category;
+  document.getElementById('ep-unit').value=d.unit;
+  document.getElementById('ep-cost').value=d.cost;
+  document.getElementById('ep-price').value=d.price;
+  document.getElementById('ep-reorder').value=d.reorder;
+  document.getElementById('ep-desc').value=d.desc;
+  calcEditMargin();
+  openModal('edit-prod-modal');
+}
+
+function saveEditProd() {
+  var id = document.getElementById('ep-id').value;
+  var name = document.getElementById('ep-name').value.trim();
+  if(!name){alert('Name required');return;}
+  var btn=event.target;btn.disabled=true;btn.textContent='Saving...';
+  fetch('/api/inventory/update', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      product_id:parseInt(id),
+      name:name, sku:document.getElementById('ep-sku').value,
+      barcode:document.getElementById('ep-barcode').value,
+      category:document.getElementById('ep-cat').value,
+      unit:document.getElementById('ep-unit').value,
+      unit_cost:parseFloat(document.getElementById('ep-cost').value)||0,
+      unit_price:parseFloat(document.getElementById('ep-price').value)||0,
+      reorder_level:parseFloat(document.getElementById('ep-reorder').value)||10,
+      description:document.getElementById('ep-desc').value
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('edit-prod-modal');location.reload();}
+    else{
+      var m=document.getElementById('ep-msg');m.style.display='block';
+      m.style.color='var(--red)';m.textContent='Error: '+res.error;
+      btn.disabled=false;btn.textContent='Save Changes';
+    }
+  });
+}
+
+function adjustStock(id, name, current) {
+  document.getElementById('adj-id').value=id;
+  document.getElementById('adj-name').textContent=name;
+  document.getElementById('adj-current').textContent=current;
+  document.getElementById('adj-amount').value='';
+  openModal('adjust-modal');
+}
+
+function saveAdjustment() {
+  var id = document.getElementById('adj-id').value;
+  var type = document.getElementById('adj-type').value;
+  var amount = parseFloat(document.getElementById('adj-amount').value)||0;
+  var current = parseFloat(document.getElementById('adj-current').textContent)||0;
+  if(!amount){alert('Enter an amount');return;}
+  var newStock = type==='set' ? amount : (type==='add' ? current+amount : Math.max(0,current-amount));
+  var btn=event.target;btn.disabled=true;btn.textContent='Saving...';
+  fetch('/api/inventory/update', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({product_id:parseInt(id), stock_level:newStock})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('adjust-modal');location.reload();}
+    else{
+      var m=document.getElementById('adj-msg');m.style.display='block';
+      m.style.color='var(--red)';m.textContent='Error: '+res.error;
+      btn.disabled=false;btn.textContent='Apply Adjustment';
+    }
+  });
+}
+
+function archiveProd(id, name) {
+  if(!confirm('Archive "'+name+'"?\n\nArchived products are hidden but not deleted. Historical data is preserved.'))return;
+  fetch('/api/inventory/'+id+'/delete',{method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      if(res.ok)location.reload();
+      else alert('Error: '+res.error);
+    });
+}
+
+function filterProds(q) {
+  q = (q||'').toLowerCase();
+  var cat = document.getElementById('cat-filter').value.toLowerCase();
+  var stockFilter = document.getElementById('stock-filter').value;
+  document.querySelectorAll('.prod-row').forEach(function(r) {
+    var nameMatch = r.dataset.name.includes(q);
+    var catMatch = !cat || r.dataset.cat === cat;
+    var stock = parseFloat(r.dataset.stock)||0;
+    var stockMatch = !stockFilter || (stockFilter==='low' ? stock<=10 : stock>10);
+    r.style.display = (nameMatch && catMatch && stockMatch) ? '' : 'none';
+  });
+}
 </script>{% endblock %}

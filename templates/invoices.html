@@ -21,7 +21,7 @@
       <button class="btn btn-sm" onclick="issueCreditNote({{ inv.id }}, {{ inv.total_amount|float }}, {{ inv.invoice_number|tojson }})" style="color:var(--amber);border-color:var(--amber)">Credit Note</button>
       <button class="btn btn-sm" onclick="issueDebitNote({{ inv.id }}, {{ inv.invoice_number|tojson }})" style="color:var(--blue);border-color:var(--blue)">Debit Note</button>
       {% endif %}
-      <button class="btn btn-sm" onclick="emailInv({{ inv.id }})">✉</button>
+      <button class="btn btn-sm" onclick="emailInvModal({{ inv.id }}, {{ (inv.customer.email if inv.customer and inv.customer.email else '')|tojson }})">✉ Email</button>
     </td>
   </tr>{% endfor %}
   </tbody></table>
@@ -94,7 +94,23 @@ function updateItem(i,k,v){if(!invItems[i])return;invItems[i][k]=k==='desc'?v:pa
 function updateTotal(){var t=invItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('inv-total').textContent='Total: '+t.toFixed(2);}
 function createInvoice(){var items=invItems.filter(Boolean).filter(i=>i.desc);if(!items.length){alert('Add at least one item');return;}fetch('/api/invoice/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('inv-cust').value||null,invoice_date:document.getElementById('inv-date').value,due_date:document.getElementById('inv-due').value,notes:document.getElementById('inv-notes').value,items:items})}).then(r=>r.json()).then(res=>{if(res.ok){var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--mint)';msg.textContent='✓ Invoice '+res.invoice_number+' created — Total: '+res.total.toFixed(2);window._lastWaUrl=res.wa_url;setTimeout(()=>{if(confirm('Share invoice on WhatsApp?'))window.open(res.wa_url,'_blank');closeModal('create-inv-modal');location.reload();},500);}else{var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}});}
 function markPaid(id){if(confirm('Mark this invoice as paid?'))fetch('/api/invoice/'+id+'/mark-paid',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
-function emailInv(id){fetch('/api/invoice/'+id+'/email',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject)+'&body='+encodeURIComponent(res.subject);}}}); }
+function emailInvModal(id, defaultEmail) {
+  var email = prompt('Send invoice to email address:', defaultEmail||'');
+  if(!email) return;
+  fetch('/api/invoice/'+id+'/email',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:email})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){alert('✓ '+res.message);}
+    else{
+      if(res.invoice_url){
+        alert('SMTP not configured.\n\nShare this link with your customer:\n'+res.invoice_url);
+      } else {
+        alert('Error: '+res.error);
+      }
+    }
+  });
+}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject)+'&body='+encodeURIComponent(res.subject);}}}); }
 
 function deleteInv(id, num) {
   if(!confirm('Delete invoice '+num+'?\n\nPaid invoices cannot be deleted. Issue a credit note instead.')) return;
