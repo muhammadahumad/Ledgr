@@ -171,6 +171,16 @@
     </div>
     <div id="nc-err" style="margin-top:8px;font-size:12px;color:var(--red);display:none"></div>
   </div>
+  <!-- Today's Sales -->
+  <div class="card" style="margin-top:14px;padding:0" id="today-sales-card">
+    <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+      <div class="card-title" style="margin:0">Today's Sales</div>
+      <div id="today-total" style="font-family:var(--mono);font-weight:700;color:var(--mint);font-size:14px"></div>
+    </div>
+    <div id="today-sales-list" style="max-height:200px;overflow-y:auto">
+      <div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">Loading...</div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -446,5 +456,44 @@ document.addEventListener('click', function(e) {
     document.getElementById('cust-drop').style.display = 'none';
   }
 });
+
+// Load today's sales
+function loadTodaySales() {
+  fetch('/api/pos/today').then(r=>r.json()).then(res=>{
+    if(!res.ok) return;
+    var list = document.getElementById('today-sales-list');
+    var totalEl = document.getElementById('today-total');
+    if(totalEl) totalEl.textContent = currency + ' ' + res.total.toFixed(2);
+    if(!res.sales.length) {
+      list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">No sales yet today</div>';
+      return;
+    }
+    list.innerHTML = res.sales.map(function(s) {
+      return '<div style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">' +
+        '<div>' +
+          '<div style="font-size:12px;font-weight:500;color:var(--text)">' + (s.customer || 'Walk-in') + '</div>' +
+          '<div style="font-size:10px;color:var(--text3)">' + s.time + ' · ' + s.payment_method + '</div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="font-family:var(--mono);font-weight:600;color:var(--mint)">' + currency + ' ' + s.amount.toFixed(2) + '</span>' +
+          '<button onclick="voidSale(' + s.id + ')" style="background:none;border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-size:10px;color:var(--red);cursor:pointer">Void</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  });
+}
+
+function voidSale(id) {
+  if(!confirm('Void this sale? This will reverse the journal entry.')) return;
+  fetch('/api/pos/sale/' + id + '/void', {method:'POST'})
+    .then(r=>r.json())
+    .then(res=>{
+      if(res.ok) { loadTodaySales(); alert('✓ Sale voided'); }
+      else alert('Error: ' + res.error);
+    });
+}
+
+// Load on page ready
+window.addEventListener('load', loadTodaySales);
 </script>
 {% endblock %}

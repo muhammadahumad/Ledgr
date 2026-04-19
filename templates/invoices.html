@@ -14,7 +14,13 @@
     <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='SENT' %}blue{% else %}gray{% endif %}">{{ inv.status }}</span></td>
     <td style="display:flex;gap:4px;flex-wrap:wrap">
       <a href="/invoice/{{ inv.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
-      {% if inv.status != 'PAID' %}<button class="btn btn-sm btn-primary" onclick="markPaid({{ inv.id }})">✓ Paid</button>{% endif %}
+      {% if inv.status != 'PAID' %}
+      <button class="btn btn-sm btn-primary" onclick="markPaid({{ inv.id }})">✓ Paid</button>
+      <button class="btn btn-sm" onclick="deleteInv({{ inv.id }}, {{ inv.invoice_number|tojson }})" style="color:var(--red);border-color:var(--red)">Delete</button>
+      {% else %}
+      <button class="btn btn-sm" onclick="issueCreditNote({{ inv.id }}, {{ inv.total_amount|float }}, {{ inv.invoice_number|tojson }})" style="color:var(--amber);border-color:var(--amber)">Credit Note</button>
+      <button class="btn btn-sm" onclick="issueDebitNote({{ inv.id }}, {{ inv.invoice_number|tojson }})" style="color:var(--blue);border-color:var(--blue)">Debit Note</button>
+      {% endif %}
       <button class="btn btn-sm" onclick="emailInv({{ inv.id }})">✉</button>
     </td>
   </tr>{% endfor %}
