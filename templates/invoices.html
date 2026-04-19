@@ -98,6 +98,20 @@ function deleteInv(id, num) {
       else alert('Error: '+res.error);
     });
 }
+function issueDebitNote(id, num) {
+  var reason = prompt('Debit note for invoice '+num+'\nReason for additional charge:','');
+  if(!reason) return;
+  var amt = parseFloat(prompt('Additional amount to charge?',''));
+  if(!amt || amt <= 0) { alert('Invalid amount'); return; }
+  fetch('/api/invoice/'+id+'/debit-note', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({amount:amt, reason:reason})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok) { alert('✓ '+res.message); location.reload(); }
+    else alert('Error: '+res.error);
+  });
+}
+
 function issueCreditNote(id, amount, num) {
   var reason = prompt('Credit note for invoice '+num+'\nEnter reason:','Credit adjustment');
   if(!reason) return;

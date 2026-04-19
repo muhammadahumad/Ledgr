@@ -89,19 +89,5 @@
 function toggleEdit(){var v=document.getElementById('view-mode'),e=document.getElementById('edit-mode');if(v.style.display==='none'){v.style.display='block';e.style.display='none';}else{v.style.display='none';e.style.display='block';}}
 function saveEdit(){fetch('/api/document/{{ doc.id }}/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendor_name:document.getElementById('e-vendor').value,vendor_tax_id:document.getElementById('e-taxid').value,invoice_number:document.getElementById('e-invno').value,invoice_date:document.getElementById('e-date').value,subtotal:parseFloat(document.getElementById('e-sub').value)||0,tax_amount:parseFloat(document.getElementById('e-tax').value)||0,total_amount:parseFloat(document.getElementById('e-total').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();else{var m=document.getElementById('edit-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
 function exportDoc(){var rows=[['LEDGR Document Export'],['Type','{{ doc.doc_type }}'],['Vendor','{{ doc.vendor_name }}'],['Invoice #','{{ doc.invoice_number }}'],['Date','{{ doc.invoice_date }}'],['Subtotal','{{ "%.2f"|format(doc.subtotal) }}'],['Tax','{{ "%.2f"|format(doc.tax_amount) }}'],['Total','{{ "%.2f"|format(doc.total_amount) }}'],['Currency','{{ doc.currency }}']];var csv=rows.map(r=>r.map(c=>'"'+String(c||'').replace(/"/g,'""')+'"').join(',')).join('\n');var blob=new Blob([csv],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='doc-{{ doc.id }}.csv';a.click();}
-function downloadFile(){
-  // Create download without exposing base64 in URL
-  var b64='{{ doc.file_data|default("") }}';
-  if(!b64){alert('No file stored');return;}
-  var mime='{{ doc.file_type or "image/jpeg" }}';
-  var ext=mime.indexOf('pdf')>=0?'pdf':'jpg';
-  var byteStr=atob(b64);
-  var ab=new ArrayBuffer(byteStr.length);
-  var ia=new Uint8Array(ab);
-  for(var i=0;i<byteStr.length;i++)ia[i]=byteStr.charCodeAt(i);
-  var blob=new Blob([ab],{type:mime});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a');a.href=url;a.download='doc-{{ doc.id }}.'+ext;a.click();
-  setTimeout(function(){URL.revokeObjectURL(url);},1000);
-}
+function downloadFile(){var a=document.createElement('a');a.href='data:{{ doc.file_type }};base64,{{ doc.file_data }}';a.download='doc-{{ doc.id }}.{% if doc.file_type and "pdf" in doc.file_type %}pdf{% else %}jpg{% endif %}';a.click();}
 </script>{% endblock %}

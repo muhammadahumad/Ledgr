@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Tax Invoice {{ inv.invoice_number }}</title>
+<title>{% if doc_type == 'QUOTATION' %}Quotation{% else %}Tax Invoice{% endif %} {{ inv.invoice_number or inv.quote_number }}</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; font-size:12px; color:#1a1a2e; background:#fff; }
@@ -80,11 +80,16 @@
     </div>
     <div class="invoice-meta">
       <div class="invoice-title">
-        {% if business.is_tax_registered %}TAX INVOICE{% else %}INVOICE{% endif %}
+        {% if doc_type == 'QUOTATION' %}QUOTATION / ESTIMATE
+        {% elif business.is_tax_registered %}TAX INVOICE
+        {% else %}INVOICE{% endif %}
       </div>
-      <div class="invoice-num">{{ inv.invoice_number }}</div>
+      <div class="invoice-num">{{ inv.invoice_number or inv.quote_number or '—' }}</div>
       <div style="margin:8px 0">
-        {% if business.is_tax_registered %}
+        {% if doc_type == 'QUOTATION' %}
+          <span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc">ESTIMATE / QUOTATION</span>
+          {% if inv.valid_until %}<div style="font-size:10px;color:#718096;margin-top:3px">Valid until: {{ inv.valid_until.strftime('%d %b %Y') }}</div>{% endif %}
+        {% elif business.is_tax_registered %}
           {% if tax.tax_name == 'T-GST' %}
           <span class="badge badge-tgst">T-GST 17% — Tourism Sector</span>
           {% elif tax.tax_name == 'GST' %}
