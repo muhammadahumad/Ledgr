@@ -1,312 +1,136 @@
-{% extends "base.html" %}{% block title %}Settings — LEDGR{% endblock %}{% block content %}
-<div class="topbar">
-  <div><div class="page-title">Business Settings</div><div class="page-sub">Profile, compliance, and system configuration</div></div>
-  <button class="btn btn-primary" onclick="saveAll()">Save All Changes</button>
-</div>
-<div class="content">
-<div id="save-banner" style="display:none;padding:10px 16px;background:rgba(16,185,129,.15);border:1px solid var(--mint);border-radius:8px;color:var(--mint);font-size:12px;margin-bottom:14px">✓ Settings saved successfully</div>
+{% extends "base.html" %}
+{% block title %}Settings — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar"><div><div class="page-title">Settings</div><div class="page-sub">Business profile · Modules · Account</div></div></div>
+<div class="content" style="max-width:720px">
 
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-
-  <!-- Business Identity -->
   <div class="card">
-    <div class="card-title">Business Identity</div>
-    <div class="field-group">
-      <div class="field-label">Trading / Display Name *</div>
-      <input class="field-input" id="s-display" value="{{ business.display_name() }}" placeholder="Name shown on invoices and receipts">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Registered Legal Name</div>
-      <input class="field-input" id="s-legal" value="{{ business.legal_name or business.name }}" placeholder="As per trade license (if different from display name)">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Business Registration Number</div>
-      <input class="field-input" id="s-regno" value="{{ business.registration_number or '' }}" placeholder="Trade license / company registration number">
+    <div class="card-title">Business profile</div>
+    <div class="field-row">
+      <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.name }}</p></div>
+      <div><div class="field-label">Type</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.btype_name() }}</p></div>
     </div>
     <div class="field-row">
-      <div><div class="field-label">Phone</div><input class="field-input" id="s-phone" value="{{ business.phone or '' }}"></div>
-      <div><div class="field-label">Email</div><input class="field-input" id="s-email" value="{{ business.email or '' }}"></div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Website</div>
-      <input class="field-input" id="s-website" value="{{ business.website or '' }}" placeholder="https://yourcompany.com">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Address Line 1</div>
-      <input class="field-input" id="s-addr1" value="{{ business.address_line1 or '' }}" placeholder="Street, Building, Island">
+      <div><div class="field-label">Region</div><p style="color:var(--mint);font-size:13px;padding:4px 0">{{ tax.name }}</p></div>
+      <div><div class="field-label">Currency</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ business.base_currency }}</p></div>
     </div>
     <div class="field-row">
-      <div><div class="field-label">City</div><input class="field-input" id="s-city" value="{{ business.city or '' }}"></div>
-      <div><div class="field-label">Country</div><input class="field-input" id="s-country" value="{{ business.country_full or 'Maldives' }}"></div>
+      <div><div class="field-label">Tax Authority</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ tax.authority }} · {{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</p></div>
+      <div><div class="field-label">Business Tax ID</div><input class="field-input" id="tax-id" value="{{ business.tax_id or '' }}" placeholder="Business registration number" onblur="saveField('tax_id',this.value)"></div>
     </div>
+  </div>
 
-    <!-- Logo -->
-    <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-      <div class="field-label" style="margin-bottom:8px">Business Logo</div>
-      {% if business.logo_data %}
-      <img src="/api/business/logo" style="height:60px;object-fit:contain;border-radius:6px;margin-bottom:8px;background:var(--surface2);padding:4px;display:block">
+  <div class="card">
+    <div class="card-title">Module settings</div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:14px">Enable only what your business needs. Changes apply immediately.</p>
+    {% set toggles = [
+      ('has_pos','Point of Sale (POS)','Record sales in seconds. Barber shops, takeaways, cafes, any cash business.'),
+      ('has_inventory','Inventory Tracking','Auto-update stock from supplier invoices. Grocery shops, cafes, retail, construction.'),
+      ('has_payroll','Payroll & HR','Track employees, salaries, visa and work permit expiry.'),
+      ('has_full_accounting','Full Accounting Mode','Trial balance, detailed CoA, advanced journal entries. For Limited Companies.'),
+    ] %}
+    {% for field, label, desc in toggles %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg);border-radius:8px;margin-bottom:8px;border:1px solid var(--border)">
+      <div style="flex:1;padding-right:16px">
+        <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px">{{ label }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ desc }}</div>
+      </div>
+      <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
+        <input type="checkbox" id="toggle-{{ field }}" {% if val %}checked{% endif %} onchange="toggleModule('{{ field }}',this.checked)" style="opacity:0;width:0;height:0">
+        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-{{ field }}"></span>
+        <span onclick="document.getElementById('toggle-{{ field }}').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business[field] if field in ['has_pos','has_inventory','has_payroll','has_full_accounting'] else false %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-{{ field }}"></span>
+      </label>
+    </div>
+    {% endfor %}
+
+    <!-- Tax Registration -->
+    <div style="padding:12px;background:var(--bg);border-radius:8px;border:1px solid {% if business.is_tax_registered %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:{% if business.is_tax_registered %}12px{% else %}0{% endif %}">
+        <div style="flex:1;padding-right:16px">
+          <div style="font-weight:500;font-size:13px;color:var(--text);margin-bottom:2px">Tax Registration ({{ tax.tax_name }}/{{ tax.authority }})</div>
+          <div style="font-size:11px;color:var(--text3)">Activates {{ tax.tax_name }} on POS receipts and reports. Enable after registering with {{ tax.authority }}.</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:42px;height:22px;flex-shrink:0;cursor:pointer">
+          <input type="checkbox" id="toggle-is_tax_registered" {% if business.is_tax_registered %}checked{% endif %} onchange="toggleModule('is_tax_registered',this.checked)" style="opacity:0;width:0;height:0">
+          <span onclick="document.getElementById('toggle-is_tax_registered').click()" style="position:absolute;cursor:pointer;inset:0;background:{% if business.is_tax_registered %}var(--mint){% else %}var(--border2){% endif %};border-radius:22px;transition:.25s;display:block" id="span-is_tax_registered"></span>
+          <span onclick="document.getElementById('toggle-is_tax_registered').click()" style="position:absolute;height:16px;width:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.25s;transform:{% if business.is_tax_registered %}translateX(20px){% else %}translateX(0){% endif %};display:block" id="knob-is_tax_registered"></span>
+        </label>
+      </div>
+      {% if business.is_tax_registered %}
+      <div><div class="field-label">{{ tax.authority }} Registration Number</div>
+      <input class="field-input" id="tax-reg-num" value="{{ business.tax_registration_number or '' }}" placeholder="{{ tax.tin_format }}" style="max-width:280px" onblur="saveField('tax_registration_number',this.value)"></div>
       {% endif %}
-      <div id="logo-drop" onclick="document.getElementById('logo-file').click()"
-        style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;font-size:12px;color:var(--text3)"
-        ondragover="event.preventDefault()" ondrop="handleLogoDrop(event)">
-        Drop logo here or click to upload<br>
-        <span style="font-size:10px">PNG, JPG — max 500KB — will appear on invoices</span>
-      </div>
-      <input type="file" id="logo-file" accept="image/*" style="display:none" onchange="uploadLogo(this.files)">
-      <div id="logo-msg" style="margin-top:6px;font-size:11px;display:none"></div>
     </div>
+    <div id="module-msg" style="display:none;margin-top:10px;font-size:11px;color:var(--mint)">✓ Settings saved</div>
   </div>
 
-  <!-- Tax & Compliance -->
   <div class="card">
-    <div class="card-title">Tax & Compliance</div>
-
-    <!-- GST Sector for Maldives -->
-    {% if business.region == 'MV' or not business.region %}
-    <div style="padding:12px;border-radius:8px;border:1px solid var(--border);margin-bottom:12px;background:var(--bg)">
-      <div style="font-weight:600;color:var(--text);margin-bottom:8px;font-size:12px">🇲🇻 Maldives GST Sector</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-        <div id="sector-general" onclick="setSector('general')"
-          style="padding:12px;border-radius:7px;cursor:pointer;border:2px solid {% if business.gst_sector=='general' or not business.gst_sector %}var(--mint){% else %}var(--border){% endif %};background:{% if business.gst_sector=='general' or not business.gst_sector %}rgba(16,185,129,.08){% else %}var(--surface){% endif %}">
-          <div style="font-weight:600;font-size:12px;color:var(--text)">General Sector</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:3px">GST 8% · Filed in MVR</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:3px">Retail, trading, services, construction, F&B not on resort</div>
-        </div>
-        <div id="sector-tourism" onclick="setSector('tourism')"
-          style="padding:12px;border-radius:7px;cursor:pointer;border:2px solid {% if business.gst_sector=='tourism' %}var(--mint){% else %}var(--border){% endif %};background:{% if business.gst_sector=='tourism' %}rgba(16,185,129,.08){% else %}var(--surface){% endif %}">
-          <div style="font-weight:600;font-size:12px;color:var(--text)">Tourism Sector</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:3px">T-GST 17% · Filed in USD</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:3px">Resorts, hotels, guesthouses, dive schools, spas, water sports, travel agents</div>
-        </div>
+    <div class="card-title">My businesses</div>
+    {% for ub in user_businesses %}
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:6px;border:1px solid {% if ub.business_id==business.id %}rgba(16,185,129,.3){% else %}var(--border){% endif %}">
+      <div>
+        <div style="font-weight:500;font-size:13px;color:var(--text)">{{ ub.business.name }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ ub.business.btype_name() }} · {{ ub.business.tax_rules().name }} · {{ ub.role.title() }}</div>
       </div>
-      <input type="hidden" id="s-gst-sector" value="{{ business.gst_sector or 'general' }}">
-      <div class="field-group" id="sector-type-row" style="{% if not business.gst_sector or business.gst_sector == 'general' %}display:none{% endif %}">
-        <div class="field-label">Tourism Business Type</div>
-        <select class="select-input" id="s-sector-type">
-          <option value="guesthouse" {% if business.gst_sector_type=='guesthouse' %}selected{% endif %}>Tourist Guesthouse</option>
-          <option value="hotel" {% if business.gst_sector_type=='hotel' %}selected{% endif %}>Hotel / Resort Hotel</option>
-          <option value="resort" {% if business.gst_sector_type=='resort' %}selected{% endif %}>Integrated Resort / Resort</option>
-          <option value="dive_school" {% if business.gst_sector_type=='dive_school' %}selected{% endif %}>Dive School</option>
-          <option value="spa" {% if business.gst_sector_type=='spa' %}selected{% endif %}>Spa / Wellness</option>
-          <option value="water_sports" {% if business.gst_sector_type=='water_sports' %}selected{% endif %}>Water Sports Facility</option>
-          <option value="travel_agency" {% if business.gst_sector_type=='travel_agency' %}selected{% endif %}>Travel Agency</option>
-          <option value="tourist_vessel" {% if business.gst_sector_type=='tourist_vessel' %}selected{% endif %}>Tourist Vessel / Liveaboard</option>
-          <option value="yacht_marina" {% if business.gst_sector_type=='yacht_marina' %}selected{% endif %}>Yacht Marina</option>
-          <option value="tourist_restaurant" {% if business.gst_sector_type=='tourist_restaurant' %}selected{% endif %}>Restaurant on Tourist Establishment</option>
-        </select>
-      </div>
+      {% if ub.business_id==business.id %}
+        <span class="badge badge-green">Active</span>
+      {% else %}
+        <a href="/business/switch/{{ ub.business_id }}" class="btn btn-sm">Switch</a>
+      {% endif %}
     </div>
-    {% endif %}
-
-    <div class="field-group">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div><div style="font-weight:500;color:var(--text);font-size:12px">GST / VAT Registered</div>
-        <div style="font-size:10px;color:var(--text3)">Required to issue tax invoices and claim input tax</div></div>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="s-tax-reg" {% if business.is_tax_registered %}checked{% endif %} onchange="toggleTaxReg(this.checked)" style="accent-color:var(--mint);width:16px;height:16px">
-          <span style="font-size:11px;color:var(--text2)">Registered</span>
-        </label>
-      </div>
-    </div>
-    <div id="tax-reg-fields" style="{% if not business.is_tax_registered %}display:none{% endif %}">
-      <div class="field-group">
-        <div class="field-label">
-          {% if business.region == 'MV' or not business.region %}GST TIN (MIRA)
-          {% elif business.region == 'AE' %}TRN (FTA — 15 digits)
-          {% elif business.region == 'SA' %}VAT Number (ZATCA — 15 digits)
-          {% else %}Tax Registration Number{% endif %}
-        </div>
-        <input class="field-input" id="s-tin" value="{{ business.tax_registration_number or '' }}" placeholder="Your tax registration number">
-      </div>
-    </div>
-
-    <!-- Pension -->
-    <div style="padding-top:12px;border-top:1px solid var(--border);margin-top:4px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div><div style="font-weight:500;color:var(--text);font-size:12px">Pension / Social Insurance Registered</div>
-        <div style="font-size:10px;color:var(--text3)">MV: MPAO (Koshaaru) · AE: GPSSA · SA: GOSI · IN: EPFO</div></div>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="s-pension" {% if business.pension_registered %}checked{% endif %} style="accent-color:var(--mint);width:16px;height:16px">
-          <span style="font-size:11px;color:var(--text2)">Enrolled</span>
-        </label>
-      </div>
-      <div class="field-group" style="margin-top:8px">
-        <div class="field-label">Pension Portal / Reference</div>
-        <input class="field-input" id="s-pension-portal" value="{{ business.pension_portal or '' }}" placeholder="e.g. Koshaaru, EPFO member ID">
-      </div>
-    </div>
-
-    <!-- Service Charge -->
-    <div style="padding-top:12px;border-top:1px solid var(--border);margin-top:4px">
-      <div style="display:flex;align-items:center;justify-content:space-between">
-        <div><div style="font-weight:500;color:var(--text);font-size:12px">Service Charge</div>
-        <div style="font-size:10px;color:var(--text3)">Applied on POS and invoices before GST</div></div>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="s-sc" {% if business.has_service_charge %}checked{% endif %} onchange="toggleSC(this.checked)" style="accent-color:var(--mint);width:16px;height:16px">
-          <span style="font-size:11px;color:var(--text2)">Enabled</span>
-        </label>
-      </div>
-      <div id="sc-rate-row" style="margin-top:8px;{% if not business.has_service_charge %}display:none{% endif %}">
-        <div class="field-label">Service Charge Rate</div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <input class="field-input" type="number" id="s-sc-rate" value="{{ ((business.service_charge_rate or 0.10)|float * 100)|round(1) }}" step="0.1" style="max-width:100px"> %
-        </div>
-      </div>
-    </div>
+    {% endfor %}
+    <a href="/business/add" class="btn" style="margin-top:4px">+ Add another business</a>
   </div>
 
-  <!-- Invoice Settings -->
   <div class="card">
-    <div class="card-title">Invoice Settings</div>
+    <div class="card-title">Account</div>
     <div class="field-row">
-      <div><div class="field-label">Invoice Number Prefix</div>
-        <input class="field-input" id="s-inv-prefix" value="{{ business.invoice_prefix or 'INV' }}" placeholder="INV" style="max-width:100px"></div>
-      <div><div class="field-label">Base Currency</div>
-        <select class="select-input" id="s-currency">
-          {% for cur in ['MVR','USD','AED','SAR','PKR','INR','OMR','IDR','EGP','EUR','GBP'] %}
-          <option value="{{ cur }}" {% if business.base_currency == cur %}selected{% endif %}>{{ cur }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Default Payment Terms (shown on invoices)</div>
-      <input class="field-input" id="s-inv-terms" value="{{ business.invoice_terms or 'Payment due within 30 days of invoice date.' }}" placeholder="e.g. Due on receipt / Net 30">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Invoice Footer Notes</div>
-      <textarea class="field-input" id="s-inv-notes" rows="2" style="width:100%;resize:vertical">{{ business.invoice_notes or 'Thank you for your business.' }}</textarea>
-    </div>
-  </div>
-
-  <!-- Bank Details for Invoices -->
-  <div class="card">
-    <div class="card-title">Bank Details <span style="font-size:10px;color:var(--text3);font-weight:400">Shown on invoices for payment</span></div>
-    <div class="field-group">
-      <div class="field-label">Bank Name</div>
-      <input class="field-input" id="s-bank-name" value="{{ business.bank_name or '' }}" placeholder="e.g. Bank of Maldives (BML)">
-    </div>
-    <div class="field-group">
-      <div class="field-label">Account Name (registered with bank)</div>
-      <input class="field-input" id="s-bank-acct-name" value="{{ business.bank_account_name or '' }}" placeholder="Registered account name">
+      <div><div class="field-label">Name</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.name }}</p></div>
+      <div><div class="field-label">Email</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.email }}</p></div>
     </div>
     <div class="field-row">
-      <div><div class="field-label">Account Number</div><input class="field-input" id="s-bank-acct" value="{{ business.bank_account_number or '' }}"></div>
-      <div><div class="field-label">SWIFT / BIC</div><input class="field-input" id="s-bank-swift" value="{{ business.bank_swift or '' }}" placeholder="e.g. MLDVMVMV"></div>
+      <div><div class="field-label">Plan</div><p style="padding:4px 0"><span class="badge badge-{% if user.plan=='business' %}green{% elif user.plan=='pro' %}blue{% else %}gray{% endif %}">{{ user.plan|upper }}</span></p></div>
+      <div><div class="field-label">Uploads this month</div><p style="color:var(--text);font-size:13px;padding:4px 0">{{ user.uploads_this_month or 0 }}</p></div>
     </div>
-    <div class="field-group">
-      <div class="field-label">IBAN (if applicable)</div>
-      <input class="field-input" id="s-bank-iban" value="{{ business.bank_iban or '' }}" placeholder="For international transfers">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px">
+      {% for pk,pv in [('free',{'name':'Free','price':0,'uploads':10}),('pro',{'name':'Pro','price':15,'uploads':500}),('business',{'name':'Business','price':35,'uploads':'∞'})] %}
+      <div style="border:1px solid {% if user.plan==pk %}rgba(16,185,129,.4){% else %}var(--border){% endif %};border-radius:8px;padding:14px;text-align:center">
+        <div style="font-weight:600;margin-bottom:3px;color:var(--text)">{{ pv.name }}</div>
+        <div style="font-size:18px;font-weight:700;color:var(--mint);margin-bottom:3px">${{ pv.price }}</div>
+        <div style="font-size:10px;color:var(--text3);margin-bottom:10px">{{ pv.uploads }} uploads/mo</div>
+        {% if user.plan==pk %}
+          <span class="badge badge-green">Current</span>
+        {% else %}
+          <button class="btn btn-sm btn-primary" style="width:100%" onclick="requestUpgrade('{{ pk }}')">Upgrade</button>
+        {% endif %}
+      </div>
+      {% endfor %}
     </div>
+    <div id="upgrade-msg" style="display:none;margin-top:10px" class="alert alert-success"></div>
   </div>
 
-  <!-- Modules -->
-  <div class="card">
-    <div class="card-title">Active Modules</div>
-    {% macro toggle(id, label, desc, checked) %}
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div><div style="font-size:12px;font-weight:500;color:var(--text)">{{ label }}</div>
-      <div style="font-size:10px;color:var(--text3)">{{ desc }}</div></div>
-      <label style="cursor:pointer"><input type="checkbox" id="{{ id }}" {% if checked %}checked{% endif %} style="accent-color:var(--mint);width:16px;height:16px"></label>
-    </div>
-    {% endmacro %}
-    {{ toggle('s-pos', 'Point of Sale', 'POS terminal for retail and service sales', business.has_pos) }}
-    {{ toggle('s-inventory', 'Inventory Management', 'Track stock levels, reorder points, locations', business.has_inventory) }}
-    {{ toggle('s-payroll', 'HR & Payroll', 'Employee management and payroll processing', business.has_payroll) }}
-    {{ toggle('s-multiloc', 'Multi-Location / Warehouses', 'Manage stock across multiple locations', business.has_multi_location) }}
+  {% if user.email == 'muahumadhu@gmail.com' %}
+  <div class="card" style="border-color:rgba(16,185,129,.3)">
+    <div class="card-title">Admin Panel <span class="badge badge-green">Owner</span></div>
+    <a href="/admin" class="btn btn-primary">Open Admin Panel</a>
   </div>
-
-</div>
-
-<div style="margin-top:14px;text-align:right">
-  <button class="btn btn-primary" onclick="saveAll()" style="padding:10px 32px;font-size:14px">Save All Changes</button>
-</div>
+  {% endif %}
 </div>
 {% endblock %}
 
-{% block scripts %}<script>
-function setSector(sector) {
-  document.getElementById('s-gst-sector').value = sector;
-  var isT = sector === 'tourism';
-  document.getElementById('sector-general').style.border = isT ? '2px solid var(--border)' : '2px solid var(--mint)';
-  document.getElementById('sector-general').style.background = isT ? 'var(--surface)' : 'rgba(16,185,129,.08)';
-  document.getElementById('sector-tourism').style.border = isT ? '2px solid var(--mint)' : '2px solid var(--border)';
-  document.getElementById('sector-tourism').style.background = isT ? 'rgba(16,185,129,.08)' : 'var(--surface)';
-  document.getElementById('sector-type-row').style.display = isT ? 'block' : 'none';
-}
-function toggleTaxReg(checked) {
-  document.getElementById('tax-reg-fields').style.display = checked ? 'block' : 'none';
-}
-function toggleSC(checked) {
-  document.getElementById('sc-rate-row').style.display = checked ? 'block' : 'none';
-}
-function handleLogoDrop(e) {
-  e.preventDefault();
-  if (e.dataTransfer.files.length) uploadLogo(e.dataTransfer.files);
-}
-function uploadLogo(files) {
-  if (!files.length) return;
-  var file = files[0];
-  if (file.size > 500000) { alert('Image must be under 500KB'); return; }
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    fetch('/api/settings/logo', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({logo: e.target.result})
-    }).then(r => r.json()).then(res => {
-      var m = document.getElementById('logo-msg');
-      m.style.display = 'block';
-      if (res.ok) { m.style.color = 'var(--mint)'; m.textContent = '✓ Logo uploaded — reload page to see preview'; }
-      else { m.style.color = 'var(--red)'; m.textContent = 'Error: ' + res.error; }
-    });
-  };
-  reader.readAsDataURL(file);
-}
-function saveAll() {
-  var payload = {
-    display_name: document.getElementById('s-display').value,
-    legal_name: document.getElementById('s-legal').value,
-    registration_number: document.getElementById('s-regno').value,
-    phone: document.getElementById('s-phone').value,
-    email: document.getElementById('s-email').value,
-    website: document.getElementById('s-website').value,
-    address_line1: document.getElementById('s-addr1').value,
-    city: document.getElementById('s-city').value,
-    country_full: document.getElementById('s-country').value,
-    gst_sector: document.getElementById('s-gst-sector') ? document.getElementById('s-gst-sector').value : 'general',
-    gst_sector_type: document.getElementById('s-sector-type') ? document.getElementById('s-sector-type').value : '',
-    is_tax_registered: document.getElementById('s-tax-reg').checked,
-    tax_registration_number: document.getElementById('s-tin') ? document.getElementById('s-tin').value : '',
-    pension_registered: document.getElementById('s-pension').checked,
-    pension_portal: document.getElementById('s-pension-portal').value,
-    has_service_charge: document.getElementById('s-sc').checked,
-    service_charge_rate: (parseFloat(document.getElementById('s-sc-rate').value) || 10) / 100,
-    invoice_prefix: document.getElementById('s-inv-prefix').value,
-    base_currency: document.getElementById('s-currency').value,
-    invoice_terms: document.getElementById('s-inv-terms').value,
-    invoice_notes: document.getElementById('s-inv-notes').value,
-    bank_name: document.getElementById('s-bank-name').value,
-    bank_account_name: document.getElementById('s-bank-acct-name').value,
-    bank_account_number: document.getElementById('s-bank-acct').value,
-    bank_swift: document.getElementById('s-bank-swift').value,
-    bank_iban: document.getElementById('s-bank-iban').value,
-    has_pos: document.getElementById('s-pos').checked,
-    has_inventory: document.getElementById('s-inventory').checked,
-    has_payroll: document.getElementById('s-payroll').checked,
-    has_multi_location: document.getElementById('s-multiloc').checked,
-  };
-  var btn = document.querySelector('.btn-primary'); btn.disabled = true; btn.textContent = 'Saving...';
-  fetch('/api/settings/update', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload)
-  }).then(r => r.json()).then(res => {
-    btn.disabled = false; btn.textContent = 'Save All Changes';
-    if (res.ok) {
-      document.getElementById('save-banner').style.display = 'block';
-      setTimeout(() => document.getElementById('save-banner').style.display = 'none', 3000);
-    } else alert('Error: ' + res.error);
+{% block scripts %}
+<script>
+function toggleModule(key, value){
+  var data={};data[key]=value;
+  var span=document.getElementById('span-'+key),knob=document.getElementById('knob-'+key);
+  if(span){span.style.background=value?'var(--mint)':'var(--border2)';}
+  if(knob){knob.style.transform=value?'translateX(20px)':'translateX(0)';}
+  fetch('/api/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).then(r=>r.json()).then(res=>{
+    if(res.ok){var msg=document.getElementById('module-msg');msg.style.display='block';setTimeout(()=>msg.style.display='none',2000);
+    if(key==='is_tax_registered')setTimeout(()=>location.reload(),500);}
   });
 }
-</script>{% endblock %}
+function saveField(key,value){var data={};data[key]=value;fetch('/api/business/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});}
+function requestUpgrade(plan){fetch('/api/request-upgrade',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({plan:plan})}).then(r=>r.json()).then(res=>{var m=document.getElementById('upgrade-msg');m.style.display='block';m.textContent=res.message||'Request sent!';});}
+</script>
+{% endblock %}

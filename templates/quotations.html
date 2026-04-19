@@ -64,6 +64,28 @@
     <div id="q-msg" style="margin-top:8px;font-size:12px;display:none"></div>
   </div>
 </div>
+<!-- Edit Quotation Modal -->
+<div id="edit-quot-modal" class="modal-overlay">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-title">Edit Quotation <button class="modal-close" onclick="closeModal('edit-quot-modal')">×</button></div>
+    <input type="hidden" id="eq-id">
+    <div class="field-group"><div class="field-label">Valid Until</div><input class="field-input" type="date" id="eq-valid"></div>
+    <div class="field-group"><div class="field-label">Status</div>
+      <select class="select-input" id="eq-status">
+        <option value="DRAFT">Draft</option>
+        <option value="SENT">Sent</option>
+        <option value="ACCEPTED">Accepted</option>
+        <option value="DECLINED">Declined</option>
+      </select>
+    </div>
+    <div class="field-group"><div class="field-label">Notes</div><textarea class="field-input" id="eq-notes" rows="2" style="width:100%"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="saveEditQuote()">Save</button>
+      <button class="btn" onclick="closeModal('edit-quot-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 {% endblock %}
 {% block scripts %}<script>
 var qItems=[];
@@ -75,4 +97,34 @@ function createQuote(){var items=qItems.filter(Boolean).filter(i=>i.desc&&i.tota
 function convertQuote(id,num){if(confirm('Convert quotation '+num+' to an invoice?'))fetch('/api/quotation/'+id+'/convert',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){alert('Converted to invoice '+res.invoice_number);location.reload();}else alert('Error: '+res.error);});}
 function emailQuote(id){fetch('/api/quote/'+id+'/email',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject);}}});}
 function markStatus(id,status){fetch('/api/quotation/'+id+'/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
+
+function editQuote(id, valid, notes) {
+  document.getElementById('eq-id').value = id;
+  document.getElementById('eq-valid').value = valid || '';
+  document.getElementById('eq-notes').value = notes || '';
+  openModal('edit-quot-modal');
+}
+function saveEditQuote() {
+  var id = document.getElementById('eq-id').value;
+  var btn = event.target; btn.disabled=true; btn.textContent='Saving...';
+  fetch('/api/quotation/'+id+'/edit', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      valid_until: document.getElementById('eq-valid').value,
+      status: document.getElementById('eq-status').value,
+      notes: document.getElementById('eq-notes').value
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('edit-quot-modal');location.reload();}
+    else{alert('Error: '+res.error);btn.disabled=false;btn.textContent='Save';}
+  });
+}
+function deleteQuote(id, num) {
+  if(!confirm('Delete quotation '+num+'? This cannot be undone.')) return;
+  fetch('/api/quotation/'+id+'/delete',{method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      if(res.ok)location.reload();
+      else alert('Error: '+res.error);
+    });
+}
 </script>{% endblock %}

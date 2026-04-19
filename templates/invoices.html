@@ -89,4 +89,26 @@ function updateTotal(){var t=invItems.filter(Boolean).reduce((s,i)=>s+i.total,0)
 function createInvoice(){var items=invItems.filter(Boolean).filter(i=>i.desc);if(!items.length){alert('Add at least one item');return;}fetch('/api/invoice/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('inv-cust').value||null,invoice_date:document.getElementById('inv-date').value,due_date:document.getElementById('inv-due').value,notes:document.getElementById('inv-notes').value,items:items})}).then(r=>r.json()).then(res=>{if(res.ok){var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--mint)';msg.textContent='✓ Invoice '+res.invoice_number+' created — Total: '+res.total.toFixed(2);window._lastWaUrl=res.wa_url;setTimeout(()=>{if(confirm('Share invoice on WhatsApp?'))window.open(res.wa_url,'_blank');closeModal('create-inv-modal');location.reload();},500);}else{var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}});}
 function markPaid(id){if(confirm('Mark this invoice as paid?'))fetch('/api/invoice/'+id+'/mark-paid',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
 function emailInv(id){fetch('/api/invoice/'+id+'/email',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject)+'&body='+encodeURIComponent(res.subject);}}}); }
+
+function deleteInv(id, num) {
+  if(!confirm('Delete invoice '+num+'?\n\nPaid invoices cannot be deleted. Issue a credit note instead.')) return;
+  fetch('/api/invoice/'+id+'/delete', {method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      if(res.ok) location.reload();
+      else alert('Error: '+res.error);
+    });
+}
+function issueCreditNote(id, amount, num) {
+  var reason = prompt('Credit note for invoice '+num+'\nEnter reason:','Credit adjustment');
+  if(!reason) return;
+  var creditAmt = parseFloat(prompt('Credit amount (max '+amount.toFixed(2)+')?', amount.toFixed(2)));
+  if(!creditAmt || creditAmt <= 0) return;
+  fetch('/api/invoice/'+id+'/credit-note', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({amount:creditAmt, reason:reason})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok) { alert('✓ '+res.message); location.reload(); }
+    else alert('Error: '+res.error);
+  });
+}
 </script>{% endblock %}
