@@ -132,11 +132,15 @@ function emailInvModal(id, defaultEmail) {
 }
 
 function deleteInv(id, num) {
-  if(!confirm('Delete invoice '+num+'?\n\nPaid invoices cannot be deleted. Issue a credit note instead.')) return;
+  if(!confirm('Delete invoice '+num+'?\n\nThis will permanently remove the invoice.\nOnly DRAFT and SENT invoices can be deleted.')) return;
   fetch('/api/invoice/'+id+'/delete', {method:'POST'})
     .then(r=>r.json()).then(res=>{
-      if(res.ok) location.reload();
-      else alert('Error: '+res.error);
+      if(res.ok){
+        alert('Invoice '+num+' deleted.');
+        location.reload();
+      } else {
+        alert('Cannot delete: '+res.error);
+      }
     });
 }
 function issueDebitNote(id, num) {
