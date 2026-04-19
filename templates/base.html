@@ -361,15 +361,16 @@ function toggleGroup(id) {
 
 document.addEventListener('DOMContentLoaded', function() {
   var groups = ['g-sales','g-purchases','g-payments','g-accounting','g-ops','g-reports'];
+  var isMobile = window.innerWidth <= 900;
   groups.forEach(function(id) {
     var saved = localStorage.getItem('nav-' + id);
     var items = document.getElementById(id);
     var arrow = document.getElementById('arrow-' + id);
-    // Auto-open if has active item
-    if (items && items.querySelector('.active')) {
-      items.classList.add('open');
-      if (arrow) arrow.classList.add('open');
-    } else if (saved === '1' && items) {
+    var hasActive = items && items.querySelector('.active');
+    // Desktop: open all groups by default
+    // Mobile: open only active group (or saved state)
+    var shouldOpen = !isMobile || hasActive || saved === '1';
+    if (shouldOpen && items) {
       items.classList.add('open');
       if (arrow) arrow.classList.add('open');
     }
