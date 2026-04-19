@@ -40,7 +40,7 @@ a{color:var(--mint);text-decoration:none}
 a:hover{text-decoration:underline}
 
 /* ── Sidebar ── */
-.sidebar{position:fixed;left:0;top:0;bottom:0;width:228px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100;overflow-y:auto}
+.sidebar{position:fixed;left:0;top:0;bottom:0;width:228px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:100;overflow-y:auto;overflow-x:hidden}
 .sidebar-brand{padding:18px 16px 14px;border-bottom:1px solid var(--border);flex-shrink:0}
 .brand-logo{font-family:var(--mono);font-size:20px;font-weight:600;letter-spacing:.08em;color:var(--text)}
 .brand-logo span{color:var(--mint)}
@@ -166,9 +166,10 @@ a:hover{text-decoration:underline}
   /* ── COLLAPSIBLE NAV GROUPS ── */
   .nav-group{margin-bottom:1px}
   .nav-group-header{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border-radius:7px;transition:background .15s;user-select:none;-webkit-user-select:none}
+  .nav-group-header *{pointer-events:none}
   .nav-group-header:hover{background:var(--surface2);color:var(--text)}
-  .nav-group-items{display:none;padding-left:6px}
-  .nav-group-items.open{display:block}
+  .nav-group-items{display:none;padding-left:6px;overflow:hidden}
+  .nav-group-items.open{display:block!important}
   .nav-group-arrow{font-size:9px;color:var(--text3);transition:transform .2s;display:inline-block}
   .nav-group-arrow.open{transform:rotate(90deg)}
   .nav-sub{padding:5px 12px 5px 20px!important;font-size:11px!important;color:var(--text3)!important}
@@ -361,7 +362,8 @@ function fmt(n){return n!=null?parseFloat(n).toFixed(2):'0.00'}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function toggleSidebar(){document.querySelector('.sidebar').classList.toggle('open');document.getElementById('overlay').classList.toggle('show')}
 function closeSidebar(){document.querySelector('.sidebar').classList.remove('open');document.getElementById('overlay').classList.remove('show')}
-document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',closeSidebar));
+// Mobile only: close sidebar when nav item clicked
+if(window.innerWidth<=768){document.querySelectorAll('.nav-item').forEach(el=>el.addEventListener('click',closeSidebar));}
 function openModal(id){document.getElementById(id).classList.add('open')}
 function closeModal(id){document.getElementById(id).classList.remove('open')}
 </script>
