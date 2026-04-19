@@ -357,7 +357,12 @@ class Business(db.Model):
     pension_portal = db.Column(db.String(100))
     gst_sector = db.Column(db.String(20), default='general')
     gst_sector_type = db.Column(db.String(50))
-    ayrshare_api_key = db.Column(db.String(200))    # Ayrshare API key for social media
+    ayrshare_api_key = db.Column(db.String(200))
+    smtp_host = db.Column(db.String(200))
+    smtp_port = db.Column(db.Integer, default=587)
+    smtp_user = db.Column(db.String(200))
+    smtp_pass = db.Column(db.String(200))
+    smtp_from = db.Column(db.String(200))
     onboarding_complete = db.Column(db.Boolean, default=False)
     user_role = db.Column(db.String(20), default='owner')  # owner / accountant / staff
     # Tax settings
@@ -426,8 +431,8 @@ class UserBusiness(db.Model):
     business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
     role = db.Column(db.String(20), default='owner')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    business = db.relationship('Business', backref='memberships')
-    user = db.relationship('User', backref='memberships')
+    business = db.relationship('Business', backref='ub_business')
+    user = db.relationship('User', backref='ub_user')
 
 class Document(db.Model):
     __tablename__ = 'documents'
@@ -455,7 +460,7 @@ class Document(db.Model):
     file_type = db.Column(db.String(30))  # image/jpeg, application/pdf
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     user = db.relationship('User', backref='documents')
-    business = db.relationship('Business', backref='documents')
+    business = db.relationship('Business', backref='biz_documents')
 
 class Account(db.Model):
     __tablename__ = 'accounts'
@@ -527,6 +532,7 @@ class Product(db.Model):
     has_expiry = db.Column(db.Boolean, default=False)
     supplier_id = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
     is_active = db.Column(db.Boolean, default=True)
+    description = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Customer(db.Model):
@@ -596,7 +602,7 @@ class POSSale(db.Model):
     journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     customer = db.relationship('Customer', backref='sales')
-    location = db.relationship('Location', backref='sales')
+    location = db.relationship('Location', backref='location_sales')
 
 class Employee(db.Model):
     __tablename__ = 'employees'
@@ -748,7 +754,7 @@ class Invoice(db.Model):
     line_items = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     customer = db.relationship('Customer', backref='invoices')
-    business = db.relationship('Business', backref='invoices')
+    business = db.relationship('Business', backref='biz_invoices')
     def amount_due(self): return float(self.total_amount or 0) - float(self.amount_paid or 0)
 
 
@@ -775,7 +781,7 @@ class Quotation(db.Model):
     converted_invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     customer = db.relationship('Customer', backref='quotations')
-    business = db.relationship('Business', backref='quotations')
+    business = db.relationship('Business', backref='biz_quotations')
 
 
 class BankAccount(db.Model):
@@ -987,7 +993,7 @@ class Project(db.Model):
     project_type = db.Column(db.String(20), default='fixed')  # fixed / time_material
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     customer = db.relationship('Customer', backref='projects')
-    business = db.relationship('Business', backref='projects')
+    business = db.relationship('Business', backref='biz_projects')
 
 
 class Department(db.Model):
@@ -1697,49 +1703,6 @@ def quote_pdf(qid):
         business=business, inv=quote, customer=customer,
         items=items, tax=tax, today=date.today(),
         doc_type="QUOTATION")
-
-
-@app.route("/api/invoice/<int:inv_id>/email", methods=["POST"])
-@login_required
-def api_invoice_email(inv_id):
-    """Send invoice via email using simple mailto link"""
-    business = current_business()
-    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
-    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
-    items = json.loads(inv.items or "[]")
-    customer_email = ""
-    if inv.customer and inv.customer.email:
-        customer_email = inv.customer.email
-    # Build email content
-    lines = []
-    for item in items:
-        lines.append(item.get("desc","Item") + " x" + str(item.get("qty",1)) + 
-                    " = " + str(inv.currency) + " " + str(float(item.get("total",0))))
-    nl = "\n"
-    body_parts = [
-        "Dear " + (inv.customer.name if inv.customer else "Customer") + "," + nl + nl,
-        "Please find your invoice details below." + nl + nl,
-        "Invoice: " + (inv.invoice_number or "") + nl,
-        "Date: " + (inv.invoice_date.strftime("%d %b %Y") if inv.invoice_date else "") + nl,
-        "Due: " + (inv.due_date.strftime("%d %b %Y") if inv.due_date else "On receipt") + nl + nl,
-        "Items:" + nl + nl.join(lines) + nl + nl,
-        "Subtotal: " + str(inv.currency) + " " + str(float(inv.subtotal or 0)) + nl,
-    ]
-    if float(inv.tax_amount or 0) > 0:
-        body_parts.append("Tax: " + str(inv.currency) + " " + str(float(inv.tax_amount or 0)) + nl)
-    body_parts.append("TOTAL DUE: " + str(inv.currency) + " " + str(float(inv.total_amount or 0)) + nl + nl)
-    if inv.notes: body_parts.append(inv.notes + nl + nl)
-    body_parts.append("Bank Details:" + nl)
-    if business.bank_name: body_parts.append(business.bank_name + nl)
-    if business.bank_account_name: body_parts.append(business.bank_account_name + nl)
-    if business.bank_account_number: body_parts.append("Account: " + business.bank_account_number + nl)
-    if business.bank_swift: body_parts.append("SWIFT: " + business.bank_swift + nl)
-    body_parts.append(nl + "Powered by LEDGR | ledgrglobal.com")
-    body = "".join(body_parts)
-    subject = "Invoice " + (inv.invoice_number or "") + " from " + business.display_name()
-    mailto = "mailto:" + urllib.parse.quote(customer_email) + "?subject=" + urllib.parse.quote(subject) + "&body=" + urllib.parse.quote(body)
-    return jsonify({"ok":True,"mailto":mailto,"customer_email":customer_email,
-                    "subject":subject,"has_email":bool(customer_email)})
 
 
 @app.route("/api/quote/<int:qid>/email", methods=["POST"])
@@ -2591,72 +2554,6 @@ def api_stock_adjust():
     db.session.commit()
     return jsonify({"ok":True,"message":"Stock adjusted. Old: " + str(old_qty) + " → New: " + str(new_qty)})
 
-
-@app.route("/api/purchase-order/create", methods=["POST"])
-@login_required
-def api_po_create():
-    """Create a purchase order"""
-    user = current_user()
-    business, err = api_business_guard()
-    if err: return err
-    data = request.get_json()
-    import random
-    po_num = "PO-" + str(datetime.utcnow().year) + "-" + str(random.randint(1000,9999))
-    items = data.get("items", [])
-    subtotal = sum(float(i.get("qty",0)) * float(i.get("unit_cost",0)) for i in items)
-    po = PurchaseOrder(
-        business_id=business.id,
-        supplier_id=data.get("supplier_id"),
-        po_number=po_num,
-        warehouse_id=data.get("warehouse_id"),
-        currency=business.base_currency,
-        subtotal=subtotal, total_amount=subtotal,
-        items=json.dumps(items),
-        notes=data.get("notes",""), status="DRAFT"
-    )
-    db.session.add(po)
-    db.session.commit()
-    return jsonify({"ok":True,"po_id":po.id,"po_number":po_num,"total":subtotal})
-
-
-@app.route("/api/purchase-order/<int:po_id>/receive", methods=["POST"])
-@login_required
-def api_po_receive(po_id):
-    """Mark PO as received — update inventory"""
-    user = current_user()
-    business, err = api_business_guard()
-    if err: return err
-    po = PurchaseOrder.query.filter_by(id=po_id, business_id=business.id).first()
-    if not po: return jsonify({"ok":False,"error":"PO not found"})
-    try:
-        items = json.loads(po.items or "[]")
-        for item in items:
-            product = Product.query.filter_by(id=item.get("product_id"), business_id=business.id).first()
-            if product:
-                qty = float(item.get("qty", 0))
-                product.stock_level = float(product.stock_level or 0) + qty
-                if po.warehouse_id:
-                    pl = ProductLocation.query.filter_by(product_id=product.id, location_id=po.warehouse_id).first()
-                    if not pl:
-                        pl = ProductLocation(product_id=product.id, location_id=po.warehouse_id, stock_quantity=0)
-                        db.session.add(pl)
-                    pl.stock_quantity = float(pl.stock_quantity or 0) + qty
-        po.status = "RECEIVED"
-        po.received_date = datetime.utcnow().date()
-        # Post to journal
-        if po.total_amount > 0:
-            post_journal(business.id, user.id, "PO Received: " + po.po_number,
-                        po.po_number, "PURCHASE",
-                        [{"account_code":"1200","debit":float(po.total_amount),"credit":0},
-                         {"account_code":"2000","debit":0,"credit":float(po.total_amount)}])
-        db.session.commit()
-        return jsonify({"ok":True,"message":"PO received and inventory updated"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
-
-
-# ── HR Management APIs ────────────────────────────────────────────────────────
 
 @app.route("/api/employee/add", methods=["POST"])
 @login_required
@@ -4051,7 +3948,7 @@ def api_settings_update():
                   "tax_registration_number","gst_sector","gst_sector_type",
                   "bank_name","bank_account_name","bank_account_number","bank_swift",
                   "bank_iban","pension_portal","base_currency","invoice_prefix",
-                  "invoice_notes","invoice_terms","ayrshare_api_key"]
+                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_user","smtp_pass","smtp_from"]
     for f in str_fields:
         if f in data and hasattr(business, f):
             setattr(business, f, str(data[f]).strip() if data[f] else "")
@@ -4856,6 +4753,359 @@ def api_pos_today():
 
 
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# INVENTORY — DELETE + ADJUST STOCK
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/inventory/<int:pid>/delete", methods=["POST"])
+@login_required
+def api_inventory_delete(pid):
+    business, err = api_business_guard()
+    if err: return err
+    p = Product.query.filter_by(id=pid, business_id=business.id).first()
+    if not p: return jsonify({"ok":False,"error":"Product not found"})
+    # Soft delete if has POS sales, hard delete if not
+    has_sales = POSSale.query.filter_by(business_id=business.id).first()
+    p.is_active = False
+    db.session.commit()
+    return jsonify({"ok":True,"message":p.name + " archived"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# USER MANAGEMENT
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/team")
+@business_required
+def team():
+    user = current_user(); business = current_business()
+    # Get all users with access to this business
+    try:
+        memberships = UserBusiness.query.filter_by(business_id=business.id).all()
+    except Exception:
+        memberships = []
+    members = []
+    for m in memberships:
+        try:
+            u = User.query.get(m.user_id)
+            if u: members.append({"user":u,"role":m.role,"member_id":m.id})
+        except Exception:
+            pass
+    return render_template("team.html", user=user, business=business,
+                           members=members, tax=business.tax_rules())
+
+
+@app.route("/api/team/invite", methods=["POST"])
+@login_required
+def api_team_invite():
+    """Invite a user to the business by email"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    email = (data.get("email") or "").strip().lower()
+    role = data.get("role","staff")
+    if not email: return jsonify({"ok":False,"error":"Email required"})
+    if role not in ["owner","accountant","hr","sales","warehouse","readonly"]:
+        return jsonify({"ok":False,"error":"Invalid role"})
+    # Check if user exists
+    invited_user = User.query.filter_by(email=email).first()
+    if not invited_user:
+        # Create a placeholder account — they set password on first login
+        import secrets
+        temp_pw = secrets.token_urlsafe(16)
+        invited_user = User(
+            name=email.split("@")[0].title(),
+            email=email,
+            password_hash=generate_password_hash(temp_pw),
+            role=role,
+            business_id=business.id
+        )
+        db.session.add(invited_user)
+        db.session.flush()
+    # Check if already a member
+    existing = UserBusiness.query.filter_by(
+        user_id=invited_user.id, business_id=business.id).first()
+    if existing:
+        existing.role = role
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Role updated for " + email})
+    # Add to business
+    ub = UserBusiness(user_id=invited_user.id, business_id=business.id, role=role)
+    db.session.add(ub)
+    db.session.commit()
+    # Send invite email if SMTP configured
+    invite_url = "https://ledgrglobal.com/login?email=" + email
+    email_sent = send_email_via_smtp(
+        business=business,
+        to_email=email,
+        subject="You have been invited to " + business.display_name() + " on LEDGR",
+        body=f"""Hi,
+
+You have been invited to join {business.display_name()} on LEDGR as {role.title()}.
+
+Log in at: {invite_url}
+
+If you don't have an account yet, register with this email address at https://ledgrglobal.com/register
+
+LEDGR Global
+"""
+    )
+    return jsonify({
+        "ok":True,
+        "message":"Invitation sent to " + email,
+        "email_sent":email_sent,
+        "invite_url":invite_url
+    })
+
+
+@app.route("/api/team/member/<int:mid>/role", methods=["POST"])
+@login_required
+def api_team_update_role(mid):
+    business, err = api_business_guard()
+    if err: return err
+    m = UserBusiness.query.filter_by(id=mid, business_id=business.id).first()
+    if not m: return jsonify({"ok":False,"error":"Member not found"})
+    data = request.get_json()
+    new_role = data.get("role","staff")
+    m.role = new_role
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Role updated"})
+
+
+@app.route("/api/team/member/<int:mid>/remove", methods=["POST"])
+@login_required
+def api_team_remove(mid):
+    business, err = api_business_guard()
+    if err: return err
+    m = UserBusiness.query.filter_by(id=mid, business_id=business.id).first()
+    if not m: return jsonify({"ok":False,"error":"Member not found"})
+    # Prevent removing the only owner
+    if m.role == "owner":
+        owner_count = UserBusiness.query.filter_by(
+            business_id=business.id, role="owner").count()
+        if owner_count <= 1:
+            return jsonify({"ok":False,"error":"Cannot remove the only owner"})
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Member removed"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# EMAIL — SMTP helper + send invoice
+# ════════════════════════════════════════════════════════════════════════════
+
+def send_email_via_smtp(business, to_email, subject, body, html_body=None):
+    """Send email using business SMTP settings. Returns True if sent."""
+    try:
+        smtp_host = getattr(business, 'smtp_host', None)
+        smtp_user = getattr(business, 'smtp_user', None)
+        smtp_pass = getattr(business, 'smtp_pass', None)
+        smtp_port = int(getattr(business, 'smtp_port', 587) or 587)
+        from_email = getattr(business, 'smtp_from', None) or smtp_user
+        if not (smtp_host and smtp_user and smtp_pass and from_email):
+            return False
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = subject
+        msg['From'] = business.display_name() + " <" + from_email + ">"
+        msg['To'] = to_email
+        msg.attach(MIMEText(body, 'plain'))
+        if html_body:
+            msg.attach(MIMEText(html_body, 'html'))
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.sendmail(from_email, [to_email], msg.as_string())
+        return True
+    except Exception as e:
+        print(f"Email send error: {e}")
+        return False
+
+
+@app.route("/api/invoice/<int:inv_id>/email", methods=["POST"])
+@login_required
+def api_invoice_email(inv_id):
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    data = request.get_json()
+    to_email = data.get("email","")
+    if not to_email:
+        # Try customer email
+        if inv.customer_id:
+            cust = Customer.query.get(inv.customer_id)
+            if cust and cust.email:
+                to_email = cust.email
+    if not to_email:
+        return jsonify({"ok":False,"error":"No email address. Enter customer email or update customer record."})
+    invoice_url = "https://ledgrglobal.com/invoice/" + str(inv_id) + "/pdf"
+    html_body = f"""
+<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px">
+  <div style="font-size:22px;font-weight:700;color:#1a1a2e;margin-bottom:8px">{business.display_name()}</div>
+  <hr style="border:1px solid #e2e8f0">
+  <p style="color:#4a5568;font-size:14px">Please find your invoice below:</p>
+  <div style="background:#f7fafc;border-radius:8px;padding:16px;margin:16px 0">
+    <div style="font-size:13px;color:#718096">Invoice Number</div>
+    <div style="font-size:18px;font-weight:700;color:#1a1a2e">{inv.invoice_number}</div>
+    <div style="font-size:13px;color:#718096;margin-top:8px">Amount Due</div>
+    <div style="font-size:22px;font-weight:700;color:#10b981">{business.base_currency} {float(inv.total_amount or 0):.2f}</div>
+  </div>
+  <a href="{invoice_url}" style="display:inline-block;padding:12px 24px;background:#1a1a2e;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">View Invoice →</a>
+  <p style="color:#a0aec0;font-size:11px;margin-top:24px">Powered by LEDGR Global · ledgrglobal.com</p>
+</div>"""
+    plain = (f"Invoice {inv.invoice_number} from {business.display_name()}\n"
+            f"Amount: {business.base_currency} {float(inv.total_amount or 0):.2f}\n"
+            f"View: {invoice_url}")
+    sent = send_email_via_smtp(business, to_email,
+                               f"Invoice {inv.invoice_number} from {business.display_name()}",
+                               plain, html_body)
+    if sent:
+        return jsonify({"ok":True,"message":"Invoice emailed to " + to_email})
+    else:
+        return jsonify({
+            "ok":False,
+            "error":"SMTP not configured. Set up email in Settings → Email Configuration.",
+            "invoice_url": invoice_url,
+            "hint": "You can share this link manually: " + invoice_url
+        })
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PURCHASE ORDERS — Full AP cycle
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/purchase-orders")
+@business_required
+def purchase_orders_list():
+    user = current_user(); business = current_business()
+    try:
+        pos = PurchaseOrder.query.filter_by(
+            business_id=business.id
+        ).order_by(PurchaseOrder.created_at.desc()).all()
+    except Exception:
+        pos = []
+    suppliers_list = Supplier.query.filter_by(business_id=business.id).all()
+    products_list = Product.query.filter_by(
+        business_id=business.id, is_active=True).order_by(Product.name).all()
+    return render_template("purchase_orders.html", user=user, business=business,
+                           purchase_orders=pos, suppliers=suppliers_list,
+                           products=products_list, tax=business.tax_rules(),
+                           today=date.today())
+
+
+@app.route("/api/purchase-order/create", methods=["POST"])
+@login_required
+def api_purchase_order_create():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    items = data.get("items", [])
+    if not items: return jsonify({"ok":False,"error":"Add at least one item"})
+    subtotal = sum(float(i.get("qty",0)) * float(i.get("unit_cost",0)) for i in items)
+    tax_rate = float(business.tax_rules().get("tax_rate",0))
+    tax_amount = round(subtotal * tax_rate, 2) if business.is_tax_registered else 0
+    total = subtotal + tax_amount
+    count = PurchaseOrder.query.filter_by(business_id=business.id).count()
+    po_num = "PO-" + str(count+1).zfill(4)
+    try:
+        po = PurchaseOrder(
+            business_id=business.id,
+            supplier_id=data.get("supplier_id") or None,
+            po_number=po_num,
+            status="DRAFT",
+            currency=business.base_currency,
+            subtotal=subtotal,
+            tax_amount=tax_amount,
+            total_amount=total,
+            items=json.dumps(items),
+            notes=data.get("notes","")
+        )
+        if data.get("expected_date"):
+            try: po.expected_date = datetime.strptime(data["expected_date"], "%Y-%m-%d").date()
+            except: pass
+        db.session.add(po)
+        db.session.commit()
+        return jsonify({"ok":True,"po_id":po.id,"po_number":po_num,"total":total})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/purchase-order/<int:po_id>/send", methods=["POST"])
+@login_required
+def api_po_send(po_id):
+    """Mark PO as sent to supplier"""
+    business, err = api_business_guard()
+    if err: return err
+    po = PurchaseOrder.query.filter_by(id=po_id, business_id=business.id).first()
+    if not po: return jsonify({"ok":False,"error":"PO not found"})
+    po.status = "SENT"
+    db.session.commit()
+    return jsonify({"ok":True,"message":"PO " + po.po_number + " marked as sent"})
+
+
+@app.route("/api/purchase-order/<int:po_id>/receive", methods=["POST"])
+@login_required
+def api_po_receive(po_id):
+    """Receive PO — update inventory and post journal"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    po = PurchaseOrder.query.filter_by(id=po_id, business_id=business.id).first()
+    if not po: return jsonify({"ok":False,"error":"PO not found"})
+    if po.status == "RECEIVED":
+        return jsonify({"ok":False,"error":"PO already received"})
+    try:
+        items = json.loads(po.items or "[]")
+        # Update stock levels
+        for item in items:
+            if item.get("product_id"):
+                p = Product.query.get(item["product_id"])
+                if p:
+                    p.stock_level = float(p.stock_level or 0) + float(item.get("qty",0))
+                    p.unit_cost = float(item.get("unit_cost", p.unit_cost or 0))
+        # Post journal: DR Inventory, CR AP
+        lines = [
+            {"account_code":"1200","debit":float(po.subtotal or 0),"credit":0,
+             "description":"Inventory received: " + po.po_number},
+            {"account_code":"2000","debit":0,"credit":float(po.total_amount or 0),
+             "description":"AP: " + (po.supplier.name if po.supplier else po.po_number)}
+        ]
+        if float(po.tax_amount or 0) > 0:
+            lines.append({"account_code":"1300","debit":float(po.tax_amount),"credit":0,
+                         "description":"Input tax: " + po.po_number})
+        post_journal(business.id, user.id,
+                    "Purchase Order Received: " + po.po_number,
+                    po.po_number, "PURCHASE", lines)
+        po.status = "RECEIVED"
+        po.received_date = date.today()
+        db.session.commit()
+        return jsonify({"ok":True,"message":po.po_number + " received — inventory updated"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/purchase-order/<int:po_id>/cancel", methods=["POST"])
+@login_required
+def api_po_cancel(po_id):
+    business, err = api_business_guard()
+    if err: return err
+    po = PurchaseOrder.query.filter_by(id=po_id, business_id=business.id).first()
+    if not po: return jsonify({"ok":False,"error":"Not found"})
+    if po.status == "RECEIVED":
+        return jsonify({"ok":False,"error":"Cannot cancel a received PO"})
+    po.status = "CANCELLED"
+    db.session.commit()
+    return jsonify({"ok":True})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -5254,23 +5504,64 @@ def api_inventory_update():
     user = current_user(); business = current_business()
     data = request.get_json()
     pid = data.get('product_id')
-    if pid:
-        p = Product.query.filter_by(id=pid, business_id=business.id).first()
-        if p:
-            for k in ['stock_level','unit_price','unit_cost','reorder_level']:
+    try:
+        if pid:
+            # UPDATE existing product
+            p = Product.query.filter_by(id=pid, business_id=business.id).first()
+            if not p: return jsonify({"ok":False,"error":"Product not found"})
+            updatable = ['name','sku','barcode','category','unit','unit_cost','unit_price',
+                        'reorder_level','has_expiry','is_active','supplier_id','description']
+            for k in updatable:
                 if k in data: setattr(p, k, data[k])
-            db.session.commit()
-            return jsonify({'ok':True,'message':'Updated'})
-    else:
-        p = Product(business_id=business.id, sku=data.get('sku',''), name=data.get('name',''),
-                    category=data.get('category',''), stock_level=int(data.get('stock_level',0)),
-                    reorder_level=int(data.get('reorder_level',10)),
-                    unit_cost=float(data.get('unit_cost',0)), unit_price=float(data.get('unit_price',0)),
-                    currency=business.base_currency)
-        db.session.add(p)
+            if 'stock_level' in data:
+                old_stock = float(p.stock_level or 0)
+                new_stock = float(data['stock_level'])
+                p.stock_level = new_stock
+                # Post adjustment journal if significant change
+                if abs(new_stock - old_stock) > 0.001:
+                    adj = new_stock - old_stock
+                    try:
+                        lines = [
+                            {"account_code":"1200","debit":max(adj,0),"credit":max(-adj,0),
+                             "description":"Stock adjustment: " + p.name},
+                            {"account_code":"5100","debit":max(-adj,0),"credit":max(adj,0),
+                             "description":"COGS adjustment: " + p.name}
+                        ]
+                        post_journal(business.id, user.id,
+                                    "Stock adjustment: " + p.name,
+                                    "SADJ-" + str(p.id), "ADJUSTMENT", lines)
+                    except Exception:
+                        pass
+        else:
+            # CREATE new product
+            name = (data.get('name') or '').strip()
+            if not name: return jsonify({"ok":False,"error":"Product name required"})
+            # Auto-generate SKU if not provided
+            count = Product.query.filter_by(business_id=business.id).count()
+            sku = data.get('sku') or ('SKU-' + str(count+1).zfill(4))
+            p = Product(
+                business_id=business.id,
+                name=name,
+                sku=sku,
+                barcode=data.get('barcode',''),
+                category=data.get('category',''),
+                unit=data.get('unit','pcs'),
+                stock_level=float(data.get('stock_level',0)),
+                reorder_level=float(data.get('reorder_level',10)),
+                unit_cost=float(data.get('unit_cost',0)),
+                unit_price=float(data.get('unit_price',0)),
+                currency=business.base_currency,
+                has_expiry=bool(data.get('has_expiry',False)),
+                supplier_id=data.get('supplier_id') or None,
+                is_active=True
+            )
+            db.session.add(p)
         db.session.commit()
-        return jsonify({'ok':True,'product_id':p.id,'message':'Product added'})
-    return jsonify({'ok':False,'error':'Product not found'})
+        return jsonify({"ok":True,"product_id":p.id,"name":p.name})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
 
 @app.route('/api/inventory/from-upload', methods=['POST'])
 @login_required
