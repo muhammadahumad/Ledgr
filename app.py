@@ -1590,9 +1590,14 @@ def quote_pdf(qid):
     quote = Quotation.query.filter_by(id=qid, business_id=business.id).first()
     if not quote: return "Quote not found", 404
     items = json.loads(quote.items or "[]")
-    html = render_template("invoice_pdf.html", business=business, invoice=quote,
-                           items=items, tax=business.tax_rules(), doc_type="QUOTATION")
-    return html
+    tax = business.tax_rules()
+    customer = None
+    if quote.customer_id:
+        customer = Customer.query.get(quote.customer_id)
+    return render_template("invoice_pdf.html",
+        business=business, inv=quote, customer=customer,
+        items=items, tax=tax, today=date.today(),
+        doc_type="QUOTATION")
 
 
 @app.route("/api/invoice/<int:inv_id>/email", methods=["POST"])
