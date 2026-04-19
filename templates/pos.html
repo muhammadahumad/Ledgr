@@ -140,6 +140,7 @@
             <div style="color:{% if s.is_credit %}var(--amber){% else %}var(--mint){% endif %};font-family:var(--mono);font-weight:600">{{ s.currency }} {{ "%.2f"|format(s.amount) }}</div>
             {% if s.tax_amount > 0 %}<div style="color:var(--amber);font-size:10px">Tax: {{ "%.2f"|format(s.tax_amount) }}</div>{% endif %}
           </div>
+          <button onclick="voidSale({{ s.id }})" style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 7px;font-size:10px;color:var(--red);cursor:pointer;margin-top:2px">Void</button>
         </div>
         {% endfor %}
         {% if not today_sales %}
@@ -186,6 +187,8 @@
 
 {% block scripts %}
 <script>
+var currency = '{{ tax.currency }}';
+
 // ── State ─────────────────────────────────────────────────────────────────────
 var CUR = '{{ tax.currency }}';
 var TAX_RATE = {{ tax.tax_rate }};
