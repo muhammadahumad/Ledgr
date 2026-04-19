@@ -15,13 +15,18 @@
     <td style="display:flex;gap:4px;flex-wrap:wrap">
       <a href="/invoice/{{ inv.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
       {% if inv.status != 'PAID' %}
-      <button class="btn btn-sm btn-primary" onclick="markPaid({{ inv.id }})">✓ Paid</button>
-      <button class="btn btn-sm" onclick="deleteInv({{ inv.id }}, {{ inv.invoice_number|tojson }})" style="color:var(--red);border-color:var(--red)">Delete</button>
+      <button class="btn btn-sm btn-primary"
+        data-action="markpaid" data-id="{{ inv.id }}">✓ Paid</button>
+      <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)"
+        data-action="delinv" data-id="{{ inv.id }}" data-num="{{ inv.invoice_number }}">Delete</button>
       {% else %}
-      <button class="btn btn-sm" onclick="issueCreditNote({{ inv.id }}, {{ inv.total_amount|float }}, {{ inv.invoice_number|tojson }})" style="color:var(--amber);border-color:var(--amber)">Credit Note</button>
-      <button class="btn btn-sm" onclick="issueDebitNote({{ inv.id }}, {{ inv.invoice_number|tojson }})" style="color:var(--blue);border-color:var(--blue)">Debit Note</button>
+      <button class="btn btn-sm" style="color:var(--amber);border-color:var(--amber)"
+        data-action="creditnote" data-id="{{ inv.id }}" data-amount="{{ inv.total_amount|float }}" data-num="{{ inv.invoice_number }}">Credit Note</button>
+      <button class="btn btn-sm" style="color:var(--blue);border-color:var(--blue)"
+        data-action="debitnote" data-id="{{ inv.id }}" data-num="{{ inv.invoice_number }}">Debit Note</button>
       {% endif %}
-      <button class="btn btn-sm" onclick="emailInvModal({{ inv.id }}, {{ (inv.customer.email if inv.customer and inv.customer.email else '')|tojson }})">✉ Email</button>
+      <button class="btn btn-sm"
+        data-action="emailinv" data-id="{{ inv.id }}" data-email="{{ inv.customer.email if inv.customer and inv.customer.email else '' }}">✉ Email</button>
     </td>
   </tr>{% endfor %}
   </tbody></table>
@@ -57,6 +62,22 @@
 </div>
 {% endblock %}
 {% block scripts %}<script>
+// ── EVENT DELEGATION: handles all button clicks safely on mobile ──
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  var action = btn.dataset.action;
+  var id = btn.dataset.id;
+  var num = btn.dataset.num || '';
+  var amount = parseFloat(btn.dataset.amount) || 0;
+  var email = btn.dataset.email || '';
+  if (action === 'markpaid') { markPaid(id); }
+  else if (action === 'delinv') { deleteInv(id, num); }
+  else if (action === 'creditnote') { issueCreditNote(id, amount, num); }
+  else if (action === 'debitnote') { issueDebitNote(id, num); }
+  else if (action === 'emailinv') { emailInvModal(id, email); }
+});
+
 var invItems=[];
 // Build product options for invoice lines
 var PRODUCTS = [{% for p in products %}{id:'{{ p.id }}',name:'{{ p.name|replace("'","\'") }}',price:{{ p.unit_price }}}{% if not loop.last %},{% endif %}{% endfor %}];

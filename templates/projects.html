@@ -62,7 +62,7 @@
         </td>
         <td>
           <div style="display:flex;gap:4px">
-            <button class="btn btn-sm" onclick="editProject({{ p.id }}, {{ p.status|tojson }})">Edit</button>
+            <button class="btn btn-sm" data-action="editproj" data-id="{{ p.id }}" data-status="{{ p.status }}">Edit</button>
           </div>
         </td>
       </tr>
@@ -144,6 +144,12 @@
 {% endblock %}
 
 {% block scripts %}<script>
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  if (btn.dataset.action === 'editproj') editProject(btn.dataset.id, btn.dataset.status);
+});
+
 function createProject() {
   var name = document.getElementById('p-name').value.trim();
   if (!name) { alert('Project name is required'); return; }

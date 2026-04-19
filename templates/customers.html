@@ -31,7 +31,7 @@
           <div style="display:flex;gap:4px">
             <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a>
             <button class="btn btn-sm" onclick="editCust({{ c.id }})" style="color:var(--amber);border-color:var(--amber)">Edit</button>
-            <button class="btn btn-sm" onclick="deleteCust({{ c.id }}, {{ c.name|tojson }})" style="color:var(--red);border-color:var(--red)">Delete</button>
+            <button class="btn btn-sm" data-action="delcust" data-id="{{ c.id }}" data-name="{{ c.name|e }}" style="color:var(--red);border-color:var(--red)">Delete</button>
           </div>
         </td>
       </tr>
@@ -156,6 +156,12 @@
 {% endblock %}
 
 {% block scripts %}<script>
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  if (btn.dataset.action === 'delcust') deleteCust(btn.dataset.id, btn.dataset.name);
+});
+
 var TIN_LABELS = {
   'MV':'GST TIN (MIRA)','AE':'TRN (FTA)','SA':'VAT Number (ZATCA)',
   'PK':'NTN / STRN (FBR)','IN':'GSTIN (GSTN)','OM':'Tax ID (Tax Oman)',

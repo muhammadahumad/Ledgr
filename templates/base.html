@@ -175,6 +175,14 @@ a:hover{text-decoration:underline}
   .nav-sub{padding:5px 12px 5px 20px!important;font-size:11px!important;color:var(--text3)!important}
   .nav-sub:hover{color:var(--text)!important}
   .nav-sub.active{color:var(--mint)!important;background:rgba(16,185,129,.08)!important}
+
+  /* ── MOBILE TOUCH IMPROVEMENTS ── */
+  button, .btn, a.btn, [data-action] {
+    -webkit-tap-highlight-color: rgba(16,185,129,0.2);
+    touch-action: manipulation;
+    cursor: pointer;
+  }
+  [data-action] { cursor:pointer; }
 </style>
 </head>
 <body>
@@ -398,12 +406,7 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-function toggleSidebar() {
-  var sidebar = document.querySelector('.sidebar');
-  var overlay = document.getElementById('sidebar-overlay');
-  if (sidebar) sidebar.classList.toggle('mobile-open');
-  if (overlay) overlay.classList.toggle('mobile-open');
-}
+
 
 // Close sidebar when nav item clicked on mobile
 document.addEventListener('DOMContentLoaded', function() {
