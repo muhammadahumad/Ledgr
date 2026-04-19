@@ -19,7 +19,7 @@
       <a href="/quote/{{ q.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
       {% if q.status not in ['CONVERTED','REJECTED'] %}
         <button class="btn btn-sm btn-primary" onclick="convertQuote({{ q.id }},'{{ q.quote_number }}')">→ Invoice</button>
-        <button class="btn btn-sm" onclick="editQuote({{ q.id }}, {{ q.valid_until.strftime('%Y-%m-%d') if q.valid_until else ''|tojson }}, {{ q.notes|tojson if q.notes else ''|tojson }})">Edit</button>
+        <button class="btn btn-sm" onclick="editQuote({{ q.id }}, {{ (q.valid_until.strftime('%Y-%m-%d') if q.valid_until else '')|tojson }}, {{ (q.notes or '')|tojson }})">Edit</button>
         <button class="btn btn-sm" onclick="deleteQuote({{ q.id }}, {{ q.quote_number|tojson }})" style="color:var(--red);border-color:var(--red)">Delete</button>
       {% endif %}
       {% if q.status == 'CONVERTED' %}<span style="font-size:11px;color:var(--text3)">✓ Invoiced</span>{% endif %}
