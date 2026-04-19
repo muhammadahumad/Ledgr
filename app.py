@@ -4411,17 +4411,26 @@ def projects():
     # Calculate P&L per project
     for p in project_list:
         # Revenue: invoices tagged to this project
-        p.total_revenue = float(db.session.query(
-            db.func.sum(Invoice.total_amount)
-        ).filter_by(business_id=business.id, project_id=p.id).scalar() or 0)
-        # Expenses: journal lines tagged to this project
-        p.total_expenses = float(db.session.query(
-            db.func.sum(JournalLine.debit)
-        ).join(JournalEntry).filter(
-            JournalEntry.business_id==business.id,
-            JournalLine.project_id==p.id,
-            JournalLine.debit > 0
-        ).scalar() or 0)
+        # Safe revenue query - project_id column may not exist in DB yet
+        try:
+            p.total_revenue = float(db.session.query(
+                db.func.sum(Invoice.total_amount)
+            ).filter(
+                Invoice.business_id==business.id,
+                Invoice.project_id==p.id
+            ).scalar() or 0)
+        except Exception:
+            p.total_revenue = 0.0
+        try:
+            p.total_expenses = float(db.session.query(
+                db.func.sum(JournalLine.debit)
+            ).join(JournalEntry).filter(
+                JournalEntry.business_id==business.id,
+                JournalLine.project_id==p.id,
+                JournalLine.debit > 0
+            ).scalar() or 0)
+        except Exception:
+            p.total_expenses = 0.0
         p.profit = p.total_revenue - p.total_expenses
         p.margin = (p.profit / p.total_revenue * 100) if p.total_revenue > 0 else 0
         p.budget_used = (p.total_expenses / float(p.budget) * 100) if p.budget and float(p.budget) > 0 else 0
@@ -4629,6 +4638,47 @@ def api_quotation_delete(qid):
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
 
+
+
+
+
+@app.route("/api/invoice/<int:inv_id>/debit-note", methods=["POST"])
+@login_required
+def api_create_debit_note(inv_id):
+    """Debit note — charges additional amount to a customer on top of original invoice"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    data = request.get_json()
+    amount = float(data.get("amount", 0))
+    reason = data.get("reason","Debit note")
+    if amount <= 0: return jsonify({"ok":False,"error":"Amount must be greater than zero"})
+    try:
+        count = CreditNote.query.filter_by(business_id=business.id).count()
+        dn_number = (business.invoice_prefix or "INV") + "-DN-" + str(count+1).zfill(4)
+        # Post journal: DR AR (more owed), CR Revenue
+        lines = [
+            {"account_code":"1100","debit":amount,"credit":0,
+             "description":"Debit note "+dn_number+": "+reason},
+            {"account_code":"4000","debit":0,"credit":amount,
+             "description":"Additional charge: "+inv.invoice_number}
+        ]
+        je = post_journal(business.id, user.id,
+                         "Debit Note "+dn_number+" for Invoice "+inv.invoice_number,
+                         dn_number, "DEBIT_NOTE", lines)
+        # Update invoice total
+        inv.total_amount = float(inv.total_amount or 0) + amount
+        if inv.status == "PAID":
+            inv.status = "PARTIAL"
+        db.session.commit()
+        return jsonify({"ok":True,"dn_number":dn_number,
+                       "message":"Debit note "+dn_number+" issued — invoice total increased by "+
+                       business.base_currency+" "+str(round(amount,2))})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
 
 
 
