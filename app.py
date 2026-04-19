@@ -4433,6 +4433,10 @@ def api_project_create():
     data = request.get_json()
     name = (data.get("name") or "").strip()
     if not name: return jsonify({"ok":False,"error":"Project name required"})
+    try:
+        count = Project.query.filter_by(business_id=business.id).count()
+    except Exception as db_err:
+        return jsonify({"ok":False,"error":"Projects table not ready. Please run the SQL migration: CREATE TABLE IF NOT EXISTS projects (...)"})
     count = Project.query.filter_by(business_id=business.id).count()
     code = data.get("code") or "PRJ-" + str(count+1).zfill(4)
     try:
@@ -4529,6 +4533,97 @@ def admin_dashboard():
                            total_documents=total_documents,
                            recent_businesses=recent_businesses,
                            plan_counts=plan_counts)
+
+
+
+
+@app.route("/api/invoice/<int:inv_id>/edit", methods=["POST"])
+@login_required
+def api_invoice_edit(inv_id):
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    data = request.get_json()
+    for field in ["notes","payment_terms","status"]:
+        if field in data: setattr(inv, field, data[field])
+    if "due_date" in data and data["due_date"]:
+        try: inv.due_date = datetime.strptime(data["due_date"], "%Y-%m-%d").date()
+        except: pass
+    if "items" in data:
+        inv.items = json.dumps(data["items"])
+        # Recalculate totals
+        items = data["items"]
+        subtotal = sum(float(i.get("total", 0)) for i in items)
+        tax_rate = float(business.tax_rules().get("tax_rate", 0))
+        tax_amount = round(subtotal * tax_rate / (1 + tax_rate), 2) if business.is_tax_registered else 0
+        inv.subtotal = subtotal - tax_amount
+        inv.tax_amount = tax_amount
+        inv.total_amount = subtotal
+    try:
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Invoice updated"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/invoice/<int:inv_id>/delete", methods=["POST"])
+@login_required
+def api_invoice_delete(inv_id):
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    if inv.status == "PAID":
+        return jsonify({"ok":False,"error":"Cannot delete a paid invoice. Issue a credit note instead."})
+    try:
+        db.session.delete(inv)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Invoice deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/quotation/<int:qid>/edit", methods=["POST"])
+@login_required
+def api_quotation_edit(qid):
+    business, err = api_business_guard()
+    if err: return err
+    q = Quotation.query.filter_by(id=qid, business_id=business.id).first()
+    if not q: return jsonify({"ok":False,"error":"Quotation not found"})
+    data = request.get_json()
+    for field in ["notes","terms","status"]:
+        if field in data: setattr(q, field, data[field])
+    if "valid_until" in data and data["valid_until"]:
+        try: q.valid_until = datetime.strptime(data["valid_until"], "%Y-%m-%d").date()
+        except: pass
+    try:
+        db.session.commit()
+        return jsonify({"ok":True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/quotation/<int:qid>/delete", methods=["POST"])
+@login_required
+def api_quotation_delete(qid):
+    business, err = api_business_guard()
+    if err: return err
+    q = Quotation.query.filter_by(id=qid, business_id=business.id).first()
+    if not q: return jsonify({"ok":False,"error":"Quotation not found"})
+    if q.converted_invoice_id:
+        return jsonify({"ok":False,"error":"Cannot delete — this quotation has been converted to an invoice."})
+    try:
+        db.session.delete(q)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Quotation deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
 
 
 
@@ -5157,7 +5252,8 @@ def api_document_manual():
 @business_required
 def quotations():
     user = current_user(); business = current_business()
-    quotes = Quotation.query.filter_by(business_id=business.id).order_by(Quotation.created_at.desc()).all()
+    quotes = Quotation.query.filter_by(business_id=business.id).order_by(
+        Quotation.created_at.desc()).all()
     customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
     return render_template("quotations.html", user=user, business=business,
                            quotations=quotes, customers=customers_list, tax=business.tax_rules(),
