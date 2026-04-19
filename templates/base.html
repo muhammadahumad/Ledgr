@@ -197,6 +197,7 @@ a:hover{text-decoration:underline}
   <a href="/ledger" class="nav-item {% if request.path=='/ledger' %}active{% endif %}"><span class="ni">≡</span>Ledger</a>
   <a href="/journal" class="nav-item {% if request.path=='/journal' %}active{% endif %}"><span class="ni">✎</span>Journal</a>
   <a href="/accounts" class="nav-item {% if request.path=='/accounts' %}active{% endif %}"><span class="ni">≣</span>Accounts</a>
+  <a href="/projects" class="nav-item {% if request.path=='/projects' %}active{% endif %}"><span class="ni">📁</span>Projects</a>
 
   <!-- SALES -->
   <div class="nav-section">Sales</div>
@@ -214,7 +215,7 @@ a:hover{text-decoration:underline}
   <!-- PAYMENTS -->
   <div class="nav-section">Payments</div>
   <a href="/payments" class="nav-item {% if request.path=='/payments' %}active{% endif %}"><span class="ni">💳</span>Pay Bills (AP)</a>
-  <a href="/payments" class="nav-item {% if request.path=='/payments' %}active{% endif %}" style="padding-left:28px"><span class="ni">↓</span>Receive (AR)</a>
+  <a href="/receive" class="nav-item {% if request.path=='/receive' %}active{% endif %}"><span class="ni">↓</span>Receive Payment</a>
   <a href="/bank" class="nav-item {% if request.path=='/bank' %}active{% endif %}"><span class="ni">🏦</span>Bank</a>
 
   <!-- INVENTORY -->

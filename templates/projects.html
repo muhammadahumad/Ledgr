@@ -1,0 +1,189 @@
+{% extends "base.html" %}{% block title %}Projects — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Projects</div>
+  <div class="page-sub">{{ projects|length }} projects · Track income and expenses per project</div></div>
+  <button class="btn btn-primary" onclick="openModal('new-proj-modal')">+ New Project</button>
+</div>
+<div class="content">
+
+  <!-- Summary stats -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    {% set active = projects|selectattr('status','eq','ACTIVE')|list %}
+    {% set total_rev = projects|sum(attribute='total_revenue') %}
+    {% set total_exp = projects|sum(attribute='total_expenses') %}
+    <div class="stat-card"><div class="stat-label">Active Projects</div><div class="stat-value">{{ active|length }}</div></div>
+    <div class="stat-card" style="border-color:rgba(16,185,129,.3)"><div class="stat-label">Total Revenue</div><div class="stat-value" style="font-size:18px;color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(total_rev) }}</div></div>
+    <div class="stat-card" style="border-color:rgba(239,68,68,.3)"><div class="stat-label">Total Expenses</div><div class="stat-value" style="font-size:18px;color:var(--red)">{{ tax.currency }} {{ "%.0f"|format(total_exp) }}</div></div>
+    <div class="stat-card"><div class="stat-label">Net Profit</div>
+      <div class="stat-value" style="font-size:18px;color:{% if total_rev - total_exp >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+        {{ tax.currency }} {{ "%.0f"|format(total_rev - total_exp) }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Projects table -->
+  <div class="card" style="padding:0">
+    {% if projects %}
+    <table class="table">
+      <thead><tr>
+        <th>Project</th><th>Customer</th><th>Type</th>
+        <th style="text-align:right">Budget</th>
+        <th style="text-align:right">Revenue</th>
+        <th style="text-align:right">Expenses</th>
+        <th style="text-align:right">Profit</th>
+        <th>Status</th><th></th>
+      </tr></thead>
+      <tbody>
+      {% for p in projects %}
+      <tr>
+        <td>
+          <div style="font-weight:600;color:var(--text)">{{ p.name }}</div>
+          <div style="font-size:10px;color:var(--text3);font-family:var(--mono)">{{ p.code }}</div>
+        </td>
+        <td style="font-size:12px;color:var(--text2)">{{ p.customer.name if p.customer else '—' }}</td>
+        <td><span class="badge badge-gray" style="font-size:10px">{{ p.project_type|title if p.project_type else 'Fixed' }}</span></td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px;color:var(--text3)">
+          {% if p.budget and p.budget > 0 %}{{ tax.currency }} {{ "%.0f"|format(p.budget|float) }}
+            {% if p.budget_used > 0 %}
+            <div style="font-size:10px;color:{% if p.budget_used > 90 %}var(--red){% elif p.budget_used > 70 %}var(--amber){% else %}var(--mint){% endif %}">{{ "%.0f"|format(p.budget_used) }}% used</div>
+            {% endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--mint);font-weight:600">{{ tax.currency }} {{ "%.2f"|format(p.total_revenue) }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--red)">{{ tax.currency }} {{ "%.2f"|format(p.total_expenses) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:{% if p.profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+          {{ tax.currency }} {{ "%.2f"|format(p.profit) }}
+          {% if p.margin != 0 %}<div style="font-size:10px;color:var(--text3)">{{ "%.1f"|format(p.margin) }}%</div>{% endif %}
+        </td>
+        <td>
+          <span class="badge badge-{% if p.status=='ACTIVE' %}green{% elif p.status=='COMPLETED' %}blue{% else %}amber{% endif %}" style="font-size:10px">
+            {{ p.status|title }}
+          </span>
+        </td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="editProject({{ p.id }}, {{ p.status|tojson }})">Edit</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:60px;color:var(--text3)">
+      <div style="font-size:36px;margin-bottom:12px">📁</div>
+      <div style="font-weight:500;color:var(--text2);margin-bottom:6px">No projects yet</div>
+      <div style="font-size:12px;margin-bottom:16px">Create projects to track income and expenses per job, contract, or engagement</div>
+      <button class="btn btn-primary" onclick="openModal('new-proj-modal')">Create First Project</button>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- New Project Modal -->
+<div id="new-proj-modal" class="modal-overlay">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-title">New Project <button class="modal-close" onclick="closeModal('new-proj-modal')">×</button></div>
+    <div class="field-row">
+      <div style="flex:2"><div class="field-label">Project Name *</div><input class="field-input" id="p-name" placeholder="e.g. Villa Construction — Male"></div>
+      <div><div class="field-label">Code</div><input class="field-input" id="p-code" placeholder="PRJ-001"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Customer / Client</div>
+        <select class="select-input" id="p-cust">
+          <option value="">No specific customer</option>
+          {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div><div class="field-label">Type</div>
+        <select class="select-input" id="p-type">
+          <option value="fixed">Fixed Price</option>
+          <option value="time_material">Time & Material</option>
+          <option value="retainer">Retainer</option>
+          <option value="milestone">Milestone-based</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Budget</div><input class="field-input" type="number" id="p-budget" placeholder="0.00" step="0.01"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Start Date</div><input class="field-input" type="date" id="p-start" value="{{ today }}"></div>
+      <div><div class="field-label">End Date</div><input class="field-input" type="date" id="p-end"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Description</div>
+      <textarea class="field-input" id="p-desc" rows="2" style="width:100%"></textarea>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" onclick="createProject()">Create Project</button>
+      <button class="btn" onclick="closeModal('new-proj-modal')">Cancel</button>
+    </div>
+    <div id="p-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+
+<!-- Edit Project Modal -->
+<div id="edit-proj-modal" class="modal-overlay">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">Update Project <button class="modal-close" onclick="closeModal('edit-proj-modal')">×</button></div>
+    <input type="hidden" id="ep-id">
+    <div class="field-group"><div class="field-label">Status</div>
+      <select class="select-input" id="ep-status">
+        <option value="ACTIVE">Active</option>
+        <option value="ON_HOLD">On Hold</option>
+        <option value="COMPLETED">Completed</option>
+        <option value="CANCELLED">Cancelled</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn btn-primary" onclick="saveProject()">Save</button>
+      <button class="btn" onclick="closeModal('edit-proj-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+function createProject() {
+  var name = document.getElementById('p-name').value.trim();
+  if (!name) { alert('Project name is required'); return; }
+  var btn = event.target; btn.disabled=true; btn.textContent='Creating...';
+  fetch('/api/project/create', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: name,
+      code: document.getElementById('p-code').value,
+      customer_id: document.getElementById('p-cust').value || null,
+      project_type: document.getElementById('p-type').value,
+      budget: parseFloat(document.getElementById('p-budget').value) || 0,
+      start_date: document.getElementById('p-start').value,
+      end_date: document.getElementById('p-end').value,
+      description: document.getElementById('p-desc').value
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('new-proj-modal');location.reload();}
+    else{
+      var m=document.getElementById('p-msg');m.style.display='block';
+      m.style.color='var(--red)';m.textContent='Error: '+res.error;
+      btn.disabled=false;btn.textContent='Create Project';
+    }
+  });
+}
+
+function editProject(id, status) {
+  document.getElementById('ep-id').value = id;
+  document.getElementById('ep-status').value = status;
+  openModal('edit-proj-modal');
+}
+
+function saveProject() {
+  var id = document.getElementById('ep-id').value;
+  fetch('/api/project/'+id+'/update', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({status: document.getElementById('ep-status').value})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('edit-proj-modal');location.reload();}
+    else alert('Error: '+res.error);
+  });
+}
+</script>{% endblock %}

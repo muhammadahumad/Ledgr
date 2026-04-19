@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% block title %}Admin — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Admin Panel</div><div class="page-sub">Platform management · LEDGR Global</div></div>
+</div>
+<div class="content">
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-value">{{ total_businesses }}</div></div>
+    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value">{{ total_users }}</div></div>
+    <div class="stat-card"><div class="stat-label">Total Invoices</div><div class="stat-value">{{ total_invoices }}</div></div>
+    <div class="stat-card"><div class="stat-label">Total Documents</div><div class="stat-value">{{ total_documents }}</div></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px">
+    <div class="card" style="padding:0">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border)"><div class="card-title" style="margin:0">Recent Businesses</div></div>
+      <table class="table">
+        <thead><tr><th>Business</th><th>Region</th><th>Plan</th><th>Modules</th></tr></thead>
+        <tbody>
+        {% for b in recent_businesses %}
+        <tr>
+          <td style="font-weight:500;color:var(--text)">{{ b.name }}</td>
+          <td><span class="badge badge-gray" style="font-size:10px">{{ b.region or 'MV' }}</span></td>
+          <td style="font-size:11px;color:var(--text3)">—</td>
+          <td style="font-size:10px;color:var(--text3)">
+            {% if b.has_pos %}POS {% endif %}
+            {% if b.has_inventory %}INV {% endif %}
+            {% if b.has_payroll %}HR {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Plan Distribution</div>
+      {% for plan, count in plan_counts.items() %}
+      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <span style="text-transform:capitalize;color:var(--text2)">{{ plan }}</span>
+        <span style="font-family:var(--mono);font-weight:600">{{ count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

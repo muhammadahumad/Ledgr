@@ -1,0 +1,200 @@
+{% extends "base.html" %}{% block title %}Receive Payment — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Receive Payment</div>
+  <div class="page-sub">Record payments received from customers · {{ tax.currency }} {{ "%.2f"|format(total_ar) }} outstanding</div></div>
+</div>
+<div class="content">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+    <!-- Select invoices -->
+    <div class="card" style="padding:0">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <div class="card-title" style="margin:0">Outstanding Invoices</div>
+        <span id="selected-inv-summary" style="font-size:11px;color:var(--mint);font-family:var(--mono)"></span>
+      </div>
+      {% if invoices %}
+      <div style="padding:10px 16px;background:var(--bg);border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+        <input type="checkbox" id="select-all-inv" onchange="toggleAll(this.checked)" style="accent-color:var(--mint)">
+        <span style="font-size:11px;color:var(--text3)">Select all</span>
+      </div>
+      <div style="max-height:420px;overflow-y:auto">
+      {% for inv in invoices %}
+      {% set balance = (inv.total_amount|float) - (inv.amount_paid|float) %}
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
+        <input type="checkbox" class="inv-check" value="{{ inv.id }}"
+               data-amount="{{ balance }}"
+               data-customer="{{ inv.customer_id or '' }}"
+               onchange="updateSelected()" style="accent-color:var(--mint)">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;color:var(--text);font-size:12px">
+            {{ inv.customer.name if inv.customer else 'Walk-in Customer' }}
+          </div>
+          <div style="font-size:10px;color:var(--text3)">
+            {{ inv.invoice_number }} · {{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}
+            {% if inv.status == 'PARTIAL' %} · <span style="color:var(--amber)">Partial</span>{% endif %}
+          </div>
+        </div>
+        <div style="text-align:right">
+          {% if inv.amount_paid and inv.amount_paid > 0 %}
+          <div style="font-size:10px;color:var(--text3)">
+            Total: {{ tax.currency }} {{ "%.2f"|format(inv.total_amount|float) }}<br>
+            Paid: {{ tax.currency }} {{ "%.2f"|format(inv.amount_paid|float) }}
+          </div>
+          {% endif %}
+          <div style="font-family:var(--mono);font-weight:600;color:var(--mint)">
+            {{ tax.currency }} {{ "%.2f"|format(balance) }}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      </div>
+      {% else %}
+      <div style="text-align:center;padding:40px;color:var(--text3)">
+        <div style="font-size:28px;margin-bottom:10px">✓</div>
+        <div style="font-size:12px">No outstanding invoices</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Payment form -->
+    <div class="card">
+      <div class="card-title">Record Receipt</div>
+
+      <div class="field-group">
+        <div class="field-label">Invoice Total Selected</div>
+        <div id="inv-total-display" style="font-size:24px;font-weight:700;color:var(--text2);font-family:var(--mono)">{{ tax.currency }} 0.00</div>
+      </div>
+
+      <div class="field-group">
+        <div class="field-label">Amount Actually Received *</div>
+        <input class="field-input" type="number" id="recv-amount" step="0.01"
+               placeholder="Enter exact amount received" style="font-size:18px">
+        <div style="font-size:10px;color:var(--text3);margin-top:3px">
+          Can be less than total for partial payment
+        </div>
+      </div>
+
+      <div class="field-row">
+        <div><div class="field-label">Payment Method</div>
+          <select class="select-input" id="recv-method">
+            <option value="Bank Transfer">Bank Transfer</option>
+            <option value="Cash">Cash</option>
+            <option value="Cheque">Cheque</option>
+            <option value="Card">Card (POS)</option>
+            <option value="Online">Online Transfer</option>
+            <option value="BML Pay">BML Pay</option>
+          </select>
+        </div>
+        <div><div class="field-label">Date Received</div>
+          <input class="field-input" type="date" id="recv-date" value="{{ today }}">
+        </div>
+      </div>
+
+      {% if bank_accounts %}
+      <div class="field-group">
+        <div class="field-label">Deposit to Account</div>
+        <select class="select-input" id="recv-bank">
+          <option value="">Select bank account...</option>
+          {% for ba in bank_accounts %}
+          <option value="{{ ba.id }}">{{ ba.bank_name }} — {{ ba.account_name }} ({{ ba.currency }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+
+      <div class="field-group">
+        <div class="field-label">Reference / Cheque No. / Transfer ID</div>
+        <input class="field-input" id="recv-ref" placeholder="Bank transaction reference...">
+      </div>
+
+      <button class="btn btn-primary" onclick="recordReceipt()" id="recv-btn" style="width:100%;padding:12px;font-size:14px;margin-top:6px">
+        Record Payment Received
+      </button>
+      <div id="recv-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- Recent receipts -->
+  {% if recent_payments %}
+  <div class="card" style="margin-top:14px;padding:0">
+    <div style="padding:14px 16px;border-bottom:1px solid var(--border)">
+      <div class="card-title" style="margin:0">Recent Receipts</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Date</th><th>Method</th><th>Reference</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+      {% for p in recent_payments %}
+      <tr>
+        <td style="font-size:11px;color:var(--text3)">{{ p.payment_date.strftime('%d %b %Y') if p.payment_date else '—' }}</td>
+        <td style="font-size:12px">{{ p.payment_method }}</td>
+        <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">{{ p.reference or '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--mint);font-weight:600">{{ tax.currency }} {{ "%.2f"|format(p.amount) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+var selectedInvIds = [];
+var currency = '{{ tax.currency }}';
+
+function toggleAll(checked) {
+  document.querySelectorAll('.inv-check').forEach(cb => { cb.checked = checked; });
+  updateSelected();
+}
+
+function updateSelected() {
+  selectedInvIds = [];
+  var total = 0;
+  document.querySelectorAll('.inv-check:checked').forEach(cb => {
+    total += parseFloat(cb.dataset.amount) || 0;
+    selectedInvIds.push(parseInt(cb.value));
+  });
+  var display = document.getElementById('inv-total-display');
+  display.textContent = currency + ' ' + total.toFixed(2);
+  if (total > 0 && !document.getElementById('recv-amount').value) {
+    document.getElementById('recv-amount').value = total.toFixed(2);
+  }
+  document.getElementById('selected-inv-summary').textContent =
+    selectedInvIds.length > 0 ? selectedInvIds.length + ' selected' : '';
+}
+
+function recordReceipt() {
+  var amount = parseFloat(document.getElementById('recv-amount').value) || 0;
+  if (!amount) { alert('Enter the amount received'); return; }
+  if (!selectedInvIds.length) {
+    if (!confirm('No invoices selected. Record as a general payment received?')) return;
+  }
+  var btn = document.getElementById('recv-btn');
+  btn.disabled = true; btn.textContent = 'Recording...';
+  fetch('/api/payment/receive', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      invoice_ids: selectedInvIds,
+      amount_received: amount,
+      payment_method: document.getElementById('recv-method').value,
+      bank_account_id: document.getElementById('recv-bank') ? document.getElementById('recv-bank').value : null,
+      payment_date: document.getElementById('recv-date').value,
+      reference: document.getElementById('recv-ref').value
+    })
+  }).then(r => r.json()).then(res => {
+    var m = document.getElementById('recv-msg');
+    m.style.display = 'block';
+    if (res.ok) {
+      m.style.color = 'var(--mint)';
+      m.textContent = '✓ ' + res.message;
+      setTimeout(() => location.reload(), 1500);
+    } else {
+      m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + res.error;
+      btn.disabled = false;
+      btn.textContent = 'Record Payment Received';
+    }
+  });
+}
+</script>{% endblock %}
