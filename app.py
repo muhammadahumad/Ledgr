@@ -4585,8 +4585,10 @@ def api_invoice_delete(inv_id):
     if err: return err
     inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
     if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
-    if inv.status == "PAID":
-        return jsonify({"ok":False,"error":"Cannot delete a paid invoice. Issue a credit note instead."})
+    if inv.status in ["PAID", "PARTIAL"]:
+        return jsonify({"ok":False,"error":"Cannot delete a paid or partially paid invoice. Issue a credit note instead."})
+    if float(inv.amount_paid or 0) > 0:
+        return jsonify({"ok":False,"error":"Cannot delete - this invoice has recorded payments. Issue a credit note instead."})
     try:
         db.session.delete(inv)
         db.session.commit()
