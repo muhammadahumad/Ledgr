@@ -1,136 +1,209 @@
-{% extends "base.html" %}
-{% block title %}Dashboard — LEDGR{% endblock %}
-{% block content %}
+{% extends "base.html" %}{% block title %}Dashboard — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
   <div>
-    <div class="page-title">{{ business.name }}</div>
-    <div class="page-sub">{{ btype_name }} · {{ tax.name }} · {{ tax.currency }}</div>
+    <div class="page-title">{{ business.display_name() }}</div>
+    <div class="page-sub">{{ btype_name }} · {{ today.strftime('%A, %d %B %Y') }}</div>
   </div>
   <div style="display:flex;gap:8px">
-    {% if user_businesses|length > 1 %}
-    <div style="position:relative">
-      <button class="btn btn-sm" onclick="document.getElementById('biz-dd').classList.toggle('show')" style="gap:4px">Switch ▾</button>
-      <div id="biz-dd" style="display:none;position:absolute;right:0;top:100%;margin-top:4px;background:var(--surface);border:1px solid var(--border2);border-radius:8px;min-width:180px;z-index:50;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.4)">
-        {% for ub in user_businesses %}
-        <a href="/business/switch/{{ ub.business_id }}" style="display:block;padding:9px 14px;font-size:12px;color:{% if ub.business_id==business.id %}var(--mint){% else %}var(--text2){% endif %};text-decoration:none" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">
-          {{ ub.business.name }}
-          {% if ub.business_id==business.id %} ✓{% endif %}
-        </a>
-        {% endfor %}
-        <a href="/business/add" style="display:block;padding:9px 14px;font-size:12px;color:var(--text3);border-top:1px solid var(--border);text-decoration:none" onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''">+ Add business</a>
-      </div>
-    </div>
-    {% endif %}
-    <a href="/upload" class="btn btn-primary">↑ Upload Document</a>
+    <a href="/invoices" class="btn btn-primary">+ Invoice</a>
+    {% if business.has_pos %}<a href="/pos" class="btn">⚡ POS</a>{% endif %}
   </div>
 </div>
-
 <div class="content">
-  {% if threshold and threshold.warning %}
-  <div class="alert alert-{% if threshold.exceeded %}error{% else %}warn{% endif %}" style="margin-bottom:16px">
-    <div>
-      <strong>{% if threshold.exceeded %}⚠ Tax threshold exceeded{% else %}Tax threshold approaching{% endif %}</strong> —
-      {{ threshold.currency }} {{ "%.0f"|format(threshold.rolling_revenue) }} of {{ "%.0f"|format(threshold.threshold) }} ({{ threshold.percentage }}%).
-      {% if threshold.exceeded %}Register with {{ threshold.authority }} immediately.{% else %}Consider registering with {{ threshold.authority }} soon.{% endif %}
+
+  <!-- URGENT ALERTS -->
+  {% if total_overdue > 0 or (days_to_gst is not none and days_to_gst <= 7) or hr_alerts %}
+  <div style="margin-bottom:14px;display:flex;flex-direction:column;gap:6px">
+    {% if total_overdue > 0 %}
+    <div style="padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:12px;color:var(--red);font-weight:600">⚠ {{ overdue_count }} overdue invoice{{ 's' if overdue_count > 1 }} — {{ tax.currency }} {{ "%.2f"|format(total_overdue) }} outstanding</div>
+      <a href="/receive" class="btn btn-sm" style="color:var(--red);border-color:var(--red)">Collect →</a>
     </div>
+    {% endif %}
+    {% if days_to_gst is not none and days_to_gst <= 7 %}
+    <div style="padding:10px 14px;background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:12px;color:var(--amber);font-weight:600">📋 GST return due in {{ days_to_gst }} day{{ 's' if days_to_gst != 1 }} — {{ gst_due.strftime('%d %b %Y') }}</div>
+      <a href="/reports/gst-return" class="btn btn-sm" style="color:var(--amber);border-color:var(--amber)">File Return →</a>
+    </div>
+    {% endif %}
+    {% for alert in hr_alerts[:2] %}
+    <div style="padding:10px 14px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;font-size:12px;color:var(--amber)">
+      👤 {{ alert.employee_name }} — {{ alert.msg }}
+    </div>
+    {% endfor %}
   </div>
   {% endif %}
 
-  <div class="stat-grid">
-    <div class="stat-card">
-      <div class="stat-label">Revenue</div>
-      <div class="stat-value" style="color:var(--mint)">{{ "%.0f"|format(total_revenue) }}</div>
-      <div class="stat-sub">{{ tax.currency }} total</div>
+  <!-- KPI ROW 1: Cash & P&L -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    <div class="stat-card" style="border-color:rgba(16,185,129,.3)">
+      <div class="stat-label">Cash & Bank</div>
+      <div class="stat-value" style="color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(total_cash) }}</div>
+      <div class="stat-sub">
+        {% for ba in bank_accounts[:2] %}
+        <div style="font-size:10px">{{ ba.bank_name }}: {{ ba.currency }} {{ "%.0f"|format(ba.current_balance or 0) }}</div>
+        {% endfor %}
+      </div>
     </div>
     <div class="stat-card">
-      <div class="stat-label">Expenses</div>
-      <div class="stat-value" style="color:var(--red)">{{ "%.0f"|format(total_expense) }}</div>
-      <div class="stat-sub">{{ tax.currency }} total</div>
+      <div class="stat-label">This Month Revenue</div>
+      <div class="stat-value" style="font-size:20px;color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(month_revenue) }}</div>
+      <div class="stat-sub" style="color:{% if month_profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+        Net: {{ tax.currency }} {{ "%.0f"|format(month_profit) }}
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Net Profit</div>
-      <div class="stat-value" style="color:{% if total_revenue > total_expense %}var(--mint){% else %}var(--red){% endif %}">{{ "%.0f"|format(total_revenue - total_expense) }}</div>
-      <div class="stat-sub">{{ tax.currency }}</div>
+    <div class="stat-card" style="border-color:rgba(239,68,68,.2)">
+      <div class="stat-label">Receivables (AR)</div>
+      <div class="stat-value" style="font-size:20px;color:{% if total_ar > 0 %}var(--amber){% else %}var(--text3){% endif %}">
+        {{ tax.currency }} {{ "%.0f"|format(total_ar) }}
+      </div>
+      <div class="stat-sub">
+        {% if total_overdue > 0 %}<span style="color:var(--red)">{{ tax.currency }} {{ "%.0f"|format(total_overdue) }} overdue</span>
+        {% else %}All current{% endif %}
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Today POS</div>
-      <div class="stat-value">{{ "%.0f"|format(today_pos) }}</div>
-      <div class="stat-sub">{{ tax.currency }} · <a href="/pos">Open POS</a></div>
+    <div class="stat-card" style="border-color:rgba(239,68,68,.2)">
+      <div class="stat-label">Payables (AP)</div>
+      <div class="stat-value" style="font-size:20px;color:{% if total_ap > 0 %}var(--red){% else %}var(--text3){% endif %}">
+        {{ tax.currency }} {{ "%.0f"|format(total_ap) }}
+      </div>
+      <div class="stat-sub">{{ unpaid_bills_count }} unpaid bill{{ 's' if unpaid_bills_count != 1 }}</div>
     </div>
   </div>
 
-  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px">
-    <div>
-      <div class="card">
-        <div class="card-title">Recent documents <a href="/upload" class="btn btn-sm btn-primary">Upload</a></div>
-        {% if recent_docs %}
-        <table class="table">
-          <thead><tr><th>Vendor</th><th>Type</th><th>Date</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead>
-          <tbody>
-            {% for doc in recent_docs %}
-            <tr>
-              <td style="color:var(--text);font-weight:500">{{ doc.vendor_name or '—' }}</td>
-              <td><span class="badge badge-gray">{{ doc.doc_type }}</span></td>
-              <td>{{ doc.invoice_date.strftime('%d %b') if doc.invoice_date else '—' }}</td>
-              <td style="text-align:right;font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
-              <td><span class="badge badge-{% if doc.status=='PROCESSED' %}green{% elif doc.status=='FLAGGED' %}red{% else %}amber{% endif %}">{{ doc.status }}</span></td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% else %}
-        <div style="text-align:center;padding:32px 0;color:var(--text3)">
-          <div style="font-size:28px;margin-bottom:10px">↑</div>
-          <div style="font-weight:500;margin-bottom:4px;color:var(--text2)">No documents yet</div>
-          <div style="font-size:11px;margin-bottom:14px">Upload your first bill or receipt</div>
-          <a href="/upload" class="btn btn-primary">Upload document</a>
-        </div>
-        {% endif %}
+  <!-- KPI ROW 2: Operations -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    {% if business.has_pos %}
+    <div class="stat-card">
+      <div class="stat-label">⚡ POS Today</div>
+      <div class="stat-value" style="font-size:20px">{{ tax.currency }} {{ "%.2f"|format(today_pos) }}</div>
+      <div class="stat-sub"><a href="/pos" style="color:var(--mint);text-decoration:none">Open POS →</a></div>
+    </div>
+    {% endif %}
+    <div class="stat-card">
+      <div class="stat-label">Customers</div>
+      <div class="stat-value">{{ total_customers }}</div>
+      <div class="stat-sub"><a href="/customers" style="color:var(--mint);text-decoration:none">View all →</a></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">All-time Revenue</div>
+      <div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ "%.0f"|format(total_revenue) }}</div>
+      <div class="stat-sub">Expenses: {{ tax.currency }} {{ "%.0f"|format(total_expense) }}</div>
+    </div>
+    <div class="stat-card" style="border-color:{% if net_profit >= 0 %}rgba(16,185,129,.3){% else %}rgba(239,68,68,.3){% endif %}">
+      <div class="stat-label">Net Profit</div>
+      <div class="stat-value" style="font-size:18px;color:{% if net_profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+        {{ tax.currency }} {{ "%.0f"|format(net_profit) }}
       </div>
+      <div class="stat-sub"><a href="/reports/pl" style="color:var(--mint);text-decoration:none">P&L Report →</a></div>
+    </div>
+  </div>
+
+  <!-- QUICK ACTIONS -->
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px">
+    {% for action in [
+      ('/invoices', '🧾', 'New Invoice'),
+      ('/upload', '📄', 'Upload Bill'),
+      ('/payments', '💳', 'Pay Bills'),
+      ('/receive', '↓', 'Receive Payment'),
+      ('/bank', '🏦', 'Bank'),
+      ('/reports', '↗', 'Reports')
+    ] %}
+    <a href="{{ action[0] }}" style="text-decoration:none">
+      <div style="padding:12px 8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;text-align:center;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--mint)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="font-size:18px;margin-bottom:3px">{{ action[1] }}</div>
+        <div style="font-size:11px;color:var(--text2);font-weight:500">{{ action[2] }}</div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- MAIN CONTENT: Recent + Alerts -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+
+    <!-- Recent Invoices -->
+    <div class="card" style="padding:0">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <div class="card-title" style="margin:0">Recent Invoices</div>
+        <a href="/invoices" style="font-size:11px;color:var(--mint);text-decoration:none">View all →</a>
+      </div>
+      {% if recent_invoices %}
+      {% for inv in recent_invoices %}
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:500;color:var(--text);font-size:12px">
+            {{ inv.customer.name if inv.customer else 'Walk-in' }}
+          </div>
+          <div style="font-size:10px;color:var(--text3)">
+            {{ inv.invoice_number }} · {{ inv.invoice_date.strftime('%d %b') if inv.invoice_date else '—' }}
+          </div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--mono);font-weight:600;font-size:12px">{{ tax.currency }} {{ "%.2f"|format(inv.total_amount or 0) }}</div>
+          <span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='PARTIAL' %}amber{% else %}gray{% endif %}" style="font-size:9px">{{ inv.status }}</span>
+        </div>
+      </div>
+      {% endfor %}
+      {% else %}
+      <div style="text-align:center;padding:30px;color:var(--text3);font-size:12px">No invoices yet — <a href="/invoices" style="color:var(--mint)">create one</a></div>
+      {% endif %}
     </div>
 
-    <div>
+    <!-- Right column: Alerts + Activity -->
+    <div style="display:flex;flex-direction:column;gap:14px">
+
+      <!-- Low stock alert -->
       {% if low_stock %}
-      <div class="card" style="border-color:var(--amber)">
-        <div class="card-title">Low stock alerts <span class="badge badge-amber">{{ low_stock|length }}</span></div>
+      <div class="card" style="border-color:rgba(245,158,11,.3);padding:12px 16px">
+        <div class="card-title" style="color:var(--amber);margin-bottom:8px">⚠ Low Stock</div>
         {% for p in low_stock %}
-        <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-          <span style="color:var(--text)">{{ p.name }}</span>
-          <span style="color:var(--amber);font-family:var(--mono)">{{ p.stock_level }} left</span>
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)">
+          <span style="color:var(--text2)">{{ p.name }}</span>
+          <span style="font-family:var(--mono);color:var(--red);font-weight:600">{{ p.stock_level }} left</span>
         </div>
         {% endfor %}
+        <a href="/inventory" style="font-size:11px;color:var(--mint);text-decoration:none;display:block;margin-top:8px">Manage inventory →</a>
       </div>
       {% endif %}
 
-      <div class="card">
-        <div class="card-title">Tax compliance</div>
-        <div style="font-size:12px;line-height:2">
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Authority</span><span style="color:var(--mint);font-weight:500">{{ tax.authority }}</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Tax type</span><span>{{ tax.tax_name }} {{ (tax.tax_rate*100)|int }}%</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Currency</span><span>{{ tax.currency }}</span></div>
-          <div style="display:flex;justify-content:space-between"><span style="color:var(--text3)">Registered</span><span class="badge badge-{% if business.is_tax_registered %}green{% else %}gray{% endif %}">{% if business.is_tax_registered %}Yes{% else %}No{% endif %}</span></div>
+      <!-- GST Filing status -->
+      {% if business.is_tax_registered and days_to_gst is not none %}
+      <div class="card" style="padding:12px 16px;border-color:{% if days_to_gst <= 7 %}rgba(245,158,11,.3){% else %}rgba(16,185,129,.2){% endif %}">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-weight:600;font-size:12px;color:var(--text)">{{ tax.tax_name }} Return Due</div>
+            <div style="font-size:11px;color:var(--text3)">{{ gst_due.strftime('%d %b %Y') }} · {{ days_to_gst }} days</div>
+          </div>
+          <a href="/reports/gst-return" class="btn btn-sm">Prepare →</a>
         </div>
+      </div>
+      {% endif %}
+
+      <!-- Recent documents -->
+      <div class="card" style="padding:0">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div class="card-title" style="margin:0">Recent Documents</div>
+          <a href="/documents" style="font-size:11px;color:var(--mint);text-decoration:none">View all →</a>
+        </div>
+        {% if recent_docs %}
+        {% for doc in recent_docs %}
+        <div style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="font-size:12px;font-weight:500;color:var(--text)">{{ doc.vendor_name or 'Unknown' }}</div>
+            <div style="font-size:10px;color:var(--text3)">{{ doc.doc_type }} · {{ doc.created_at.strftime('%d %b') if doc.created_at else '—' }}</div>
+          </div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--text2)">{{ tax.currency }} {{ "%.2f"|format(doc.total_amount or 0) }}</div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div style="text-align:center;padding:20px;color:var(--text3);font-size:12px">
+          No documents · <a href="/upload" style="color:var(--mint)">Upload a bill</a>
+        </div>
+        {% endif %}
       </div>
 
-      <div class="card">
-        <div class="card-title">Quick actions</div>
-        <div style="display:flex;flex-direction:column;gap:6px">
-          <a href="/pos" class="btn" style="justify-content:flex-start">⚡ Point of Sale</a>
-          <a href="/customers" class="btn" style="justify-content:flex-start">◎ Customers</a>
-          <a href="/invoices" class="btn" style="justify-content:flex-start">◻ Create Invoice</a>
-          <a href="/reports" class="btn" style="justify-content:flex-start">↗ Financial Reports</a>
-          <a href="/ai" class="btn" style="justify-content:flex-start;background:var(--mint-dim);border-color:rgba(16,185,129,.2);color:var(--mint)">⬡ Ask AI Accountant</a>
-        </div>
-      </div>
     </div>
   </div>
+
 </div>
 {% endblock %}
-<script>
-document.addEventListener('click',function(e){
-  var dd=document.getElementById('biz-dd');
-  if(dd&&!e.target.closest('#biz-dd')&&!e.target.closest('[onclick*="biz-dd"]'))dd.classList.remove('show');
-});
-document.querySelector('#biz-dd')&&(document.getElementById('biz-dd').style.display='');
-document.querySelectorAll('#biz-dd').forEach(el=>el.style.removeProperty('display'));
-</script>

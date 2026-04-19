@@ -281,6 +281,22 @@ function closeModal(id){document.getElementById(id).classList.remove('open')}
 </script>
 {% block scripts %}{% endblock %}
 <script>
+function toggleSidebar() {
+  var sidebar = document.querySelector('.sidebar');
+  var overlay = document.getElementById('sidebar-overlay');
+  if (sidebar) sidebar.classList.toggle('mobile-open');
+  if (overlay) overlay.classList.toggle('mobile-open');
+}
+
+// Close sidebar when nav item clicked on mobile
+document.addEventListener('DOMContentLoaded', function() {
+  if (window.innerWidth <= 768) {
+    document.querySelectorAll('.nav-item').forEach(function(item) {
+      item.addEventListener('click', function() { toggleSidebar(); });
+    });
+  }
+});
+
 function setTheme(t){
   document.documentElement.setAttribute('data-theme',t);
   localStorage.setItem('ledgr-theme',t);
