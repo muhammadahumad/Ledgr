@@ -218,6 +218,33 @@
 
 </div>
 
+<!-- Email / SMTP Configuration -->
+<div class="card" style="margin-bottom:14px">
+  <div class="card-title">📧 Email Configuration (SMTP)</div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+    Configure to send invoices and team invitations directly from LEDGR. Works with Gmail, Outlook, Zoho, Mailgun.
+  </div>
+  <div class="field-row">
+    <div><div class="field-label">SMTP Host</div>
+      <input class="field-input" id="s-smtp-host" value="{{ business.smtp_host or '' }}" placeholder="smtp.gmail.com"></div>
+    <div style="width:100px"><div class="field-label">Port</div>
+      <input class="field-input" id="s-smtp-port" type="number" value="{{ business.smtp_port or 587 }}" placeholder="587"></div>
+  </div>
+  <div class="field-row">
+    <div><div class="field-label">SMTP Username</div>
+      <input class="field-input" id="s-smtp-user" value="{{ business.smtp_user or '' }}" placeholder="you@gmail.com"></div>
+    <div><div class="field-label">App Password</div>
+      <input class="field-input" id="s-smtp-pass" type="password" value="{{ business.smtp_pass or '' }}" placeholder="App password (not login password)"></div>
+  </div>
+  <div class="field-group"><div class="field-label">From Email</div>
+    <input class="field-input" id="s-smtp-from" value="{{ business.smtp_from or '' }}" placeholder="invoices@yourbusiness.com"></div>
+  <div style="background:var(--bg);border-radius:7px;padding:10px;font-size:11px;color:var(--text3);margin-top:8px;line-height:1.7">
+    <strong style="color:var(--text2)">Gmail:</strong> Google Account → Security → 2-Step Verification → App Passwords → Generate<br>
+    <strong style="color:var(--text2)">Outlook:</strong> smtp-mail.outlook.com · Port 587<br>
+    <strong style="color:var(--text2)">Zoho:</strong> smtp.zoho.com · Port 587
+  </div>
+</div>
+
 <div style="margin-top:14px;text-align:right">
   <button class="btn btn-primary" onclick="saveAll()" style="padding:10px 32px;font-size:14px">Save All Changes</button>
 </div>

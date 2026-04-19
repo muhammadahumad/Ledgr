@@ -102,15 +102,13 @@ function emailInvModal(id, defaultEmail) {
     body:JSON.stringify({email:email})
   }).then(r=>r.json()).then(res=>{
     if(res.ok){alert('✓ '+res.message);}
-    else{
-      if(res.invoice_url){
-        alert('SMTP not configured.\n\nShare this link with your customer:\n'+res.invoice_url);
-      } else {
-        alert('Error: '+res.error);
-      }
+    else if(res.invoice_url){
+      alert('SMTP not configured.\n\nShare this link manually:\n'+res.invoice_url);
+    } else {
+      alert('Error: '+res.error);
     }
   });
-}).then(r=>r.json()).then(res=>{if(res.ok){if(res.has_email){window.location.href=res.mailto;}else{var em=prompt('Enter customer email:');if(em)window.location.href='mailto:'+em+'?subject='+encodeURIComponent(res.subject)+'&body='+encodeURIComponent(res.subject);}}}); }
+}
 
 function deleteInv(id, num) {
   if(!confirm('Delete invoice '+num+'?\n\nPaid invoices cannot be deleted. Issue a credit note instead.')) return;

@@ -162,6 +162,18 @@ a:hover{text-decoration:underline}
   .field-row{grid-template-columns:1fr}
 }
 @media(min-width:901px){.hamburger{display:none!important}.overlay{display:none!important}}
+
+  /* ── COLLAPSIBLE NAV GROUPS ── */
+  .nav-group{margin-bottom:1px}
+  .nav-group-header{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;font-size:12px;font-weight:500;color:var(--text2);cursor:pointer;border-radius:7px;transition:background .15s;user-select:none;-webkit-user-select:none}
+  .nav-group-header:hover{background:var(--surface2);color:var(--text)}
+  .nav-group-items{display:none;padding-left:6px}
+  .nav-group-items.open{display:block}
+  .nav-group-arrow{font-size:9px;color:var(--text3);transition:transform .2s;display:inline-block}
+  .nav-group-arrow.open{transform:rotate(90deg)}
+  .nav-sub{padding:5px 12px 5px 20px!important;font-size:11px!important;color:var(--text3)!important}
+  .nav-sub:hover{color:var(--text)!important}
+  .nav-sub.active{color:var(--mint)!important;background:rgba(16,185,129,.08)!important}
 </style>
 </head>
 <body>
