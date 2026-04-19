@@ -136,6 +136,7 @@ a{color:inherit;text-decoration:none}
 
 /* ── TOUCH ── */
 button,.btn,a.btn,[data-action]{-webkit-tap-highlight-color:rgba(16,185,129,.15);touch-action:manipulation}
+  .nav-section-label{font-size:9px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;padding:10px 18px 3px;margin-top:2px}
 </style>
 
 <!-- Critical JS in HEAD - available immediately, before any page content -->
@@ -206,104 +207,47 @@ function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').
   </div>
 
   <!-- Navigation -->
-  <div style="flex:1;overflow-y:auto;padding:8px 0">
+  <div style="flex:1;overflow-y:auto;padding:6px 0">
 
-    <!-- Home -->
-    <a href="/dashboard" class="nav-item {% if request.path=='/dashboard' %}active{% endif %}">
-      <span class="ni">⬡</span>Dashboard
-    </a>
+    <a href="/dashboard" class="nav-item {% if request.path=='/dashboard' %}active{% endif %}"><span class="ni">⬡</span>Dashboard</a>
 
-    <!-- Sales group -->
-    <div class="nav-group">
-      <div class="nav-group-header" onclick="toggleGroup('g-sales')">
-        <span style="display:flex;align-items:center;gap:8px"><span class="ni">🧾</span>Sales</span>
-        <span class="nav-group-arrow" id="arrow-g-sales">▸</span>
-      </div>
-      <div class="nav-group-items" id="g-sales">
-        <a href="/invoices" class="nav-item nav-sub {% if request.path=='/invoices' %}active{% endif %}">Invoices</a>
-        <a href="/quotations" class="nav-item nav-sub {% if request.path=='/quotations' %}active{% endif %}">Quotations</a>
-        <a href="/customers" class="nav-item nav-sub {% if request.path=='/customers' %}active{% endif %}">Customers</a>
-        <a href="/pos" class="nav-item nav-sub {% if request.path=='/pos' %}active{% endif %}">Point of Sale ⚡</a>
-      </div>
-    </div>
+    <div class="nav-section-label">Sales</div>
+    <a href="/invoices" class="nav-item {% if request.path=='/invoices' %}active{% endif %}"><span class="ni">🧾</span>Invoices</a>
+    <a href="/quotations" class="nav-item {% if request.path=='/quotations' %}active{% endif %}"><span class="ni">📋</span>Quotations</a>
+    <a href="/customers" class="nav-item {% if request.path=='/customers' %}active{% endif %}"><span class="ni">👤</span>Customers</a>
+    <a href="/pos" class="nav-item {% if request.path=='/pos' %}active{% endif %}"><span class="ni">⚡</span>Point of Sale</a>
+    <a href="/team" class="nav-item {% if request.path=='/team' %}active{% endif %}"><span class="ni">👥</span>Team</a>
 
-    <!-- Purchases group -->
-    <div class="nav-group">
-      <div class="nav-group-header" onclick="toggleGroup('g-purchases')">
-        <span style="display:flex;align-items:center;gap:8px"><span class="ni">📄</span>Purchases</span>
-        <span class="nav-group-arrow" id="arrow-g-purchases">▸</span>
-      </div>
-      <div class="nav-group-items" id="g-purchases">
-        <a href="/upload" class="nav-item nav-sub {% if request.path=='/upload' %}active{% endif %}">Upload Bill</a>
-        <a href="/documents" class="nav-item nav-sub {% if request.path.startswith('/documents') %}active{% endif %}">Documents</a>
-        <a href="/suppliers" class="nav-item nav-sub {% if request.path=='/suppliers' %}active{% endif %}">Suppliers</a>
-      </div>
-    </div>
+    <div class="nav-section-label">Purchases</div>
+    <a href="/upload" class="nav-item {% if request.path=='/upload' %}active{% endif %}"><span class="ni">📄</span>Upload Bill</a>
+    <a href="/documents" class="nav-item {% if request.path.startswith('/documents') %}active{% endif %}"><span class="ni">🗂</span>Documents</a>
+    <a href="/suppliers" class="nav-item {% if request.path=='/suppliers' %}active{% endif %}"><span class="ni">🏭</span>Suppliers</a>
+    <a href="/purchase-orders" class="nav-item {% if request.path=='/purchase-orders' %}active{% endif %}"><span class="ni">📦</span>Purchase Orders</a>
 
-    <!-- Payments group -->
-    <div class="nav-group">
-      <div class="nav-group-header" onclick="toggleGroup('g-payments')">
-        <span style="display:flex;align-items:center;gap:8px"><span class="ni">💳</span>Payments</span>
-        <span class="nav-group-arrow" id="arrow-g-payments">▸</span>
-      </div>
-      <div class="nav-group-items" id="g-payments">
-        <a href="/payments" class="nav-item nav-sub {% if request.path=='/payments' %}active{% endif %}">Pay Bills (AP)</a>
-        <a href="/receive" class="nav-item nav-sub {% if request.path=='/receive' %}active{% endif %}">Receive Payment</a>
-        <a href="/bank" class="nav-item nav-sub {% if request.path=='/bank' %}active{% endif %}">Bank & Reconcile</a>
-      </div>
-    </div>
+    <div class="nav-section-label">Payments</div>
+    <a href="/payments" class="nav-item {% if request.path=='/payments' %}active{% endif %}"><span class="ni">💳</span>Pay Bills</a>
+    <a href="/receive" class="nav-item {% if request.path=='/receive' %}active{% endif %}"><span class="ni">↓</span>Receive Payment</a>
+    <a href="/bank" class="nav-item {% if request.path=='/bank' %}active{% endif %}"><span class="ni">🏦</span>Bank</a>
 
-    <!-- Accounting group -->
-    <div class="nav-group">
-      <div class="nav-group-header" onclick="toggleGroup('g-accounting')">
-        <span style="display:flex;align-items:center;gap:8px"><span class="ni">≡</span>Accounting</span>
-        <span class="nav-group-arrow" id="arrow-g-accounting">▸</span>
-      </div>
-      <div class="nav-group-items" id="g-accounting">
-        <a href="/ledger" class="nav-item nav-sub {% if request.path=='/ledger' %}active{% endif %}">Ledger</a>
-        <a href="/journal" class="nav-item nav-sub {% if request.path=='/journal' %}active{% endif %}">Journal</a>
-        <a href="/accounts" class="nav-item nav-sub {% if request.path=='/accounts' %}active{% endif %}">Chart of Accounts</a>
-        <a href="/projects" class="nav-item nav-sub {% if request.path=='/projects' %}active{% endif %}">Projects</a>
-      </div>
-    </div>
+    <div class="nav-section-label">Accounting</div>
+    <a href="/ledger" class="nav-item {% if request.path=='/ledger' %}active{% endif %}"><span class="ni">≡</span>Ledger</a>
+    <a href="/journal" class="nav-item {% if request.path=='/journal' %}active{% endif %}"><span class="ni">✎</span>Journal</a>
+    <a href="/accounts" class="nav-item {% if request.path=='/accounts' %}active{% endif %}"><span class="ni">≣</span>Chart of Accounts</a>
+    <a href="/projects" class="nav-item {% if request.path=='/projects' %}active{% endif %}"><span class="ni">📁</span>Projects</a>
 
-    <!-- Operations group -->
-    <div class="nav-group">
-      <div class="nav-group-header" onclick="toggleGroup('g-ops')">
-        <span style="display:flex;align-items:center;gap:8px"><span class="ni">📦</span>Operations</span>
-        <span class="nav-group-arrow" id="arrow-g-ops">▸</span>
-      </div>
-      <div class="nav-group-items" id="g-ops">
-        <a href="/inventory/dashboard" class="nav-item nav-sub {% if request.path.startswith('/inventory') %}active{% endif %}">Inventory</a>
-        <a href="/locations" class="nav-item nav-sub {% if request.path=='/locations' %}active{% endif %}">Warehouses</a>
-        <a href="/hr" class="nav-item nav-sub {% if request.path=='/hr' %}active{% endif %}">HR Dashboard</a>
-        <a href="/payroll" class="nav-item nav-sub {% if request.path=='/payroll' %}active{% endif %}">Employees</a>
-        <a href="/hr/payroll" class="nav-item nav-sub {% if request.path=='/hr/payroll' %}active{% endif %}">Payroll Run</a>
-      </div>
-    </div>
+    <div class="nav-section-label">Operations</div>
+    <a href="/inventory" class="nav-item {% if request.path.startswith('/inventory') %}active{% endif %}"><span class="ni">📦</span>Inventory</a>
+    <a href="/hr" class="nav-item {% if request.path=='/hr' %}active{% endif %}"><span class="ni">👥</span>HR Dashboard</a>
+    <a href="/payroll" class="nav-item {% if request.path=='/payroll' %}active{% endif %}"><span class="ni">💼</span>Employees & Pay</a>
 
-    <!-- Reports group -->
-    <div class="nav-group">
-      <div class="nav-group-header" onclick="toggleGroup('g-reports')">
-        <span style="display:flex;align-items:center;gap:8px"><span class="ni">↗</span>Reports</span>
-        <span class="nav-group-arrow" id="arrow-g-reports">▸</span>
-      </div>
-      <div class="nav-group-items" id="g-reports">
-        <a href="/reports/pl" class="nav-item nav-sub {% if request.path=='/reports/pl' %}active{% endif %}">Profit & Loss</a>
-        <a href="/reports/balance-sheet" class="nav-item nav-sub {% if request.path=='/reports/balance-sheet' %}active{% endif %}">Balance Sheet</a>
-        <a href="/reports/cash-flow" class="nav-item nav-sub {% if request.path=='/reports/cash-flow' %}active{% endif %}">Cash Flow</a>
-        <a href="/reports/gst-return" class="nav-item nav-sub {% if request.path=='/reports/gst-return' %}active{% endif %}">GST Return</a>
-        <a href="/import" class="nav-item nav-sub {% if request.path=='/import' %}active{% endif %}">Data Import</a>
-      </div>
-    </div>
-
-    <!-- Social -->
-    <a href="/social" class="nav-item {% if request.path=='/social' %}active{% endif %}">
-      <span class="ni">📱</span>Social Media
-    </a>
+    <div class="nav-section-label">Reports</div>
+    <a href="/reports" class="nav-item {% if request.path=='/reports' %}active{% endif %}"><span class="ni">↗</span>All Reports</a>
+    <a href="/reports/gst-return" class="nav-item {% if request.path=='/reports/gst-return' %}active{% endif %}"><span class="ni">🧾</span>GST Return</a>
+    <a href="/import" class="nav-item {% if request.path=='/import' %}active{% endif %}"><span class="ni">↓</span>Data Import</a>
+    <a href="/social" class="nav-item {% if request.path=='/social' %}active{% endif %}"><span class="ni">📱</span>Social Media</a>
+    <a href="/ai" class="nav-item {% if request.path=='/ai' %}active{% endif %}"><span class="ni">✦</span>AI Accountant</a>
 
   </div>
-
   <!-- Bottom bar -->
   <div style="padding:10px 12px;border-top:1px solid var(--border)">
     <!-- Theme dots -->
@@ -360,21 +304,6 @@ function toggleGroup(id) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-  var groups = ['g-sales','g-purchases','g-payments','g-accounting','g-ops','g-reports'];
-  var isMobile = window.innerWidth <= 900;
-  groups.forEach(function(id) {
-    var saved = localStorage.getItem('nav-' + id);
-    var items = document.getElementById(id);
-    var arrow = document.getElementById('arrow-' + id);
-    var hasActive = items && items.querySelector('.active');
-    // Desktop: open all groups by default
-    // Mobile: open only active group (or saved state)
-    var shouldOpen = !isMobile || hasActive || saved === '1';
-    if (shouldOpen && items) {
-      items.classList.add('open');
-      if (arrow) arrow.classList.add('open');
-    }
-  });
 
 function setTheme(t){document.documentElement.setAttribute('data-theme',t);localStorage.setItem('theme',t);}
 function toggleBizMenu(){var m=document.getElementById('biz-menu');if(m)m.style.display=m.style.display==='block'?'none':'block';}
