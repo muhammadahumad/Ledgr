@@ -303,19 +303,30 @@ function toggleGroup(id) {
   try { localStorage.setItem('nav-' + id, !isOpen ? '1' : '0'); } catch(e) {}
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+// Global functions - accessible from all onclick handlers
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  localStorage.setItem('theme',t);
+  // Update active dot
+  ['dark','light','warm','blue'].forEach(function(n){
+    var b=document.getElementById('theme-btn-'+n);
+    if(b)b.style.border=n===t?'2px solid var(--mint)':'2px solid transparent';
+  });
+}
+function toggleBizMenu(){
+  var m=document.getElementById('biz-menu');
+  if(m)m.style.display=m.style.display==='block'?'none':'block';
+}
 
-function setTheme(t){document.documentElement.setAttribute('data-theme',t);localStorage.setItem('theme',t);}
-function toggleBizMenu(){var m=document.getElementById('biz-menu');if(m)m.style.display=m.style.display==='block'?'none':'block';}
-
-// Close sidebar on mobile nav click
+// Run on load
 document.addEventListener('DOMContentLoaded',function(){
+  // Mobile: close sidebar when nav link clicked
   if(window.innerWidth<=900){
     document.querySelectorAll('.nav-item').forEach(function(el){
       el.addEventListener('click',function(){closeSidebar();});
     });
   }
-  // Restore theme dots
+  // Highlight active theme dot
   var t=localStorage.getItem('theme')||'dark';
   var btn=document.getElementById('theme-btn-'+t);
   if(btn)btn.style.border='2px solid var(--mint)';
