@@ -4781,6 +4781,81 @@ def api_create_debit_note(inv_id):
 
 
 
+
+@app.route("/api/pos/sale/<int:sale_id>/void", methods=["POST"])
+@login_required
+def api_pos_void_sale(sale_id):
+    """Void a POS sale — reverses journal and restocks inventory"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    sale = POSSale.query.filter_by(id=sale_id, business_id=business.id).first()
+    if not sale: return jsonify({"ok":False,"error":"Sale not found"})
+    try:
+        # Reverse the journal if exists
+        if sale.journal_entry_id:
+            orig = JournalEntry.query.get(sale.journal_entry_id)
+            if orig and not orig.is_void:
+                orig_lines = JournalLine.query.filter_by(journal_entry_id=orig.id).all()
+                reversal_lines = [
+                    {"account_code": l.account.code if l.account else "4000",
+                     "debit": float(l.credit), "credit": float(l.debit),
+                     "description": "VOID: " + (l.description or "")}
+                    for l in orig_lines if l.account
+                ]
+                if reversal_lines:
+                    post_journal(business.id, user.id,
+                                "VOID: " + orig.description,
+                                "VOID-" + str(sale_id), "VOID", reversal_lines)
+                orig.is_void = True
+        # Restock inventory items
+        try:
+            import json as _json
+            items = _json.loads(sale.note or "[]") if sale.note and sale.note.startswith("[") else []
+            for item in items:
+                if item.get("product_id"):
+                    p = Product.query.get(item["product_id"])
+                    if p:
+                        p.stock_level = float(p.stock_level or 0) + float(item.get("qty", 0))
+        except Exception:
+            pass
+        # Mark sale as voided
+        sale.category = "VOIDED"
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Sale voided and journal reversed"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/pos/today")
+@login_required
+def api_pos_today():
+    """Get today's POS sales for display"""
+    business, err = api_business_guard()
+    if err: return err
+    from datetime import date
+    today_sales = POSSale.query.filter(
+        POSSale.business_id==business.id,
+        db.func.date(POSSale.timestamp)==date.today(),
+        POSSale.category != "VOIDED"
+    ).order_by(POSSale.timestamp.desc()).all()
+    return jsonify({
+        "ok": True,
+        "sales": [{
+            "id": s.id,
+            "amount": float(s.amount),
+            "tax": float(s.tax_amount or 0),
+            "payment_method": s.payment_method,
+            "customer": s.customer.name if s.customer else None,
+            "time": s.timestamp.strftime("%H:%M") if s.timestamp else "—",
+            "category": s.category
+        } for s in today_sales],
+        "total": sum(float(s.amount) for s in today_sales)
+    })
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
