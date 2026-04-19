@@ -1291,25 +1291,124 @@ def dashboard():
     user = current_user()
     business = current_business()
     tax = business.tax_rules()
-    total_expense = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(business_id=business.id,entry_type='EXPENSE').scalar() or 0)
-    total_revenue = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(business_id=business.id,entry_type='REVENUE').scalar() or 0)
-    total_docs = Document.query.filter_by(business_id=business.id).count()
-    total_customers = Customer.query.filter_by(business_id=business.id).count()
-    recent_docs = Document.query.filter_by(business_id=business.id).order_by(Document.created_at.desc()).limit(6).all()
-    low_stock = Product.query.filter(Product.business_id==business.id, Product.stock_level<=Product.reorder_level).limit(5).all() if business.has_inventory else []
-    threshold = check_threshold(business)
-    # Today POS
+    today = date.today()
+    month_start = date(today.year, today.month, 1)
+
+    # ── Revenue & Expenses ────────────────────────────────────────────────
+    total_revenue = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(
+        business_id=business.id, entry_type='REVENUE').scalar() or 0)
+    total_expense = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(
+        business_id=business.id, entry_type='EXPENSE').scalar() or 0)
+
+    # This month revenue
+    month_revenue = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
+        LedgerEntry.business_id==business.id,
+        LedgerEntry.entry_type=='REVENUE',
+        LedgerEntry.timestamp >= datetime.combine(month_start, datetime.min.time())
+    ).scalar() or 0)
+
+    month_expense = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
+        LedgerEntry.business_id==business.id,
+        LedgerEntry.entry_type=='EXPENSE',
+        LedgerEntry.timestamp >= datetime.combine(month_start, datetime.min.time())
+    ).scalar() or 0)
+
+    # ── Cash Position ─────────────────────────────────────────────────────
+    bank_accounts = BankAccount.query.filter_by(business_id=business.id, is_active=True).all()
+    total_cash = sum(float(b.current_balance or 0) for b in bank_accounts)
+
+    # ── AR / AP ───────────────────────────────────────────────────────────
+    unpaid_invoices = Invoice.query.filter(
+        Invoice.business_id==business.id,
+        Invoice.status.in_(['SENT','PARTIAL'])
+    ).all()
+    total_ar = sum(float(i.total_amount or 0) - float(i.amount_paid or 0) for i in unpaid_invoices)
+    overdue_invoices = [i for i in unpaid_invoices
+                        if i.due_date and i.due_date < today]
+    total_overdue = sum(float(i.total_amount or 0) - float(i.amount_paid or 0)
+                        for i in overdue_invoices)
+
+    unpaid_bills = Document.query.filter(
+        Document.business_id==business.id,
+        Document.doc_type.in_(['BILL','EXPENSE']),
+        Document.payment_status.in_(['UNPAID','PARTIAL','POSTED_UNPAID'])
+    ).all()
+    total_ap = sum(float(b.total_amount or 0) for b in unpaid_bills)
+
+    # ── Today POS ─────────────────────────────────────────────────────────
     today_pos = float(db.session.query(db.func.sum(POSSale.amount)).filter(
         POSSale.business_id==business.id,
-        db.func.date(POSSale.timestamp)==datetime.utcnow().date()).scalar() or 0)
-    # User's businesses for switcher
+        db.func.date(POSSale.timestamp)==today
+    ).scalar() or 0)
+
+    # ── Alerts ────────────────────────────────────────────────────────────
+    low_stock = []
+    if business.has_inventory:
+        low_stock = Product.query.filter(
+            Product.business_id==business.id,
+            Product.stock_level <= Product.reorder_level
+        ).limit(5).all()
+
+    # HR compliance alerts
+    hr_alerts = []
+    if business.has_payroll:
+        try:
+            employees = Employee.query.filter_by(business_id=business.id, is_active=True).all()
+            for e in employees:
+                for a in e.compliance_alerts():
+                    if a.get('days', 999) <= 30:
+                        a['employee_name'] = e.full_name
+                        hr_alerts.append(a)
+        except Exception:
+            pass
+
+    # GST filing reminder
+    gst_due = None
+    if business.is_tax_registered:
+        if today.month == 12:
+            gst_due = date(today.year+1, 1, 28)
+        else:
+            gst_due = date(today.year, today.month+1, 28)
+        days_to_gst = (gst_due - today).days
+    else:
+        days_to_gst = None
+
+    # ── Recent activity ───────────────────────────────────────────────────
+    recent_invoices = Invoice.query.filter_by(business_id=business.id).order_by(
+        Invoice.created_at.desc()).limit(5).all()
+    recent_docs = Document.query.filter_by(business_id=business.id).order_by(
+        Document.created_at.desc()).limit(5).all()
+
+    # ── Quick stats ───────────────────────────────────────────────────────
+    total_customers = Customer.query.filter_by(business_id=business.id).count()
+    total_suppliers = Supplier.query.filter_by(business_id=business.id).count()
+    threshold = check_threshold(business)
     user_businesses = UserBusiness.query.filter_by(user_id=user.id).all()
-    return render_template('dashboard.html', user=user, business=business, tax=tax,
-                           total_expense=total_expense, total_revenue=total_revenue,
-                           total_docs=total_docs, total_customers=total_customers,
-                           recent_docs=recent_docs, low_stock=low_stock, threshold=threshold,
-                           today_pos=today_pos, user_businesses=user_businesses, plan=user.get_plan(),
-                           btype_name=business.btype()['name'])
+    net_profit = total_revenue - total_expense
+    month_profit = month_revenue - month_expense
+
+    return render_template('dashboard.html',
+        user=user, business=business, tax=tax, today=today,
+        # Financial
+        total_revenue=total_revenue, total_expense=total_expense, net_profit=net_profit,
+        month_revenue=month_revenue, month_expense=month_expense, month_profit=month_profit,
+        total_cash=total_cash, bank_accounts=bank_accounts,
+        # AR/AP
+        total_ar=total_ar, total_ap=total_ap,
+        total_overdue=total_overdue, overdue_count=len(overdue_invoices),
+        unpaid_bills_count=len(unpaid_bills),
+        # Operations
+        today_pos=today_pos,
+        total_customers=total_customers, total_suppliers=total_suppliers,
+        # Alerts
+        low_stock=low_stock, hr_alerts=hr_alerts,
+        gst_due=gst_due, days_to_gst=days_to_gst,
+        # Recent
+        recent_invoices=recent_invoices, recent_docs=recent_docs,
+        # Meta
+        threshold=threshold, plan=user.get_plan(),
+        user_businesses=user_businesses,
+        btype_name=business.btype()['name'])
 
 @app.route('/upload')
 @login_required
