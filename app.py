@@ -83,6 +83,21 @@ TAX_RULES = {
            'authority':'ETA','tin_format':'XXXXXXXXX',
            'threshold':500000,'filing':'monthly',
            'requires_dual_tin':True,'rtl':False},
+    'MY': {
+        'name':'Malaysia','currency':'MYR','tax_name':'SST','tax_rate':0.08,
+        'tax_rate_sales_10':0.10,'tax_rate_sales_5':0.05,
+        'tax_rate_service_8':0.08,'tax_rate_service_6':0.06,
+        'authority':'RMCD','tin_format':'W10-XXXX-XXXXXXXX',
+        'threshold':500000,'filing':'bimonthly','requires_dual_tin':True,'rtl':False,
+        'sectors': {
+            'service': {'name':'Service Tax','rate':0.08,'currency':'MYR',
+                       'applies_to':'Most services (8%), F&B/telecom/logistics/parking (6%)'},
+            'sales':   {'name':'Sales Tax','rate':0.10,'currency':'MYR',
+                       'applies_to':'Manufactured/imported goods (10% standard, 5% select)'}
+        },
+        'e_invoice': {'mandatory_from':'2026-07-01','threshold_myr':1000000,
+                     'system':'MyInvois (IRBM)','format':'XML/JSON'}
+    },
     'ID': {'name':'Indonesia','currency':'IDR','tax_name':'PPN','tax_rate':0.11,
            'authority':'DGT','tin_format':'XX.XXX.XXX.X-XXX.XXX',
            'threshold':4800000000,'filing':'monthly',
@@ -202,6 +217,12 @@ EMPLOYMENT_RULES = {
         'social_insurance': True, 'gratuity': False, 'quota_system': True,
         'pension_portal': 'NSSF', 'currency': 'EGP'
     },
+    'MY': {
+        'pension_employer_pct': 13.0, 'pension_employee_pct': 11.0,
+        'social_insurance': True, 'gratuity': False, 'quota_system': False,
+        'pension_portal': 'EPF (KWSP)', 'currency': 'MYR',
+        'notes': 'EPF: 13% employer + 11% employee. SOCSO: 1.75% employer + 0.5% employee. EIS: 0.4% each.'
+    },
 }
 
 
@@ -232,6 +253,7 @@ def calculate_employee_costs(employee, country_code='MV', pension_registered=Tru
         'OM': {'pension_emp': 7.0,  'pension_er': 11.5, 'social': 0.0,  'gratuity_days': 15},
         'ID': {'pension_emp': 1.0,  'pension_er': 4.0,  'social': 0.3,  'gratuity_days': 0},
         'EG': {'pension_emp': 11.0, 'pension_er': 18.75,'social': 1.0,  'gratuity_days': 0},
+        'MY': {'pension_emp': 11.0, 'pension_er': 13.0, 'social': 2.25, 'gratuity_days': 0},
         'CN': {'pension_emp': 8.0,  'pension_er': 16.0, 'social': 0.5,  'gratuity_days': 0},
     }
 
@@ -782,6 +804,8 @@ class BankTransaction(db.Model):
     reference = db.Column(db.String(100))
     debit = db.Column(db.Numeric(12,2), default=0)
     credit = db.Column(db.Numeric(12,2), default=0)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
     balance = db.Column(db.Numeric(12,2), default=0)
     category = db.Column(db.String(100))
     is_reconciled = db.Column(db.Boolean, default=False)
@@ -945,6 +969,38 @@ class CreditNote(db.Model):
     journal_entry_id = db.Column(db.Integer, db.ForeignKey('journal_entries.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     invoice = db.relationship('Invoice', backref='credit_notes')
+
+
+class Project(db.Model):
+    """Project-based income and expense tracking"""
+    __tablename__ = 'projects'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    name = db.Column(db.String(200), nullable=False)
+    code = db.Column(db.String(50))
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    description = db.Column(db.Text)
+    status = db.Column(db.String(20), default='ACTIVE')  # ACTIVE/COMPLETED/ON_HOLD
+    budget = db.Column(db.Numeric(12,2), default=0)
+    start_date = db.Column(db.Date)
+    end_date = db.Column(db.Date)
+    project_type = db.Column(db.String(20), default='fixed')  # fixed / time_material
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    customer = db.relationship('Customer', backref='projects')
+    business = db.relationship('Business', backref='projects')
+
+
+class Department(db.Model):
+    """Department/Class for P&L segmentation"""
+    __tablename__ = 'departments'
+    id = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    name = db.Column(db.String(100), nullable=False)
+    code = db.Column(db.String(20))
+    parent_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    business = db.relationship('Business', backref='departments')
 
 with app.app_context():
     try:
@@ -4335,6 +4391,147 @@ def api_send_invoice_email(inv_id):
 
 
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# PROJECTS
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/projects")
+@business_required
+def projects():
+    user = current_user(); business = current_business()
+    project_list = Project.query.filter_by(business_id=business.id).order_by(
+        Project.created_at.desc()).all()
+    customers_list = Customer.query.filter_by(business_id=business.id).all()
+    # Calculate P&L per project
+    for p in project_list:
+        # Revenue: invoices tagged to this project
+        p.total_revenue = float(db.session.query(
+            db.func.sum(Invoice.total_amount)
+        ).filter_by(business_id=business.id, project_id=p.id).scalar() or 0)
+        # Expenses: journal lines tagged to this project
+        p.total_expenses = float(db.session.query(
+            db.func.sum(JournalLine.debit)
+        ).join(JournalEntry).filter(
+            JournalEntry.business_id==business.id,
+            JournalLine.project_id==p.id,
+            JournalLine.debit > 0
+        ).scalar() or 0)
+        p.profit = p.total_revenue - p.total_expenses
+        p.margin = (p.profit / p.total_revenue * 100) if p.total_revenue > 0 else 0
+        p.budget_used = (p.total_expenses / float(p.budget) * 100) if p.budget and float(p.budget) > 0 else 0
+    return render_template("projects.html", user=user, business=business,
+                           projects=project_list, customers=customers_list,
+                           tax=business.tax_rules(), today=date.today())
+
+
+@app.route("/api/project/create", methods=["POST"])
+@login_required
+def api_project_create():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    if not name: return jsonify({"ok":False,"error":"Project name required"})
+    count = Project.query.filter_by(business_id=business.id).count()
+    code = data.get("code") or "PRJ-" + str(count+1).zfill(4)
+    try:
+        p = Project(
+            business_id=business.id,
+            name=name,
+            code=code,
+            customer_id=data.get("customer_id") or None,
+            description=data.get("description",""),
+            budget=float(data.get("budget",0)),
+            project_type=data.get("project_type","fixed"),
+            status="ACTIVE"
+        )
+        if data.get("start_date"):
+            try: p.start_date = datetime.strptime(data["start_date"], "%Y-%m-%d").date()
+            except: pass
+        if data.get("end_date"):
+            try: p.end_date = datetime.strptime(data["end_date"], "%Y-%m-%d").date()
+            except: pass
+        db.session.add(p)
+        db.session.commit()
+        return jsonify({"ok":True,"project_id":p.id,"code":p.code})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/project/<int:pid>/update", methods=["POST"])
+@login_required
+def api_project_update(pid):
+    business, err = api_business_guard()
+    if err: return err
+    p = Project.query.filter_by(id=pid, business_id=business.id).first()
+    if not p: return jsonify({"ok":False,"error":"Project not found"})
+    data = request.get_json()
+    for field in ["name","code","description","project_type","status"]:
+        if field in data: setattr(p, field, data[field])
+    if "budget" in data:
+        try: p.budget = float(data["budget"])
+        except: pass
+    db.session.commit()
+    return jsonify({"ok":True})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PAYMENT RECEIVED (AR) — standalone page
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/receive")
+@business_required
+def receive_payment():
+    user = current_user(); business = current_business()
+    unpaid_invoices = Invoice.query.filter(
+        Invoice.business_id==business.id,
+        Invoice.status.in_(["SENT","PARTIAL","DRAFT"])
+    ).order_by(Invoice.invoice_date).all()
+    bank_accounts = BankAccount.query.filter_by(
+        business_id=business.id, is_active=True).all()
+    recent = Payment.query.filter_by(
+        business_id=business.id, payment_type="INCOMING"
+    ).order_by(Payment.payment_date.desc()).limit(20).all()
+    total_ar = sum(float(i.total_amount or 0) - float(i.amount_paid or 0)
+                   for i in unpaid_invoices)
+    return render_template("receive.html", user=user, business=business,
+                           invoices=unpaid_invoices, bank_accounts=bank_accounts,
+                           recent_payments=recent, total_ar=total_ar,
+                           tax=business.tax_rules(), today=date.today())
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# ENHANCED ADMIN PANEL
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/dashboard")
+@login_required
+@admin_required
+def admin_dashboard():
+    user = current_user()
+    total_businesses = Business.query.count()
+    total_users = User.query.count()
+    total_invoices = Invoice.query.count()
+    total_documents = Document.query.count()
+    # Recent signups
+    recent_businesses = Business.query.order_by(Business.id.desc()).limit(10).all()
+    # Plan breakdown
+    plan_counts = {}
+    for u in User.query.all():
+        plan = u.plan or "free"
+        plan_counts[plan] = plan_counts.get(plan, 0) + 1
+    return render_template("admin_dashboard.html", user=user,
+                           total_businesses=total_businesses,
+                           total_users=total_users,
+                           total_invoices=total_invoices,
+                           total_documents=total_documents,
+                           recent_businesses=recent_businesses,
+                           plan_counts=plan_counts)
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -4963,7 +5160,8 @@ def quotations():
     quotes = Quotation.query.filter_by(business_id=business.id).order_by(Quotation.created_at.desc()).all()
     customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
     return render_template("quotations.html", user=user, business=business,
-                           quotations=quotes, customers=customers_list, tax=business.tax_rules())
+                           quotations=quotes, customers=customers_list, tax=business.tax_rules(),
+                           today=date.today())
 
 
 @app.route("/api/quotation/create", methods=["POST"])
