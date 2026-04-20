@@ -20,17 +20,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
-@app.template_filter('from_json')
-def from_json_filter(value):
-    """Parse JSON string in templates"""
-    try:
-        import json as _json
-        if isinstance(value, str):
-            return _json.loads(value)
-        return value
-    except:
-        return {}
-db = SQLAlchemy(app)
 
 ANTHROPIC_KEY = os.environ.get('ANTHROPIC_KEY', '')
 ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', 'muahumadhu@gmail.com')
@@ -555,6 +544,7 @@ class Customer(db.Model):
     is_vip = db.Column(db.Boolean, default=False)
     credit_limit = db.Column(db.Numeric(12,2), default=0)
     outstanding_balance = db.Column(db.Numeric(12,2), default=0)
+    portal_token = db.Column(db.String(50), unique=True, nullable=True)
     total_spent = db.Column(db.Numeric(12,2), default=0)
     visit_count = db.Column(db.Integer, default=0)
     last_visit = db.Column(db.DateTime)
@@ -5105,6 +5095,94 @@ def api_po_cancel(po_id):
     po.status = "CANCELLED"
     db.session.commit()
     return jsonify({"ok":True})
+
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# CUSTOMER PORTAL — Public-facing, no login required
+# Clients view their invoices, statements, and upload documents
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/portal/<token>")
+def customer_portal(token):
+    """Customer portal - accessed via unique token link"""
+    customer = Customer.query.filter_by(portal_token=token).first()
+    if not customer:
+        return render_template("portal_404.html"), 404
+    business = Business.query.get(customer.business_id)
+    tax = business.tax_rules()
+    # Get all invoices for this customer
+    invoices = Invoice.query.filter_by(
+        business_id=business.id,
+        customer_id=customer.id
+    ).order_by(Invoice.created_at.desc()).all()
+    total_outstanding = sum(
+        max(0, float(i.total_amount or 0) - float(i.amount_paid or 0))
+        for i in invoices if i.status not in ['PAID', 'VOID']
+    )
+    total_paid = sum(float(i.amount_paid or 0) for i in invoices)
+    return render_template("customer_portal.html",
+        customer=customer, business=business, tax=tax,
+        invoices=invoices, total_outstanding=total_outstanding,
+        total_paid=total_paid, today=date.today())
+
+
+@app.route("/portal/<token>/invoice/<int:inv_id>")
+def portal_invoice(token, inv_id):
+    """View a specific invoice in the portal"""
+    customer = Customer.query.filter_by(portal_token=token).first()
+    if not customer: return render_template("portal_404.html"), 404
+    inv = Invoice.query.filter_by(id=inv_id, customer_id=customer.id).first()
+    if not inv: return render_template("portal_404.html"), 404
+    business = Business.query.get(customer.business_id)
+    try: items = json.loads(inv.items or "[]")
+    except: items = []
+    return render_template("invoice_pdf.html",
+        inv=inv, business=business, customer=customer,
+        items=items, tax=business.tax_rules(),
+        today=date.today(), doc_type="INVOICE")
+
+
+@app.route("/api/portal/<token>/message", methods=["POST"])
+def portal_send_message(token):
+    """Customer sends a message/question via portal"""
+    customer = Customer.query.filter_by(portal_token=token).first()
+    if not customer: return jsonify({"ok":False,"error":"Invalid portal link"})
+    data = request.get_json()
+    message = (data.get("message") or "").strip()
+    if not message: return jsonify({"ok":False,"error":"Message required"})
+    business = Business.query.get(customer.business_id)
+    # Store as AI conversation for business owner to see
+    convo = AIConversation(
+        business_id=business.id,
+        role="user",
+        content=f"[PORTAL MESSAGE from {customer.name}]: {message}",
+        created_at=datetime.utcnow()
+    )
+    db.session.add(convo)
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Message sent to your accountant"})
+
+
+@app.route("/api/customer/<int:cid>/generate-portal-link", methods=["POST"])
+@login_required
+def api_generate_portal_link(cid):
+    """Generate a unique portal link for a customer"""
+    business, err = api_business_guard()
+    if err: return err
+    customer = Customer.query.filter_by(id=cid, business_id=business.id).first()
+    if not customer: return jsonify({"ok":False,"error":"Customer not found"})
+    if not customer.portal_token:
+        import secrets
+        customer.portal_token = secrets.token_urlsafe(24)
+        db.session.commit()
+    portal_url = f"https://ledgrglobal.com/portal/{customer.portal_token}"
+    return jsonify({
+        "ok": True,
+        "portal_url": portal_url,
+        "message": f"Portal link ready for {customer.name}"
+    })
 
 
 
