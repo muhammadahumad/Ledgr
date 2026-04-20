@@ -353,6 +353,12 @@ class Business(db.Model):
     smtp_user = db.Column(db.String(200))
     smtp_pass = db.Column(db.String(200))
     smtp_from = db.Column(db.String(200))
+    stripe_secret_key = db.Column(db.String(200))    # sk_live_... or sk_test_...
+    stripe_publishable_key = db.Column(db.String(200))
+    stripe_webhook_secret = db.Column(db.String(200))
+    myinvois_client_id = db.Column(db.String(200))   # Malaysia LHDN credentials
+    myinvois_client_secret = db.Column(db.String(200))
+    myinvois_tin = db.Column(db.String(50))          # Malaysia TIN
     onboarding_complete = db.Column(db.Boolean, default=False)
     user_role = db.Column(db.String(20), default='owner')  # owner / accountant / staff
     # Tax settings
@@ -802,6 +808,12 @@ class BankTransaction(db.Model):
     debit = db.Column(db.Numeric(12,2), default=0)
     credit = db.Column(db.Numeric(12,2), default=0)
     project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
+    payment_link_url = db.Column(db.String(500))         # Stripe payment link URL
+    stripe_payment_intent = db.Column(db.String(100))    # Stripe PI ID
+    myinvois_uuid = db.Column(db.String(100))            # LHDN IRBM UUID
+    myinvois_long_id = db.Column(db.String(200))         # LHDN long ID for QR
+    myinvois_status = db.Column(db.String(30))           # PENDING/VALID/INVALID/CANCELLED
+    myinvois_submitted_at = db.Column(db.DateTime)
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
     balance = db.Column(db.Numeric(12,2), default=0)
     category = db.Column(db.String(100))
@@ -998,6 +1010,20 @@ class Department(db.Model):
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     business = db.relationship('Business', backref='departments')
+
+
+class TaxRuleOverride(db.Model):
+    """Admin-editable tax rule overrides — override hardcoded TAX_RULES dict"""
+    __tablename__ = 'tax_rule_overrides'
+    id = db.Column(db.Integer, primary_key=True)
+    country_code = db.Column(db.String(5), unique=True, nullable=False)
+    tax_name = db.Column(db.String(20))
+    tax_rate = db.Column(db.Numeric(6,4))      # e.g. 0.0800 for 8%
+    currency = db.Column(db.String(5))
+    authority = db.Column(db.String(100))
+    notes = db.Column(db.Text)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_by = db.Column(db.String(100))
 
 with app.app_context():
     try:
@@ -3939,7 +3965,7 @@ def api_settings_update():
                   "tax_registration_number","gst_sector","gst_sector_type",
                   "bank_name","bank_account_name","bank_account_number","bank_swift",
                   "bank_iban","pension_portal","base_currency","invoice_prefix",
-                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_user","smtp_pass","smtp_from"]
+                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_user","smtp_pass","smtp_from","stripe_secret_key","stripe_publishable_key","stripe_webhook_secret","myinvois_client_id","myinvois_client_secret","myinvois_tin"]
     for f in str_fields:
         if f in data and hasattr(business, f):
             setattr(business, f, str(data[f]).strip() if data[f] else "")
@@ -5184,6 +5210,332 @@ def api_generate_portal_link(cid):
         "portal_url": portal_url,
         "message": f"Portal link ready for {customer.name}"
     })
+
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# STRIPE PAYMENT LINKS
+# ════════════════════════════════════════════════════════════════════════════
+
+def create_stripe_payment_link(invoice, business):
+    """Create a Stripe Payment Link for an invoice. Returns URL or None."""
+    stripe_key = getattr(business, 'stripe_secret_key', None)
+    if not stripe_key:
+        return None
+    try:
+        amount_cents = int(float(invoice.total_amount or 0) * 100)
+        if amount_cents <= 0:
+            return None
+        currency = (invoice.currency or business.base_currency or 'usd').lower()
+        # Stripe doesn't support MVR - use USD for Maldives if needed
+        stripe_currency = currency if currency in [
+            'usd','eur','gbp','sgd','myr','aed','sar','pkr','inr','idr','egp','cny','omr'
+        ] else 'usd'
+
+        body = json.dumps({
+            "line_items[0][price_data][currency]": stripe_currency,
+            "line_items[0][price_data][product_data][name]": f"Invoice {invoice.invoice_number} - {business.display_name()}",
+            "line_items[0][price_data][unit_amount]": amount_cents,
+            "line_items[0][quantity]": 1,
+            "metadata[invoice_id]": str(invoice.id),
+            "metadata[business_id]": str(business.id),
+        })
+
+        # Use urllib (no stripe library needed)
+        import base64
+        auth = base64.b64encode(f"{stripe_key}:".encode()).decode()
+        data = urllib.parse.urlencode({
+            "line_items[0][price_data][currency]": stripe_currency,
+            "line_items[0][price_data][product_data][name]": f"Invoice {invoice.invoice_number} - {business.display_name()}",
+            "line_items[0][price_data][unit_amount]": str(amount_cents),
+            "line_items[0][quantity]": "1",
+            "metadata[invoice_id]": str(invoice.id),
+            "metadata[business_id]": str(business.id),
+        }).encode()
+
+        req = urllib.request.Request(
+            "https://api.stripe.com/v1/payment_links",
+            data=data,
+            headers={"Authorization": f"Bearer {stripe_key}",
+                    "Content-Type": "application/x-www-form-urlencoded"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            return result.get("url")
+    except Exception as e:
+        print(f"Stripe payment link error: {e}")
+        return None
+
+
+@app.route("/api/invoice/<int:inv_id>/payment-link", methods=["POST"])
+@login_required
+def api_invoice_payment_link(inv_id):
+    """Generate a Stripe payment link for an invoice"""
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    if inv.status == "PAID":
+        return jsonify({"ok":False,"error":"Invoice is already paid"})
+
+    # Try Stripe first
+    stripe_key = getattr(business, 'stripe_secret_key', None)
+    if stripe_key:
+        url = create_stripe_payment_link(inv, business)
+        if url:
+            inv.payment_link_url = url
+            db.session.commit()
+            return jsonify({"ok":True,"url":url,"method":"stripe",
+                          "message":"Stripe payment link created"})
+        return jsonify({"ok":False,"error":"Stripe error — check your API key in Settings"})
+
+    # Fallback: customer portal link
+    customer = Customer.query.get(inv.customer_id) if inv.customer_id else None
+    if customer:
+        if not customer.portal_token:
+            import secrets as _sec
+            customer.portal_token = _sec.token_urlsafe(24)
+            db.session.commit()
+        portal_url = f"https://ledgrglobal.com/portal/{customer.portal_token}"
+        inv.payment_link_url = portal_url
+        db.session.commit()
+        return jsonify({"ok":True,"url":portal_url,"method":"portal",
+                       "message":"Customer portal link (no Stripe configured)"})
+
+    return jsonify({"ok":False,
+                   "error":"No Stripe key configured. Add it in Settings → Payment Settings."})
+
+
+@app.route("/api/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    """Handle Stripe webhook events — mark invoices paid"""
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature","")
+    event_data = json.loads(payload)
+    event_type = event_data.get("type","")
+
+    if event_type in ["payment_intent.succeeded", "checkout.session.completed",
+                       "payment_link.completed"]:
+        try:
+            meta = event_data.get("data",{}).get("object",{}).get("metadata",{})
+            inv_id = meta.get("invoice_id")
+            if inv_id:
+                inv = Invoice.query.get(int(inv_id))
+                if inv and inv.status != "PAID":
+                    inv.status = "PAID"
+                    inv.amount_paid = inv.total_amount
+                    # Post journal: DR Bank, CR AR
+                    user_id = inv.business.users[0].id if inv.business.users else 1
+                    lines = [
+                        {"account_code":"1010","debit":float(inv.total_amount or 0),"credit":0,
+                         "description":f"Stripe payment: {inv.invoice_number}"},
+                        {"account_code":"1100","debit":0,"credit":float(inv.total_amount or 0),
+                         "description":f"AR cleared: {inv.invoice_number}"}
+                    ]
+                    post_journal(inv.business_id, user_id,
+                                f"Stripe Payment: {inv.invoice_number}",
+                                inv.invoice_number, "PAYMENT", lines)
+                    db.session.commit()
+        except Exception as e:
+            print(f"Webhook error: {e}")
+    return jsonify({"received":True})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# MALAYSIA MYINVOIS — LHDN e-Invoice Clearance
+# ════════════════════════════════════════════════════════════════════════════
+
+def myinvois_get_token(business):
+    """Get OAuth2 access token from LHDN MyInvois"""
+    client_id = getattr(business, 'myinvois_client_id', None)
+    client_secret = getattr(business, 'myinvois_client_secret', None)
+    if not (client_id and client_secret):
+        return None
+    # Use sandbox for now — switch to production when certified
+    sandbox = os.environ.get('MYINVOIS_SANDBOX', 'true').lower() == 'true'
+    host = "sandbox.myinvois.hasil.gov.my" if sandbox else "api.myinvois.hasil.gov.my"
+    try:
+        data = urllib.parse.urlencode({
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "client_credentials",
+            "scope": "InvoicingAPI"
+        }).encode()
+        req = urllib.request.Request(
+            f"https://{host}/connect/token",
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            return result.get("access_token")
+    except Exception as e:
+        print(f"MyInvois token error: {e}")
+        return None
+
+
+def myinvois_submit_invoice(invoice, business):
+    """Submit invoice to LHDN MyInvois for clearance. Returns UUID or None."""
+    token = myinvois_get_token(business)
+    if not token:
+        return None, "No LHDN credentials configured"
+    sandbox = os.environ.get('MYINVOIS_SANDBOX', 'true').lower() == 'true'
+    host = "sandbox.myinvois.hasil.gov.my" if sandbox else "api.myinvois.hasil.gov.my"
+    try:
+        items = json.loads(invoice.items or "[]")
+        # Build MyInvois v1.0 document structure
+        inv_doc = {
+            "ID": invoice.invoice_number,
+            "IssueDate": invoice.invoice_date.strftime("%Y-%m-%d") if invoice.invoice_date else date.today().strftime("%Y-%m-%d"),
+            "IssueTime": "00:00:00Z",
+            "InvoiceTypeCode": "01",  # Standard invoice
+            "DocumentCurrencyCode": invoice.currency or "MYR",
+            "AccountingSupplierParty": {
+                "Party": {
+                    "PartyIdentification": [{"ID": getattr(business,'myinvois_tin','') or getattr(business,'tax_registration_number','')}],
+                    "PartyLegalEntity": [{"RegistrationName": business.display_name()}],
+                    "Contact": {"Telephone": business.phone or ""}
+                }
+            },
+            "AccountingCustomerParty": {
+                "Party": {
+                    "PartyLegalEntity": [{"RegistrationName": invoice.customer.name if invoice.customer else ""}],
+                }
+            },
+            "LegalMonetaryTotal": {
+                "PayableAmount": {"_": float(invoice.total_amount or 0), "currencyID": invoice.currency or "MYR"}
+            },
+            "InvoiceLine": [
+                {
+                    "ID": str(i+1),
+                    "InvoicedQuantity": {"_": float(item.get("qty",1)), "unitCode": "C62"},
+                    "LineExtensionAmount": {"_": float(item.get("total",0)), "currencyID": invoice.currency or "MYR"},
+                    "Item": {"Description": item.get("desc",""), "Name": item.get("desc","")},
+                    "Price": {"PriceAmount": {"_": float(item.get("unit_price",0)), "currencyID": invoice.currency or "MYR"}}
+                }
+                for i, item in enumerate(items)
+            ]
+        }
+        # Encode document as base64
+        doc_json = json.dumps(inv_doc)
+        doc_b64 = base64.b64encode(doc_json.encode()).decode()
+        # Compute SHA256 hash
+        import hashlib
+        doc_hash = hashlib.sha256(doc_json.encode()).hexdigest()
+
+        payload = json.dumps({
+            "documents": [{
+                "format": "JSON",
+                "document": doc_b64,
+                "documentHash": doc_hash,
+                "codeNumber": invoice.invoice_number
+            }]
+        }).encode()
+
+        req = urllib.request.Request(
+            f"https://{host}/api/v1.0/documentsubmissions",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read())
+            accepted = result.get("acceptedDocuments", [])
+            if accepted:
+                uuid = accepted[0].get("uuid","")
+                long_id = accepted[0].get("longId","")
+                return uuid, long_id
+        return None, "Submission rejected by LHDN"
+    except Exception as e:
+        print(f"MyInvois submission error: {e}")
+        return None, str(e)
+
+
+@app.route("/api/invoice/<int:inv_id>/myinvois/submit", methods=["POST"])
+@login_required
+def api_myinvois_submit(inv_id):
+    """Submit invoice to Malaysia LHDN MyInvois"""
+    business, err = api_business_guard()
+    if err: return err
+    if business.region != 'MY':
+        return jsonify({"ok":False,"error":"MyInvois is only for Malaysian businesses"})
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    if inv.myinvois_uuid:
+        return jsonify({"ok":True,"uuid":inv.myinvois_uuid,
+                       "message":"Already submitted — UUID: "+inv.myinvois_uuid})
+    uuid, long_id = myinvois_submit_invoice(inv, business)
+    if uuid:
+        inv.myinvois_uuid = uuid
+        inv.myinvois_long_id = long_id if isinstance(long_id, str) else ""
+        inv.myinvois_status = "VALID"
+        inv.myinvois_submitted_at = datetime.utcnow()
+        db.session.commit()
+        return jsonify({"ok":True,"uuid":uuid,
+                       "message":f"LHDN clearance successful — UUID: {uuid}"})
+    return jsonify({"ok":False,"error":str(long_id)})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# TAX RULES ADMIN DASHBOARD
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/tax-rules")
+@login_required
+@admin_required
+def admin_tax_rules():
+    user = current_user()
+    overrides = TaxRuleOverride.query.order_by(TaxRuleOverride.country_code).all()
+    # Merge with base TAX_RULES
+    base_rules = TAX_RULES
+    return render_template("admin_tax_rules.html", user=user,
+                           overrides=overrides, base_rules=base_rules,
+                           countries=sorted(base_rules.keys()))
+
+
+@app.route("/api/admin/tax-rules/update", methods=["POST"])
+@login_required
+@admin_required
+def api_admin_tax_rules_update():
+    data = request.get_json()
+    code = (data.get("country_code") or "").upper().strip()
+    if not code or len(code) > 5:
+        return jsonify({"ok":False,"error":"Invalid country code"})
+    override = TaxRuleOverride.query.filter_by(country_code=code).first()
+    if not override:
+        override = TaxRuleOverride(country_code=code)
+        db.session.add(override)
+    if "tax_name" in data: override.tax_name = data["tax_name"]
+    if "tax_rate" in data:
+        try: override.tax_rate = float(data["tax_rate"])
+        except: pass
+    if "currency" in data: override.currency = data["currency"]
+    if "authority" in data: override.authority = data["authority"]
+    if "notes" in data: override.notes = data["notes"]
+    override.updated_at = datetime.utcnow()
+    override.updated_by = current_user().email if current_user() else "admin"
+    db.session.commit()
+    # Update in-memory TAX_RULES
+    if code in TAX_RULES:
+        if override.tax_name: TAX_RULES[code]['tax_name'] = override.tax_name
+        if override.tax_rate: TAX_RULES[code]['tax_rate'] = float(override.tax_rate)
+        if override.currency: TAX_RULES[code]['currency'] = override.currency
+        if override.authority: TAX_RULES[code]['authority'] = override.authority
+    return jsonify({"ok":True,"message":f"Tax rules updated for {code}"})
+
+
+@app.route("/api/admin/tax-rules/delete/<code>", methods=["POST"])
+@login_required
+@admin_required
+def api_admin_tax_rules_delete(code):
+    override = TaxRuleOverride.query.filter_by(country_code=code.upper()).first()
+    if override:
+        db.session.delete(override)
+        db.session.commit()
+    return jsonify({"ok":True,"message":f"Override removed — {code} reverted to defaults"})
 
 
 
