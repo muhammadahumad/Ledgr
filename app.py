@@ -6077,6 +6077,407 @@ def api_bills_import_csv():
 
 
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# DATA MIGRATION — CSV INVOICE IMPORT + YEAR-END CLOSE
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/invoices/import-csv", methods=["POST"])
+@login_required
+def api_invoices_import_csv():
+    """Import historical sales invoices from CSV — for data migration"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    csv_text = (data.get("csv_text") or "").strip()
+    if not csv_text:
+        return jsonify({"ok": False, "error": "No CSV data provided"})
+
+    import csv, io
+    imported = 0
+    skipped = 0
+    errors = []
+    reader = csv.DictReader(io.StringIO(csv_text))
+
+    def col(row, *keys, default=''):
+        """Flexible column lookup — case-insensitive, strip spaces"""
+        for k in keys:
+            for field in row:
+                if field.strip().lower() == k.lower():
+                    v = str(row[field] or '').strip()
+                    if v: return v
+        return default
+
+    for i, row in enumerate(reader):
+        try:
+            customer_name = col(row,'customer','client','customer name','bill to','name')
+            inv_num       = col(row,'invoice number','invoice #','invoice no','inv no','number','ref')
+            date_str      = col(row,'date','invoice date','issue date')
+            due_str       = col(row,'due date','due','payment due')
+            amount_str    = col(row,'total','amount','total amount','invoice total','grand total')
+            subtotal_str  = col(row,'subtotal','sub total','net amount','net')
+            tax_str       = col(row,'tax','vat','gst','tax amount','vat amount')
+            status_str    = col(row,'status','payment status').upper()
+            paid_str      = col(row,'amount paid','paid','payment received')
+            currency      = col(row,'currency','cur') or business.base_currency or 'MVR'
+            notes         = col(row,'notes','description','memo','remarks')
+
+            # Parse amount
+            def parse_amount(s):
+                try: return float(str(s).replace(',','').replace(' ','') or 0)
+                except: return 0.0
+
+            total    = parse_amount(amount_str)
+            subtotal = parse_amount(subtotal_str) or total
+            tax_amt  = parse_amount(tax_str)
+            paid_amt = parse_amount(paid_str)
+
+            if total <= 0 and subtotal <= 0:
+                skipped += 1
+                continue
+
+            # Parse dates
+            inv_date = date.today()
+            due_date_val = None
+            for fmt in ['%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%m/%d/%Y',
+                        '%d %b %Y','%d-%b-%Y','%b %d, %Y','%d/%m/%y']:
+                if date_str:
+                    try: inv_date = datetime.strptime(date_str.strip(), fmt).date(); break
+                    except: continue
+            for fmt in ['%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%m/%d/%Y',
+                        '%d %b %Y','%d-%b-%Y']:
+                if due_str:
+                    try: due_date_val = datetime.strptime(due_str.strip(), fmt).date(); break
+                    except: continue
+
+            # Determine status
+            if status_str in ['PAID','PAID IN FULL','CLEARED','SETTLED']:
+                status = 'PAID'
+                if paid_amt == 0: paid_amt = total
+            elif status_str in ['PARTIAL','PARTIALLY PAID','PART PAID']:
+                status = 'PARTIAL'
+            elif status_str in ['VOID','VOIDED','CANCELLED','CANCELED']:
+                status = 'VOID'
+            elif due_date_val and due_date_val < date.today() and paid_amt < total:
+                status = 'OVERDUE'
+            else:
+                status = 'SENT'
+
+            # Auto-create customer if not exists
+            customer = None
+            if customer_name:
+                customer = Customer.query.filter_by(
+                    business_id=business.id, name=customer_name
+                ).first()
+                if not customer:
+                    customer = Customer(
+                        business_id=business.id,
+                        name=customer_name,
+                        customer_type='business'
+                    )
+                    db.session.add(customer)
+                    db.session.flush()
+
+            # Generate invoice number if missing
+            if not inv_num:
+                count = Invoice.query.filter_by(business_id=business.id).count()
+                prefix = getattr(business, 'invoice_prefix', None) or 'INV'
+                inv_num = f"{prefix}-MIG-{str(count+1).zfill(4)}"
+
+            # Create invoice
+            inv = Invoice(
+                business_id  = business.id,
+                customer_id  = customer.id if customer else None,
+                invoice_number = inv_num,
+                invoice_date = inv_date,
+                due_date     = due_date_val,
+                currency     = currency,
+                subtotal     = subtotal,
+                tax_amount   = tax_amt,
+                total_amount = total,
+                amount_paid  = paid_amt,
+                status       = status,
+                notes        = notes or 'Migrated from previous system',
+                items        = '[]',
+                buyer_legal_name = customer_name
+            )
+            db.session.add(inv)
+            db.session.flush()
+
+            # Post journal entry (AR debit, Revenue credit)
+            je_lines = [
+                {"account_code": "1100", "debit": float(total),
+                 "credit": 0, "description": f"AR: {inv_num}"},
+                {"account_code": "4000", "debit": 0,
+                 "credit": float(subtotal or total - tax_amt),
+                 "description": f"Revenue: {inv_num}"},
+            ]
+            if tax_amt > 0:
+                je_lines.append({
+                    "account_code": "2200", "debit": 0,
+                    "credit": float(tax_amt),
+                    "description": f"Tax: {inv_num}"
+                })
+            # If paid — also post payment
+            if paid_amt > 0 and status == 'PAID':
+                je_lines += [
+                    {"account_code": "1010", "debit": float(paid_amt),
+                     "credit": 0, "description": f"Payment: {inv_num}"},
+                    {"account_code": "1100", "debit": 0,
+                     "credit": float(paid_amt),
+                     "description": f"AR cleared: {inv_num}"}
+                ]
+            post_journal(business.id, user.id,
+                        f"Migrated Invoice: {inv_num}",
+                        inv_num, "REVENUE", je_lines,
+                        entry_date=inv_date)
+            imported += 1
+
+        except Exception as e:
+            db.session.rollback()
+            errors.append(f"Row {i+2}: {str(e)[:80]}")
+            continue
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)})
+
+    return jsonify({
+        "ok": True,
+        "imported": imported,
+        "skipped": skipped,
+        "errors": errors,
+        "message": f"{imported} invoice(s) imported"
+            + (f", {skipped} skipped (zero amount)" if skipped else "")
+            + (f", {len(errors)} error(s)" if errors else "")
+    })
+
+
+@app.route("/api/year-end-close", methods=["POST"])
+@login_required
+def api_year_end_close():
+    """
+    Year-end closing journal:
+    1. Sum all revenue accounts → credit Retained Earnings, debit Revenue
+    2. Sum all expense accounts → debit Retained Earnings, credit Expense
+    3. Result: P&L accounts zeroed, net income added to Retained Earnings
+    """
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json() or {}
+    close_date_str = data.get("close_date", str(date.today()))
+    try:
+        close_date = datetime.strptime(close_date_str, "%Y-%m-%d").date()
+    except:
+        close_date = date.today()
+
+    # Check not already closed for this date range
+    existing_close = JournalEntry.query.filter_by(
+        business_id=business.id,
+        entry_type='YEAR_END_CLOSE'
+    ).filter(JournalEntry.date >= datetime(close_date.year, 1, 1)).first()
+    if existing_close and not data.get("force"):
+        return jsonify({
+            "ok": False,
+            "error": f"Year-end close already posted for {close_date.year}",
+            "existing_date": str(existing_close.date),
+            "has_existing": True
+        })
+
+    try:
+        # Get all revenue account balances (credit-normal accounts: 4xxx)
+        revenue_accounts = Account.query.filter(
+            Account.business_id == business.id,
+            Account.code.like('4%'),
+            Account.is_active == True
+        ).all()
+
+        # Get all expense account balances (debit-normal: 5xxx, 6xxx)
+        expense_accounts = Account.query.filter(
+            Account.business_id == business.id,
+            Account.code.regexp_match('^[56]'),
+            Account.is_active == True
+        ).all()
+
+        # Calculate net balance per account from ledger entries
+        def get_account_net(account_code_prefix):
+            """Sum debits - credits for accounts starting with prefix"""
+            matching = Account.query.filter(
+                Account.business_id == business.id,
+                Account.code.like(account_code_prefix + '%')
+            ).all()
+            account_ids = [a.id for a in matching]
+            if not account_ids:
+                return {}
+            result = {}
+            for acc in matching:
+                debits = db.session.query(
+                    db.func.sum(JournalLine.debit)
+                ).join(JournalEntry).filter(
+                    JournalEntry.business_id == business.id,
+                    JournalLine.account_id == acc.id,
+                    JournalEntry.date >= datetime(close_date.year, 1, 1),
+                    JournalEntry.date <= datetime(close_date.year, 12, 31, 23, 59, 59)
+                ).scalar() or 0
+                credits = db.session.query(
+                    db.func.sum(JournalLine.credit)
+                ).join(JournalEntry).filter(
+                    JournalEntry.business_id == business.id,
+                    JournalLine.account_id == acc.id,
+                    JournalEntry.date >= datetime(close_date.year, 1, 1),
+                    JournalEntry.date <= datetime(close_date.year, 12, 31, 23, 59, 59)
+                ).scalar() or 0
+                net = float(credits) - float(debits)  # revenue is credit-normal
+                if abs(net) > 0.01:
+                    result[acc.code] = {"account": acc, "net": net}
+            return result
+
+        rev_balances = get_account_net('4')
+        # Expenses are debit-normal — use debit - credit
+        exp_balances = {}
+        for prefix in ['5','6']:
+            matching = Account.query.filter(
+                Account.business_id == business.id,
+                Account.code.like(prefix + '%')
+            ).all()
+            for acc in matching:
+                debits = db.session.query(db.func.sum(JournalLine.debit)).join(
+                    JournalEntry).filter(
+                    JournalEntry.business_id==business.id,
+                    JournalLine.account_id==acc.id,
+                    JournalEntry.date >= datetime(close_date.year,1,1),
+                    JournalEntry.date <= datetime(close_date.year,12,31,23,59,59)
+                ).scalar() or 0
+                credits = db.session.query(db.func.sum(JournalLine.credit)).join(
+                    JournalEntry).filter(
+                    JournalEntry.business_id==business.id,
+                    JournalLine.account_id==acc.id,
+                    JournalEntry.date >= datetime(close_date.year,1,1),
+                    JournalEntry.date <= datetime(close_date.year,12,31,23,59,59)
+                ).scalar() or 0
+                net = float(debits) - float(credits)
+                if abs(net) > 0.01:
+                    exp_balances[acc.code] = {"account": acc, "net": net}
+
+        total_revenue = sum(v['net'] for v in rev_balances.values())
+        total_expenses = sum(v['net'] for v in exp_balances.values())
+        net_income = total_revenue - total_expenses
+
+        if abs(total_revenue) < 0.01 and abs(total_expenses) < 0.01:
+            return jsonify({
+                "ok": False,
+                "error": f"No revenue or expense transactions found for {close_date.year}"
+            })
+
+        # Build closing journal lines
+        close_lines = []
+
+        # Close revenue accounts (debit each revenue account to zero it out)
+        for code, info in rev_balances.items():
+            if info['net'] > 0:
+                close_lines.append({
+                    "account_code": code,
+                    "debit": round(info['net'], 2),
+                    "credit": 0,
+                    "description": f"Year-end close: {info['account'].name}"
+                })
+
+        # Close expense accounts (credit each expense account to zero it out)
+        for code, info in exp_balances.items():
+            if info['net'] > 0:
+                close_lines.append({
+                    "account_code": code,
+                    "debit": 0,
+                    "credit": round(info['net'], 2),
+                    "description": f"Year-end close: {info['account'].name}"
+                })
+
+        # Net income → Retained Earnings (3100)
+        if net_income >= 0:
+            close_lines.append({
+                "account_code": "3100",
+                "debit": 0,
+                "credit": round(net_income, 2),
+                "description": f"Net income {close_date.year} → Retained Earnings"
+            })
+        else:
+            close_lines.append({
+                "account_code": "3100",
+                "debit": round(abs(net_income), 2),
+                "credit": 0,
+                "description": f"Net loss {close_date.year} → Retained Earnings"
+            })
+
+        if not close_lines:
+            return jsonify({"ok": False, "error": "No entries to close"})
+
+        je = post_journal(
+            business.id, user.id,
+            f"Year-End Close — {close_date.year}",
+            f"YEC-{close_date.year}", "YEAR_END_CLOSE",
+            close_lines, entry_date=close_date
+        )
+
+        return jsonify({
+            "ok": True,
+            "journal_entry_id": je.id,
+            "year": close_date.year,
+            "total_revenue": round(total_revenue, 2),
+            "total_expenses": round(total_expenses, 2),
+            "net_income": round(net_income, 2),
+            "accounts_closed": len(close_lines),
+            "message": (
+                f"Year {close_date.year} closed successfully. "
+                f"Revenue: {total_revenue:,.2f} | "
+                f"Expenses: {total_expenses:,.2f} | "
+                f"Net: {net_income:,.2f} → Retained Earnings"
+            )
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        return jsonify({"ok": False, "error": str(e),
+                       "detail": traceback.format_exc()[-500:]})
+
+
+@app.route("/migration")
+@business_required
+def migration_dashboard():
+    """Data migration dashboard for onboarding clients"""
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    today = date.today()
+
+    # Stats
+    total_invoices = Invoice.query.filter_by(business_id=business.id).count()
+    migrated_inv = Invoice.query.filter(
+        Invoice.business_id==business.id,
+        Invoice.notes.like('%Migrated%')
+    ).count()
+    total_bills = Document.query.filter_by(business_id=business.id).count()
+    ob_entry = JournalEntry.query.filter_by(
+        business_id=business.id, entry_type='OPENING_BALANCE'
+    ).first()
+    year_close = JournalEntry.query.filter_by(
+        business_id=business.id, entry_type='YEAR_END_CLOSE'
+    ).first()
+    total_customers = Customer.query.filter_by(business_id=business.id).count()
+    total_suppliers = Supplier.query.filter_by(business_id=business.id).count()
+
+    return render_template("migration_dashboard.html",
+        user=user, business=business, tax=tax, today=today,
+        total_invoices=total_invoices, migrated_inv=migrated_inv,
+        total_bills=total_bills, ob_entry=ob_entry,
+        year_close=year_close,
+        total_customers=total_customers, total_suppliers=total_suppliers)
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
