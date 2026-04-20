@@ -21,6 +21,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
 
+db = SQLAlchemy(app)
 ANTHROPIC_KEY = os.environ.get('ANTHROPIC_KEY', '')
 ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', 'muahumadhu@gmail.com')
 
