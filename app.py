@@ -5766,7 +5766,7 @@ def opening_balances():
         grouped.setdefault(a.account_type, []).append(a)
     # Check if opening balances already posted
     existing_ob = JournalEntry.query.filter_by(
-        business_id=business.id, source_type='OPENING_BALANCE'
+        business_id=business.id, entry_type='OPENING_BALANCE'
     ).first()
     return render_template("opening_balances.html",
         user=user, business=business, tax=business.tax_rules(),
@@ -5789,7 +5789,7 @@ def api_post_opening_balances():
         return jsonify({"ok":False,"error":"No balances provided"})
     # Check for existing opening balances
     existing = JournalEntry.query.filter_by(
-        business_id=business.id, source_type='OPENING_BALANCE').first()
+        business_id=business.id, entry_type='OPENING_BALANCE').first()
     if existing and not overwrite:
         return jsonify({
             "ok":False,
