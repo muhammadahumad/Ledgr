@@ -495,6 +495,8 @@ class JournalLine(db.Model):
     description = db.Column(db.String(255))
     debit  = db.Column(db.Numeric(12,2), default=0)
     credit = db.Column(db.Numeric(12,2), default=0)
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
     account = db.relationship('Account', backref='journal_lines')
 
 class LedgerEntry(db.Model):
@@ -814,6 +816,12 @@ class BankTransaction(db.Model):
     myinvois_long_id = db.Column(db.String(200))         # LHDN long ID for QR
     myinvois_status = db.Column(db.String(30))           # PENDING/VALID/INVALID/CANCELLED
     myinvois_submitted_at = db.Column(db.DateTime)
+    # Recurring invoice settings
+    is_recurring = db.Column(db.Boolean, default=False)
+    recur_interval = db.Column(db.String(20))   # weekly/monthly/quarterly/yearly
+    recur_next_date = db.Column(db.Date)         # next generation date
+    recur_end_date = db.Column(db.Date)          # stop recurring after this date
+    recur_parent_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
     department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
     balance = db.Column(db.Numeric(12,2), default=0)
     category = db.Column(db.String(100))
@@ -5536,6 +5544,205 @@ def api_admin_tax_rules_delete(code):
         db.session.delete(override)
         db.session.commit()
     return jsonify({"ok":True,"message":f"Override removed — {code} reverted to defaults"})
+
+
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# RECURRING INVOICES
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/invoice/<int:inv_id>/set-recurring", methods=["POST"])
+@login_required
+def api_set_recurring(inv_id):
+    """Set an invoice as a recurring template"""
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
+    data = request.get_json()
+    interval = data.get("interval","monthly")
+    if interval not in ["weekly","monthly","quarterly","yearly"]:
+        return jsonify({"ok":False,"error":"Invalid interval"})
+    inv.is_recurring = True
+    inv.recur_interval = interval
+    # Set next date based on interval
+    today = date.today()
+    if interval == "weekly": inv.recur_next_date = date(today.year, today.month, today.day) + timedelta(days=7)
+    elif interval == "monthly":
+        if today.month == 12: inv.recur_next_date = date(today.year+1, 1, today.day)
+        else: inv.recur_next_date = date(today.year, today.month+1, min(today.day, 28))
+    elif interval == "quarterly":
+        m = today.month + 3
+        y = today.year + (m-1)//12
+        inv.recur_next_date = date(y, ((m-1)%12)+1, min(today.day, 28))
+    elif interval == "yearly": inv.recur_next_date = date(today.year+1, today.month, today.day)
+    if data.get("end_date"):
+        try: inv.recur_end_date = datetime.strptime(data["end_date"], "%Y-%m-%d").date()
+        except: pass
+    db.session.commit()
+    return jsonify({"ok":True,"next_date":str(inv.recur_next_date),
+                   "message":f"Invoice will recur {interval} from {inv.recur_next_date.strftime('%d %b %Y')}"})
+
+
+@app.route("/api/invoice/<int:inv_id>/stop-recurring", methods=["POST"])
+@login_required
+def api_stop_recurring(inv_id):
+    business, err = api_business_guard()
+    if err: return err
+    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
+    if not inv: return jsonify({"ok":False,"error":"Not found"})
+    inv.is_recurring = False
+    inv.recur_next_date = None
+    db.session.commit()
+    return jsonify({"ok":True,"message":"Recurring invoice stopped"})
+
+
+@app.route("/api/invoices/process-recurring", methods=["POST"])
+@login_required
+def api_process_recurring():
+    """Generate all due recurring invoices — call daily via cron or manually"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    today = date.today()
+    due = Invoice.query.filter(
+        Invoice.business_id==business.id,
+        Invoice.is_recurring==True,
+        Invoice.recur_next_date<=today,
+        db.or_(Invoice.recur_end_date==None, Invoice.recur_end_date>=today)
+    ).all()
+    generated = []
+    for template in due:
+        try:
+            # Count existing invoices for new number
+            count = Invoice.query.filter_by(business_id=business.id).count()
+            prefix = business.invoice_prefix or "INV"
+            new_num = f"{prefix}-{str(count+1).zfill(4)}"
+            new_inv = Invoice(
+                business_id=business.id,
+                customer_id=template.customer_id,
+                invoice_number=new_num,
+                invoice_date=today,
+                due_date=date(today.year, today.month+1 if today.month<12 else 1,
+                             today.day) if template.payment_terms else today,
+                currency=template.currency,
+                subtotal=template.subtotal,
+                tax_amount=template.tax_amount,
+                total_amount=template.total_amount,
+                items=template.items,
+                notes=template.notes,
+                status="SENT",
+                is_recurring=False,
+                recur_parent_id=template.id,
+                project_id=template.project_id
+            )
+            db.session.add(new_inv)
+            # Post revenue journal
+            lines = [
+                {"account_code":"1100","debit":float(template.total_amount or 0),"credit":0,
+                 "description":f"Recurring invoice: {new_num}"},
+                {"account_code":"4000","debit":0,"credit":float(template.subtotal or 0),
+                 "description":f"Revenue: {new_num}"},
+            ]
+            if float(template.tax_amount or 0) > 0:
+                lines.append({"account_code":"2200","debit":0,
+                             "credit":float(template.tax_amount or 0),
+                             "description":f"Tax: {new_num}"})
+            post_journal(business.id, user.id, f"Recurring Invoice {new_num}",
+                        new_num, "REVENUE", lines)
+            # Advance next date
+            nd = template.recur_next_date
+            if template.recur_interval == "weekly": nd = nd + timedelta(days=7)
+            elif template.recur_interval == "monthly":
+                if nd.month == 12: nd = date(nd.year+1, 1, nd.day)
+                else: nd = date(nd.year, nd.month+1, min(nd.day, 28))
+            elif template.recur_interval == "quarterly":
+                m = nd.month + 3
+                y = nd.year + (m-1)//12
+                nd = date(y, ((m-1)%12)+1, min(nd.day, 28))
+            elif template.recur_interval == "yearly":
+                nd = date(nd.year+1, nd.month, nd.day)
+            template.recur_next_date = nd
+            generated.append(new_num)
+        except Exception as e:
+            db.session.rollback()
+            print(f"Recurring invoice error for {template.invoice_number}: {e}")
+            continue
+    db.session.commit()
+    return jsonify({"ok":True,"generated":generated,
+                   "count":len(generated),
+                   "message":f"{len(generated)} recurring invoice(s) generated"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# DEPARTMENT P&L REPORT
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/reports/department-pl")
+@business_required
+def report_department_pl():
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    today = date.today()
+    departments = Department.query.filter_by(
+        business_id=business.id, is_active=True).all()
+    # For each department, calculate revenue and expenses
+    dept_data = []
+    for dept in departments:
+        # Revenue: invoices tagged to this department
+        try:
+            revenue = float(db.session.query(db.func.sum(Invoice.total_amount)).filter(
+                Invoice.business_id==business.id,
+                Invoice.department_id==dept.id
+            ).scalar() or 0)
+        except Exception: revenue = 0.0
+        # Expenses: journal lines tagged to this department (debit side)
+        try:
+            expenses = float(db.session.query(db.func.sum(JournalLine.debit)).join(
+                JournalEntry
+            ).filter(
+                JournalEntry.business_id==business.id,
+                JournalLine.department_id==dept.id,
+                JournalLine.debit > 0
+            ).scalar() or 0)
+        except Exception: expenses = 0.0
+        dept_data.append({
+            "dept": dept,
+            "revenue": revenue,
+            "expenses": expenses,
+            "profit": revenue - expenses,
+            "margin": round((revenue - expenses)/revenue*100, 1) if revenue > 0 else 0
+        })
+    # Untagged totals
+    total_revenue = float(db.session.query(
+        db.func.sum(LedgerEntry.amount)).filter_by(
+        business_id=business.id, entry_type='REVENUE').scalar() or 0)
+    total_expense = float(db.session.query(
+        db.func.sum(LedgerEntry.amount)).filter_by(
+        business_id=business.id, entry_type='EXPENSE').scalar() or 0)
+    return render_template("report_department_pl.html",
+        user=user, business=business, tax=tax, today=today,
+        departments=dept_data, total_revenue=total_revenue,
+        total_expense=total_expense)
+
+
+@app.route("/api/department/create", methods=["POST"])
+@login_required
+def api_department_create():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    name = (data.get("name") or "").strip()
+    if not name: return jsonify({"ok":False,"error":"Name required"})
+    dept = Department(
+        business_id=business.id,
+        name=name,
+        code=(data.get("code") or name[:4].upper())
+    )
+    db.session.add(dept)
+    db.session.commit()
+    return jsonify({"ok":True,"id":dept.id,"name":dept.name})
 
 
 
