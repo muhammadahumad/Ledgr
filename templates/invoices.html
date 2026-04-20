@@ -14,6 +14,7 @@
     <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='SENT' %}blue{% else %}gray{% endif %}">{{ inv.status }}</span></td>
     <td style="display:flex;gap:4px;flex-wrap:wrap">
       <a href="/invoice/{{ inv.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
+      <button class="btn btn-sm" data-action="paylink" data-id="{{ inv.id }}" style="color:var(--mint);border-color:var(--mint)">💳 Pay Link</button>
       {% if inv.status != 'PAID' %}
       <button class="btn btn-sm btn-primary"
         data-action="markpaid" data-id="{{ inv.id }}">✓ Paid</button>
@@ -72,6 +73,7 @@ document.addEventListener('click', function(e) {
   var amount = parseFloat(btn.dataset.amount) || 0;
   var email = btn.dataset.email || '';
   if (action === 'markpaid') { markPaid(id); }
+  else if (action === 'paylink') { generatePayLink(id); }
   else if (action === 'delinv') { deleteInv(id, num); }
   else if (action === 'creditnote') { issueCreditNote(id, amount, num); }
   else if (action === 'debitnote') { issueDebitNote(id, num); }
@@ -129,6 +131,25 @@ function emailInvModal(id, defaultEmail) {
       alert('Error: '+res.error);
     }
   });
+}
+
+function generatePayLink(id) {
+  var btn = event.target; btn.disabled = true; btn.textContent = '...';
+  fetch('/api/invoice/'+id+'/payment-link', {method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      btn.disabled = false; btn.textContent = '💳 Pay Link';
+      if(res.ok) {
+        if(navigator.clipboard) {
+          navigator.clipboard.writeText(res.url).then(function(){
+            alert('✓ Payment link copied!\n\n' + res.url + '\n\nMethod: ' + res.method);
+          });
+        } else {
+          alert('Payment link:\n\n' + res.url);
+        }
+      } else {
+        alert('Error: ' + res.error);
+      }
+    });
 }
 
 function deleteInv(id, num) {

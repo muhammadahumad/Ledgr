@@ -245,6 +245,47 @@
   </div>
 </div>
 
+<!-- Stripe Payment Settings -->
+<div class="card" style="margin-bottom:14px">
+  <div class="card-title">💳 Stripe Payment Integration</div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+    Accept card payments directly on invoices. Clients click "Pay Now" → Stripe hosted checkout.
+    Get your keys from <strong>dashboard.stripe.com → Developers → API keys</strong>
+  </div>
+  <div class="field-row">
+    <div><div class="field-label">Secret Key (sk_live_ or sk_test_)</div>
+      <input class="field-input" id="s-stripe-secret" type="password" value="{{ business.stripe_secret_key or '' }}" placeholder="sk_live_..."></div>
+    <div><div class="field-label">Publishable Key (pk_live_ or pk_test_)</div>
+      <input class="field-input" id="s-stripe-pub" value="{{ business.stripe_publishable_key or '' }}" placeholder="pk_live_..."></div>
+  </div>
+  <div class="field-group"><div class="field-label">Webhook Secret (for auto-marking invoices paid)</div>
+    <input class="field-input" id="s-stripe-webhook" type="password" value="{{ business.stripe_webhook_secret or '' }}" placeholder="whsec_...">
+    <div style="font-size:10px;color:var(--text3);margin-top:3px">Webhook URL: https://ledgrglobal.com/api/stripe/webhook</div>
+  </div>
+</div>
+
+<!-- Malaysia MyInvois Settings (shown for MY businesses) -->
+{% if business.region == 'MY' %}
+<div class="card" style="margin-bottom:14px;border-color:rgba(245,158,11,.3)">
+  <div class="card-title" style="color:var(--amber)">🇲🇾 Malaysia LHDN MyInvois (e-Invoice)</div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+    Mandatory for businesses >RM1M turnover from July 2026.
+    Register at <strong>myinvois.hasil.gov.my</strong> to get your API credentials.
+  </div>
+  <div class="field-row">
+    <div><div class="field-label">Client ID</div>
+      <input class="field-input" id="s-lhdn-id" value="{{ business.myinvois_client_id or '' }}" placeholder="From LHDN portal"></div>
+    <div><div class="field-label">Client Secret</div>
+      <input class="field-input" id="s-lhdn-secret" type="password" value="{{ business.myinvois_client_secret or '' }}" placeholder="From LHDN portal"></div>
+  </div>
+  <div class="field-group"><div class="field-label">Malaysia TIN (Tax Identification Number)</div>
+    <input class="field-input" id="s-lhdn-tin" value="{{ business.myinvois_tin or '' }}" placeholder="W00-0000-00000000"></div>
+  <div style="background:var(--bg);border-radius:7px;padding:10px;font-size:11px;color:var(--text3)">
+    Currently using: <strong style="color:var(--amber)">Sandbox mode</strong> (set MYINVOIS_SANDBOX=false on Railway for production)
+  </div>
+</div>
+{% endif %}
+
 <div style="margin-top:14px;text-align:right">
   <button class="btn btn-primary" onclick="saveAll()" style="padding:10px 32px;font-size:14px">Save All Changes</button>
 </div>
@@ -327,6 +368,12 @@ function saveAll() {
     smtp_user: document.getElementById('s-smtp-user')?.value || '',
     smtp_pass: document.getElementById('s-smtp-pass')?.value || '',
     smtp_from: document.getElementById('s-smtp-from')?.value || '',
+    stripe_secret_key: document.getElementById('s-stripe-secret')?.value || '',
+    stripe_publishable_key: document.getElementById('s-stripe-pub')?.value || '',
+    stripe_webhook_secret: document.getElementById('s-stripe-webhook')?.value || '',
+    myinvois_client_id: document.getElementById('s-lhdn-id')?.value || '',
+    myinvois_client_secret: document.getElementById('s-lhdn-secret')?.value || '',
+    myinvois_tin: document.getElementById('s-lhdn-tin')?.value || '',
   };
   var btn = document.querySelector('.btn-primary'); btn.disabled = true; btn.textContent = 'Saving...';
   fetch('/api/settings/update', {
