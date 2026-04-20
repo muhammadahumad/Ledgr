@@ -5746,6 +5746,236 @@ def api_department_create():
 
 
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# OPENING BALANCES & DATA MIGRATION
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/setup/opening-balances")
+@business_required
+def opening_balances():
+    user = current_user(); business = current_business()
+    accounts = Account.query.filter_by(
+        business_id=business.id, is_active=True
+    ).order_by(Account.code).all()
+    # Group by type
+    grouped = {}
+    for a in accounts:
+        grouped.setdefault(a.account_type, []).append(a)
+    # Check if opening balances already posted
+    existing_ob = JournalEntry.query.filter_by(
+        business_id=business.id, source_type='OPENING_BALANCE'
+    ).first()
+    return render_template("opening_balances.html",
+        user=user, business=business, tax=business.tax_rules(),
+        grouped=grouped, accounts=accounts,
+        existing_ob=existing_ob, today=date.today())
+
+
+@app.route("/api/opening-balances/post", methods=["POST"])
+@login_required
+def api_post_opening_balances():
+    """Post opening balance journal entry from manual entry or CSV"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    balances = data.get("balances", [])  # [{account_code, debit, credit, account_name}]
+    as_of_date = data.get("as_of_date", str(date.today()))
+    overwrite = data.get("overwrite", False)
+    if not balances:
+        return jsonify({"ok":False,"error":"No balances provided"})
+    # Check for existing opening balances
+    existing = JournalEntry.query.filter_by(
+        business_id=business.id, source_type='OPENING_BALANCE').first()
+    if existing and not overwrite:
+        return jsonify({
+            "ok":False,
+            "error":"Opening balances already exist",
+            "has_existing":True,
+            "existing_date": str(existing.date)
+        })
+    if existing and overwrite:
+        # Remove old opening balance entries
+        JournalLine.query.filter_by(journal_entry_id=existing.id).delete()
+        db.session.delete(existing)
+        db.session.commit()
+    # Validate: debits must equal credits
+    total_debit = sum(float(b.get("debit",0)) for b in balances)
+    total_credit = sum(float(b.get("credit",0)) for b in balances)
+    diff = abs(total_debit - total_credit)
+    if diff > 0.01:
+        return jsonify({
+            "ok":False,
+            "error":f"Debits ({total_debit:.2f}) must equal Credits ({total_credit:.2f}). Difference: {diff:.2f}",
+            "total_debit":total_debit,
+            "total_credit":total_credit
+        })
+    try:
+        ob_date = datetime.strptime(as_of_date, "%Y-%m-%d").date()
+    except:
+        ob_date = date.today()
+    try:
+        # Build journal lines
+        lines = []
+        for b in balances:
+            debit = float(b.get("debit", 0))
+            credit = float(b.get("credit", 0))
+            if debit == 0 and credit == 0:
+                continue
+            lines.append({
+                "account_code": str(b.get("account_code","")).strip(),
+                "debit": debit,
+                "credit": credit,
+                "description": f"Opening balance: {b.get('account_name','')}"
+            })
+        if not lines:
+            return jsonify({"ok":False,"error":"All balances are zero"})
+        je = post_journal(
+            business.id, user.id,
+            f"Opening Balances as of {ob_date.strftime('%d %b %Y')}",
+            "OB-001", "OPENING_BALANCE", lines,
+            entry_date=ob_date
+        )
+        return jsonify({
+            "ok":True,
+            "journal_entry_id":je.id,
+            "lines_posted":len(lines),
+            "message":f"Opening balances posted — {len(lines)} accounts as of {ob_date.strftime('%d %b %Y')}"
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/opening-balances/import-csv", methods=["POST"])
+@login_required
+def api_opening_balances_csv():
+    """Import trial balance from CSV"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    csv_text = data.get("csv_text","").strip()
+    if not csv_text:
+        return jsonify({"ok":False,"error":"No CSV data provided"})
+    import csv, io
+    balances = []
+    errors = []
+    reader = csv.DictReader(io.StringIO(csv_text))
+    # Flexible header mapping
+    header_map = {}
+    for field in (reader.fieldnames or []):
+        fl = field.lower().strip()
+        if any(k in fl for k in ['code','account_code','acc_code','ledger_code']):
+            header_map['code'] = field
+        elif any(k in fl for k in ['name','account_name','description','ledger']):
+            header_map['name'] = field
+        elif any(k in fl for k in ['debit','dr','debit_balance']):
+            header_map['debit'] = field
+        elif any(k in fl for k in ['credit','cr','credit_balance']):
+            header_map['credit'] = field
+    if 'debit' not in header_map or 'credit' not in header_map:
+        return jsonify({"ok":False,"error":"CSV must have Debit and Credit columns"})
+    for i, row in enumerate(reader):
+        try:
+            code = str(row.get(header_map.get('code',''),'') or '').strip()
+            name = str(row.get(header_map.get('name',''),'') or '').strip()
+            debit = float(str(row.get(header_map.get('debit',''),'0') or '0').replace(',','') or 0)
+            credit = float(str(row.get(header_map.get('credit',''),'0') or '0').replace(',','') or 0)
+            if debit > 0 or credit > 0:
+                balances.append({
+                    "account_code": code,
+                    "account_name": name or code,
+                    "debit": debit,
+                    "credit": credit
+                })
+        except Exception as e:
+            errors.append(f"Row {i+2}: {str(e)}")
+    return jsonify({
+        "ok":True,
+        "balances":balances,
+        "count":len(balances),
+        "errors":errors,
+        "total_debit":sum(b['debit'] for b in balances),
+        "total_credit":sum(b['credit'] for b in balances)
+    })
+
+
+@app.route("/api/bills/import-csv", methods=["POST"])
+@login_required
+def api_bills_import_csv():
+    """Import multiple bills/expenses from CSV"""
+    user = current_user()
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json()
+    csv_text = data.get("csv_text","").strip()
+    if not csv_text:
+        return jsonify({"ok":False,"error":"No CSV data provided"})
+    import csv, io
+    imported = 0
+    errors = []
+    reader = csv.DictReader(io.StringIO(csv_text))
+    for i, row in enumerate(reader):
+        try:
+            # Flexible header mapping
+            def get(keys, default=''):
+                for k in keys:
+                    for field in row:
+                        if k.lower() in field.lower():
+                            return str(row[field] or '').strip()
+                return default
+            vendor = get(['vendor','supplier','from','name'])
+            inv_num = get(['invoice','bill','ref','number','no'])
+            amount_str = get(['amount','total','value'])
+            date_str = get(['date','invoice_date','bill_date'])
+            doc_type = get(['type','doc_type']) or 'BILL'
+            try:
+                amount = float(amount_str.replace(',','') or 0)
+            except:
+                amount = 0
+            if amount <= 0:
+                continue
+            inv_date = date.today()
+            for fmt in ['%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%m/%d/%Y','%d %b %Y']:
+                try:
+                    inv_date = datetime.strptime(date_str, fmt).date()
+                    break
+                except:
+                    continue
+            doc = Document(
+                business_id=business.id,
+                user_id=user.id,
+                vendor_name=vendor,
+                invoice_number=inv_num,
+                doc_type=doc_type.upper() if doc_type.upper() in ['BILL','EXPENSE','RECEIPT'] else 'BILL',
+                total_amount=amount,
+                invoice_date=inv_date,
+                payment_status='UNPAID'
+            )
+            db.session.add(doc)
+            # Post journal
+            post_journal(business.id, user.id,
+                        f"Bill: {vendor} {inv_num}",
+                        inv_num or f"CSV-{i+1}", "EXPENSE", [
+                {"account_code":"5400","debit":amount,"credit":0,
+                 "description":f"Bill import: {vendor}"},
+                {"account_code":"2000","debit":0,"credit":amount,
+                 "description":f"AP: {vendor}"}
+            ])
+            imported += 1
+        except Exception as e:
+            errors.append(f"Row {i+2}: {str(e)}")
+    db.session.commit()
+    return jsonify({
+        "ok":True,
+        "imported":imported,
+        "errors":errors,
+        "message":f"{imported} bills imported and posted to ledger"
+    })
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
