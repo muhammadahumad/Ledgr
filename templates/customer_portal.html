@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>{{ business.display_name() }} — Client Portal</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f4f8;color:#1a202c;min-height:100vh}
+.header{background:#0f1117;padding:16px 20px;display:flex;align-items:center;justify-content:space-between}
+.brand{font-size:20px;font-weight:800;color:#10b981;letter-spacing:-1px}
+.brand span{color:#e2e8f0}
+.header-sub{font-size:11px;color:#64748b}
+.container{max-width:720px;margin:0 auto;padding:20px 16px}
+.welcome{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.welcome h1{font-size:18px;font-weight:700;color:#1a202c;margin-bottom:4px}
+.welcome p{font-size:13px;color:#64748b}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.stat{background:#fff;border-radius:10px;padding:16px;border:1px solid #e2e8f0;text-align:center}
+.stat-label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px}
+.stat-value{font-size:22px;font-weight:700;color:#1a202c}
+.stat-value.outstanding{color:#f59e0b}
+.stat-value.paid{color:#10b981}
+.card{background:#fff;border-radius:12px;border:1px solid #e2e8f0;margin-bottom:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card-header{padding:14px 16px;border-bottom:1px solid #f1f5f9;font-weight:600;font-size:13px;color:#1a202c}
+.inv-row{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f8fafc;gap:10px}
+.inv-row:last-child{border-bottom:none}
+.inv-num{font-weight:600;font-size:13px;color:#1a202c}
+.inv-date{font-size:11px;color:#94a3b8;margin-top:2px}
+.inv-amount{font-weight:700;font-size:14px;font-family:monospace}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+.badge-paid{background:#d1fae5;color:#059669}
+.badge-unpaid{background:#fef3c7;color:#d97706}
+.badge-overdue{background:#fee2e2;color:#dc2626}
+.badge-partial{background:#e0f2fe;color:#0369a1}
+.btn{display:inline-block;padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;border:none;text-decoration:none;transition:all .15s}
+.btn-primary{background:#0f1117;color:#fff}
+.btn-primary:hover{background:#1a202c}
+.btn-outline{background:#fff;color:#475569;border:1px solid #e2e8f0}
+.btn-outline:hover{border-color:#10b981;color:#10b981}
+.message-box{padding:16px}
+textarea{width:100%;padding:10px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;resize:none;outline:none;font-family:inherit}
+textarea:focus{border-color:#10b981}
+.msg-sent{display:none;padding:10px;background:#d1fae5;border-radius:8px;color:#059669;font-size:12px;margin-top:8px}
+.footer{text-align:center;padding:20px;font-size:11px;color:#94a3b8}
+.powered{color:#10b981;font-weight:600}
+@media(max-width:480px){
+  .stats{grid-template-columns:1fr}
+  .inv-row{flex-direction:column;align-items:flex-start;gap:8px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    {% if business.logo_data %}
+    <img src="/api/business/logo?bid={{ business.id }}" style="height:36px;object-fit:contain;margin-bottom:4px;display:block">
+    {% else %}
+    <div class="brand">L<span>EDGR</span></div>
+    {% endif %}
+    <div class="header-sub">{{ business.display_name() }} — Client Portal</div>
+  </div>
+  <div style="text-align:right;font-size:11px;color:#64748b">
+    <div style="font-weight:600;color:#e2e8f0">{{ customer.name }}</div>
+    <div>{{ today.strftime('%d %b %Y') }}</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="welcome">
+    <h1>Hello, {{ customer.name.split()[0] }}!</h1>
+    <p>Welcome to your client portal for {{ business.display_name() }}. View your invoices and statement below.</p>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">Outstanding Balance</div>
+      <div class="stat-value outstanding">{{ tax.currency }} {{ "%.2f"|format(total_outstanding) }}</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">Total Paid</div>
+      <div class="stat-value paid">{{ tax.currency }} {{ "%.2f"|format(total_paid) }}</div>
+    </div>
+  </div>
+
+  <!-- Invoices -->
+  <div class="card">
+    <div class="card-header">Your Invoices ({{ invoices|length }})</div>
+    {% if invoices %}
+    {% for inv in invoices %}
+    {% set balance = (inv.total_amount|float) - (inv.amount_paid|float) %}
+    {% set is_overdue = inv.due_date and inv.due_date < today and inv.status not in ['PAID','VOID'] %}
+    <div class="inv-row">
+      <div style="flex:1">
+        <div class="inv-num">{{ inv.invoice_number }}</div>
+        <div class="inv-date">
+          {{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}
+          {% if inv.due_date %} · Due {{ inv.due_date.strftime('%d %b %Y') }}{% endif %}
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="text-align:right">
+          <div class="inv-amount" style="color:{% if is_overdue %}#dc2626{% elif inv.status=='PAID' %}#059669{% else %}#1a202c{% endif %}">
+            {{ tax.currency }} {{ "%.2f"|format(inv.total_amount or 0) }}
+          </div>
+          {% if inv.status == 'PARTIAL' %}
+          <div style="font-size:10px;color:#0369a1">Balance: {{ tax.currency }} {{ "%.2f"|format(balance) }}</div>
+          {% endif %}
+        </div>
+        {% if is_overdue %}
+        <span class="badge badge-overdue">Overdue</span>
+        {% elif inv.status == 'PAID' %}
+        <span class="badge badge-paid">Paid</span>
+        {% elif inv.status == 'PARTIAL' %}
+        <span class="badge badge-partial">Partial</span>
+        {% else %}
+        <span class="badge badge-unpaid">Unpaid</span>
+        {% endif %}
+        <a href="/portal/{{ customer.portal_token }}/invoice/{{ inv.id }}" 
+           class="btn btn-outline" target="_blank">View</a>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="text-align:center;padding:30px;color:#94a3b8;font-size:13px">No invoices yet</div>
+    {% endif %}
+  </div>
+
+  <!-- Message box -->
+  <div class="card">
+    <div class="card-header">💬 Send a Message</div>
+    <div class="message-box">
+      <p style="font-size:12px;color:#64748b;margin-bottom:10px">Have a question about your invoices or account? Send a message directly to {{ business.display_name() }}.</p>
+      <textarea id="portal-msg" rows="3" placeholder="e.g. Can you resend invoice INV-001? or I have a question about..."></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-primary" onclick="sendMessage()">Send Message</button>
+      </div>
+      <div class="msg-sent" id="msg-sent">✓ Message sent! We'll get back to you shortly.</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Powered by <span class="powered">LEDGR Global</span> · ledgrglobal.com<br>
+  <span style="margin-top:4px;display:block">This is a secure portal link. Do not share this URL with others.</span>
+</div>
+
+<script>
+function sendMessage() {
+  var msg = document.getElementById('portal-msg').value.trim();
+  if (!msg) { alert('Please enter a message'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Sending...';
+  fetch('/api/portal/{{ customer.portal_token }}/message', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: msg})
+  }).then(r => r.json()).then(res => {
+    if (res.ok) {
+      document.getElementById('portal-msg').value = '';
+      document.getElementById('msg-sent').style.display = 'block';
+      btn.textContent = 'Sent ✓';
+    } else {
+      alert('Error: ' + res.error);
+      btn.disabled = false; btn.textContent = 'Send Message';
+    }
+  });
+}
+</script>
+</body>
+</html>

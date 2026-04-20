@@ -31,7 +31,8 @@
           <div style="display:flex;gap:4px">
             <a href="/reports/statement-of-accounts/{{ c.id }}" class="btn btn-sm">Statement</a>
             <button class="btn btn-sm" onclick="editCust({{ c.id }})" style="color:var(--amber);border-color:var(--amber)">Edit</button>
-            <button class="btn btn-sm" data-action="delcust" data-id="{{ c.id }}" data-name="{{ c.name|e }}" style="color:var(--red);border-color:var(--red)">Delete</button>
+            <button class="btn btn-sm" data-action="delcust" data-id="{{ c.id }}" data-name="{{ c.name|e }}">
+          <button class="btn btn-sm" data-action="portallink" data-id="{{ c.id }}" style="color:var(--mint);border-color:var(--mint)">🔗 Portal</button style="color:var(--red);border-color:var(--red)">Delete</button>
           </div>
         </td>
       </tr>
@@ -160,6 +161,7 @@ document.addEventListener('click', function(e) {
   var btn = e.target.closest('[data-action]');
   if (!btn) return;
   if (btn.dataset.action === 'delcust') deleteCust(btn.dataset.id, btn.dataset.name);
+  else if (btn.dataset.action === 'portallink') generatePortalLink(btn.dataset.id);
 });
 
 var TIN_LABELS = {
@@ -292,6 +294,23 @@ function deleteCust(id, name) {
     .then(res => {
       if (res.ok) { location.reload(); }
       else alert('Error: ' + res.error);
+    });
+}
+function generatePortalLink(id) {
+  var btn = event.target; btn.disabled = true; btn.textContent = '...';
+  fetch('/api/customer/'+id+'/generate-portal-link', {method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      btn.disabled = false; btn.textContent = '🔗 Portal';
+      if(res.ok) {
+        var copied = false;
+        if(navigator.clipboard) {
+          navigator.clipboard.writeText(res.portal_url).then(function(){
+            alert('✓ Portal link copied to clipboard!\n\n' + res.portal_url + '\n\nShare this link with ' + res.message.split('for ')[1]);
+          });
+        } else {
+          alert('Portal link:\n\n' + res.portal_url + '\n\nCopy and share with your client.');
+        }
+      } else { alert('Error: '+res.error); }
     });
 }
 </script>{% endblock %}
