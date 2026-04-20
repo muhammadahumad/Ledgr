@@ -2,367 +2,423 @@
 {% block title %}Upload — LEDGR{% endblock %}
 {% block content %}
 <div class="topbar">
-  <div><div class="page-title">Upload Document</div><div class="page-sub">Bill · Receipt · Invoice · Payroll Slip · Bank Statement</div></div>
-  <div style="font-size:11px;color:var(--text3)">{{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }} uploads remaining</div>
+  <div>
+    <div class="page-title">Upload Document</div>
+    <div class="page-sub">Bill · Receipt · Invoice · Statement</div>
+  </div>
+  <div style="font-size:11px;color:var(--text3)">
+    {{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }} scans remaining
+  </div>
 </div>
 <div class="content" style="max-width:720px">
-  <!-- Upload tabs -->
-  <div style="display:flex;gap:0;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px">
-    <button onclick="showUploadTab('scan')" id="utab-scan" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--mint);color:#fff">📷 Scan / Upload</button>
-    <button onclick="showUploadTab('manual')" id="utab-manual" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">✏️ Manual Entry</button>
-    <button onclick="showUploadTab('csv')" id="utab-csv" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">📊 Bulk CSV</button>
-  </div>
-  <div id="utab-scan-content">
-  <div id="upload-section">
-    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('doc-file').click()" ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropFile(event)">
-      <div style="font-size:36px;margin-bottom:12px;opacity:.6">↑</div>
-      <p style="font-size:15px;font-weight:500;color:var(--text);margin-bottom:6px">Drop any financial document here</p>
-      <p style="font-size:12px;color:var(--text3);margin-bottom:14px">JPG · PNG · PDF — phone photos work perfectly</p>
-      <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('doc-file').click()">Choose file</button>
-    </div>
-    <input type="file" id="doc-file" accept="image/*,application/pdf" style="display:none" onchange="handleFile(this)">
-    <div class="card" style="margin-top:12px">
-      <div class="card-title">What LEDGR extracts automatically</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--text2)">
-        <div>✓ Vendor name & tax ID ({{ tax.authority }})</div>
-        <div>✓ Invoice number & dates</div>
-        <div>✓ {{ tax.tax_name }} amount ({{ (tax.tax_rate*100)|int }}%)</div>
-        <div>✓ Line items & totals</div>
-        <div>✓ Currency ({{ tax.currency }})</div>
-        <div>✓ Auto-posts to Ledger & Journal</div>
-      </div>
-    </div>
+
+  <!-- Tab Bar -->
+  <div style="display:flex;gap:2px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px">
+    <button id="tab-btn-scan"   onclick="switchTab('scan')"   style="flex:1;padding:9px 4px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--mint);color:#fff;transition:all .15s">📷 Scan</button>
+    <button id="tab-btn-manual" onclick="switchTab('manual')" style="flex:1;padding:9px 4px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3);transition:all .15s">✏️ Manual</button>
+    <button id="tab-btn-csv"    onclick="switchTab('csv')"    style="flex:1;padding:9px 4px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3);transition:all .15s">📊 CSV Import</button>
   </div>
 
-  <div id="processing-section" style="display:none">
-    <div id="img-preview" style="margin-bottom:12px"></div>
-    <div class="status-bar status-processing" id="proc-status">
-      <div class="spinner"></div><span id="proc-text">Reading your document...</span>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;font-size:11px;color:var(--text3)">
-      <span id="s1">① Reading</span>
-      <span style="flex:1;height:1px;background:var(--border)"></span>
-      <span id="s2">② Extracting</span>
-      <span style="flex:1;height:1px;background:var(--border)"></span>
-      <span id="s3">③ Posting</span>
-    </div>
-  </div>
+  <!-- ── SCAN TAB ─────────────────────────────────────── -->
+  <div id="tab-scan">
 
-  <div id="result-section" style="display:none">
-    <div class="status-bar status-success" id="result-bar"><span id="result-msg"></span></div>
-    <div class="card">
-      <div class="card-title">
-        Extracted data <span class="badge" id="conf-badge">HIGH</span>
-        <button class="btn btn-sm" id="edit-toggle-btn" onclick="toggleEditMode()" style="margin-left:8px">Edit</button>
+    <div id="upload-section">
+      <div class="upload-zone" id="drop-zone"
+           onclick="document.getElementById('doc-file').click()"
+           ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropFile(event)"
+           style="border:2px dashed var(--border2);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface)">
+        <div style="font-size:36px;margin-bottom:12px;opacity:.6">↑</div>
+        <p style="font-size:15px;font-weight:500;color:var(--text);margin-bottom:6px">Drop any financial document here</p>
+        <p style="font-size:12px;color:var(--text3);margin-bottom:14px">JPG · PNG · PDF — phone photos work perfectly</p>
+        <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('doc-file').click()">Choose File</button>
       </div>
-      <!-- View mode -->
-      <div id="view-mode">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
-          <div><div class="field-label">Vendor</div><div id="r-vendor" style="color:var(--text);font-weight:500"></div></div>
-          <div><div class="field-label">Tax ID</div><div id="r-taxid" style="color:var(--mint);font-family:var(--mono)"></div></div>
-          <div><div class="field-label">Invoice No.</div><div id="r-invno" style="color:var(--text)"></div></div>
-          <div><div class="field-label">Invoice Date</div><div id="r-date" style="color:var(--text)"></div></div>
-          <div><div class="field-label">Type</div><div id="r-type"></div></div>
-          <div><div class="field-label">Category</div><div id="r-cat" style="color:var(--text)"></div></div>
-        </div>
-        <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:20px;font-size:12px">
-          <div style="text-align:right"><div style="color:var(--text3)">Subtotal</div><div id="r-sub" style="font-family:var(--mono)"></div></div>
-          <div style="text-align:right"><div style="color:var(--text3)">{{ tax.tax_name }}</div><div id="r-tax" style="color:var(--amber);font-family:var(--mono)"></div></div>
-          <div style="text-align:right"><div style="color:var(--text3);font-weight:500">Total</div><div id="r-total" style="color:var(--mint);font-size:17px;font-weight:600;font-family:var(--mono)"></div></div>
+      <input type="file" id="doc-file" accept="image/*,application/pdf" style="display:none" onchange="handleFile(this)">
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-title">What LEDGR extracts automatically</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--text2)">
+          <div>✓ Vendor name &amp; tax ID ({{ tax.authority }})</div>
+          <div>✓ Invoice number &amp; dates</div>
+          <div>✓ {{ tax.tax_name }} amount ({{ (tax.tax_rate*100)|int }}%)</div>
+          <div>✓ Line items &amp; totals</div>
+          <div>✓ Currency detection</div>
+          <div>✓ Posts to double-entry ledger</div>
         </div>
       </div>
-      <!-- Edit mode -->
-      <div id="edit-mode" style="display:none">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-          <div><div class="field-label">Vendor Name</div><input class="field-input" id="e-vendor" style="font-size:12px"></div>
-          <div><div class="field-label">Tax ID</div><input class="field-input" id="e-taxid" style="font-size:12px"></div>
-          <div><div class="field-label">Invoice Number</div><input class="field-input" id="e-invno" style="font-size:12px"></div>
-          <div><div class="field-label">Invoice Date</div><input class="field-input" type="date" id="e-date" style="font-size:12px"></div>
-          <div><div class="field-label">Subtotal</div><input class="field-input" type="number" id="e-sub" step="0.01" style="font-size:12px" oninput="recalcTotal()"></div>
-          <div><div class="field-label">Tax Amount</div><input class="field-input" type="number" id="e-tax" step="0.01" style="font-size:12px" oninput="recalcTotal()"></div>
-          <div><div class="field-label">Total</div><input class="field-input" type="number" id="e-total" step="0.01" style="font-size:12px;color:var(--mint);font-weight:600"></div>
-          <div><div class="field-label">Currency</div>
-            <select class="select-input" id="e-currency" style="font-size:12px">
-              <option>MVR</option><option>AED</option><option>USD</option><option>PKR</option><option>LKR</option><option>INR</option>
-            </select>
+    </div>
+
+    <div id="processing-section" style="display:none;text-align:center;padding:50px 20px">
+      <div style="font-size:40px;margin-bottom:16px">⚙</div>
+      <div id="proc-text" style="font-size:14px;color:var(--text2);margin-bottom:20px">Processing...</div>
+      <div style="display:flex;justify-content:center;gap:8px">
+        <div id="s1" style="font-size:11px;color:var(--text3)">① Read</div>
+        <div style="color:var(--text3)">→</div>
+        <div id="s2" style="font-size:11px;color:var(--text3)">② Extract</div>
+        <div style="color:var(--text3)">→</div>
+        <div id="s3" style="font-size:11px;color:var(--text3)">③ Post</div>
+      </div>
+      <div id="img-preview" style="margin-top:16px"></div>
+    </div>
+
+    <div id="result-section" style="display:none">
+      <div class="card" style="border-color:rgba(16,185,129,.3)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title" style="margin:0;color:var(--mint)">✓ Document Extracted</div>
+          <button class="btn btn-sm" onclick="resetUpload()">Upload Another</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px" id="result-grid"></div>
+      </div>
+      <div id="line-items-card" style="display:none;margin-top:10px">
+        <div class="card" style="padding:0">
+          <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:12px">Line Items</div>
+          <table class="table"><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th><th style="text-align:right">Total</th></tr></thead>
+          <tbody id="line-items-body"></tbody></table>
+        </div>
+      </div>
+      <div id="inventory-confirm" style="display:none;margin-top:10px">
+        <div class="card" style="border-color:rgba(245,158,11,.3)">
+          <div style="font-size:12px;color:var(--amber);margin-bottom:8px">⚠ Inventory items detected. Update stock levels?</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-primary" onclick="confirmInventory(true)">Yes, Update Stock</button>
+            <button class="btn" onclick="confirmInventory(false)">Skip</button>
           </div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="btn btn-primary btn-sm" onclick="saveEdits()">Save Changes</button>
-          <button class="btn btn-sm" onclick="toggleEditMode()">Cancel</button>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <a href="/documents" class="btn">View Documents</a>
+        <a href="/journal" class="btn">View Journal</a>
+        {% if business.has_inventory %}<a href="/inventory" class="btn">View Inventory</a>{% endif %}
+      </div>
+    </div>
+
+  </div><!-- end tab-scan -->
+
+  <!-- ── MANUAL ENTRY TAB ──────────────────────────────── -->
+  <div id="tab-manual" style="display:none">
+    <div class="card">
+      <div class="card-title">✏️ Manual Bill / Expense Entry</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">No file needed — enter details directly and post to ledger</div>
+
+      <div class="field-row">
+        <div>
+          <div class="field-label">Vendor / Supplier *</div>
+          <input class="field-input" id="mb-vendor" placeholder="e.g. Island Supplies Co.">
         </div>
-        <div id="save-msg" style="margin-top:8px;font-size:12px;display:none"></div>
-      </div>
-    </div>
-
-    <div id="line-items-card" class="card" style="display:none">
-      <div class="card-title">Line items</div>
-      <table class="table"><thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th style="text-align:right">Total</th></tr></thead>
-      <tbody id="line-items-body"></tbody></table>
-    </div>
-
-    <div id="inventory-confirm" style="display:none">
-      <div class="card" style="border-color:rgba(16,185,129,.3)">
-        <div class="card-title" style="color:var(--mint)">▦ Add items to inventory?</div>
-        <div id="inv-items-list" style="margin-bottom:12px"></div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" onclick="confirmInventory()">✓ Update Stock</button>
-          <button class="btn" onclick="document.getElementById('inventory-confirm').style.display='none'">Skip</button>
+        <div>
+          <div class="field-label">Invoice / Ref Number</div>
+          <input class="field-input" id="mb-invnum" placeholder="INV-001">
         </div>
       </div>
-    </div>
 
-    <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="resetUpload()">Upload another</button>
-      <a href="/ledger" class="btn">View Ledger</a>
-      <a href="/journal" class="btn">View Journal</a>
-      {% if business.has_inventory %}<a href="/inventory" class="btn">View Inventory</a>{% endif %}
-    </div>
-  </div>
-</div><!-- end scan tab -->
-
-<!-- Manual Entry Tab -->
-<div id="utab-manual-content" style="display:none">
-  <div class="card">
-    <div class="card-title">✏️ Manual Bill / Expense Entry</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">No file needed — enter bill details directly. Posts to AP ledger automatically.</div>
-    <div class="field-row">
-      <div><div class="field-label">Vendor / Supplier *</div><input class="field-input" id="mb-vendor" placeholder="e.g. Island Supplies Co."></div>
-      <div><div class="field-label">Invoice / Ref Number</div><input class="field-input" id="mb-invnum" placeholder="INV-001"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Date *</div><input class="field-input" type="date" id="mb-date"></div>
-      <div><div class="field-label">Due Date</div><input class="field-input" type="date" id="mb-due"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Total Amount *</div><input class="field-input" type="number" id="mb-amount" step="0.01" placeholder="0.00"></div>
-      <div><div class="field-label">Tax Amount</div><input class="field-input" type="number" id="mb-tax" step="0.01" placeholder="0.00"></div>
-    </div>
-    <div class="field-row">
-      <div><div class="field-label">Currency</div>
-        <select class="select-input" id="mb-currency">
-          <option>MVR</option><option>USD</option><option>AED</option>
-          <option>MYR</option><option>SAR</option><option>GBP</option>
-        </select>
+      <div class="field-row">
+        <div>
+          <div class="field-label">Date *</div>
+          <input class="field-input" type="date" id="mb-date">
+        </div>
+        <div>
+          <div class="field-label">Due Date</div>
+          <input class="field-input" type="date" id="mb-due">
+        </div>
       </div>
-      <div><div class="field-label">Type</div>
-        <select class="select-input" id="mb-type">
-          <option value="BILL">Bill (AP — owed to supplier)</option>
-          <option value="EXPENSE">Expense (already paid)</option>
-          <option value="RECEIPT">Receipt</option>
-        </select>
+
+      <div class="field-row">
+        <div>
+          <div class="field-label">Total Amount *</div>
+          <input class="field-input" type="number" id="mb-amount" step="0.01" placeholder="0.00">
+        </div>
+        <div>
+          <div class="field-label">Tax Amount</div>
+          <input class="field-input" type="number" id="mb-tax" step="0.01" placeholder="0.00">
+        </div>
       </div>
-    </div>
-    <div class="field-group"><div class="field-label">Description / Notes</div>
-      <input class="field-input" id="mb-notes" placeholder="e.g. Office supplies for January"></div>
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-primary" onclick="saveManualBill()">Save & Post to Ledger</button>
-      <button class="btn" onclick="clearManualBill()">Clear</button>
-    </div>
-    <div id="mb-msg" style="margin-top:8px;font-size:12px;display:none"></div>
-  </div>
-</div>
 
-<!-- CSV Import Tab -->
-<div id="utab-csv-content" style="display:none">
-  <div class="card">
-    <div class="card-title">📊 Bulk Import Bills from CSV</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.7">
-      Import multiple bills at once. Flexible column names — works with QB, Xero, and Excel.<br>
-      <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:11px">Vendor, Invoice Number, Date, Amount, Type</code>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Paste CSV content</div>
-      <textarea class="field-input" id="bills-csv" rows="8" style="width:100%;font-family:monospace;font-size:11px"
-placeholder="Vendor,Invoice Number,Date,Amount,Type
-Island Supplies,INV-2024-001,2024-01-15,5000,BILL
-MWSC,MWSC-Jan,2024-01-20,1200,EXPENSE
-Office Rental,,2024-01-01,8000,BILL"></textarea>
-    </div>
-    <button class="btn btn-primary" onclick="importBillsCSV()" style="margin-top:8px">Import Bills</button>
-    <div id="bills-csv-msg" style="margin-top:10px;font-size:12px;display:none"></div>
-  </div>
-  <div style="background:var(--surface2);border-radius:8px;padding:12px;font-size:11px;color:var(--text3);margin-top:10px">
-    💡 For year-end migrations → <a href="/setup/opening-balances" style="color:var(--mint)">Opening Balances</a>
-  </div>
-</div>
+      <div class="field-row">
+        <div>
+          <div class="field-label">Currency</div>
+          <select class="select-input" id="mb-currency">
+            <option value="MVR">MVR — Maldivian Rufiyaa</option>
+            <option value="USD">USD — US Dollar</option>
+            <option value="AED">AED — UAE Dirham</option>
+            <option value="MYR">MYR — Malaysian Ringgit</option>
+            <option value="SAR">SAR — Saudi Riyal</option>
+            <option value="GBP">GBP — British Pound</option>
+            <option value="EUR">EUR — Euro</option>
+          </select>
+        </div>
+        <div>
+          <div class="field-label">Document Type</div>
+          <select class="select-input" id="mb-type">
+            <option value="BILL">Bill (AP — owed to supplier)</option>
+            <option value="EXPENSE">Expense (already paid)</option>
+            <option value="RECEIPT">Receipt</option>
+          </select>
+        </div>
+      </div>
 
-</div>
+      <div class="field-group">
+        <div class="field-label">Description / Notes</div>
+        <input class="field-input" id="mb-notes" placeholder="e.g. Office supplies for January">
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-primary" id="mb-save-btn" onclick="saveManualBill()">💾 Save &amp; Post to Ledger</button>
+        <button class="btn" onclick="clearManualBill()">Clear</button>
+      </div>
+      <div id="mb-msg" style="margin-top:10px;font-size:12px;padding:8px 12px;border-radius:6px;display:none"></div>
+    </div>
+  </div><!-- end tab-manual -->
+
+  <!-- ── CSV IMPORT TAB ────────────────────────────────── -->
+  <div id="tab-csv" style="display:none">
+    <div class="card">
+      <div class="card-title">📊 Bulk Import Bills from CSV</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.8">
+        Import multiple bills at once. Flexible column names — works with QB, Xero, Tally and Excel exports.<br>
+        <strong style="color:var(--text)">Required columns:</strong>
+        <code style="background:var(--bg);padding:2px 8px;border-radius:4px;font-size:11px;margin-left:4px">Vendor, Amount</code>
+        <span style="color:var(--text3)"> — all others optional</span>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Paste CSV content below</div>
+        <textarea class="field-input" id="bills-csv" rows="9"
+          style="width:100%;font-family:monospace;font-size:11px;resize:vertical"
+          placeholder="Vendor,Invoice Number,Date,Amount,Type
+Island Supplies Ltd,INV-2024-001,2024-01-15,5000,BILL
+MWSC,MWSC-Jan-2024,2024-01-20,1200,EXPENSE
+STO Supermarket,,2024-01-22,850,EXPENSE
+Office Rental,RENT-JAN,2024-01-01,8000,BILL"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" id="csv-import-btn" onclick="importBillsCSV()">📥 Import Bills</button>
+        <button class="btn" onclick="document.getElementById('bills-csv').value=''">Clear</button>
+      </div>
+      <div id="bills-csv-msg" style="margin-top:10px;font-size:12px;padding:8px 12px;border-radius:6px;display:none"></div>
+    </div>
+    <div style="background:var(--surface2);border-radius:8px;padding:12px 14px;font-size:11px;color:var(--text3);margin-top:10px;line-height:1.7">
+      💡 For year-end closing balances and migrating from another system →
+      <a href="/setup/opening-balances" style="color:var(--mint);font-weight:600">Opening Balances →</a>
+    </div>
+  </div><!-- end tab-csv -->
+
+</div><!-- end content -->
 {% endblock %}
 
 {% block scripts %}
 <script>
-var INV_ENABLED={{ 'true' if business.has_inventory else 'false' }};
-var currentDocId=null, currentLineItems=null;
-function ev(e,on){e.preventDefault();document.getElementById('drop-zone').classList.toggle('drag',on);}
-function dropFile(e){e.preventDefault();document.getElementById('drop-zone').classList.remove('drag');if(e.dataTransfer.files.length)processFile(e.dataTransfer.files[0]);}
-function handleFile(input){if(input.files.length)processFile(input.files[0]);}
-function setStep(n){
-  var msgs=['','Reading document...','Extracting data with AI...','Posting to Ledger & Journal...'];
-  document.getElementById('proc-text').textContent=msgs[n]||'Processing...';
-  ['s1','s2','s3'].forEach((id,i)=>{var el=document.getElementById(id);el.style.color=i+1<n?'var(--mint)':i+1===n?'#60a5fa':'var(--text3)';});
+var INV_ENABLED = {{ 'true' if business.has_inventory else 'false' }};
+var currentDocId = null, currentLineItems = null;
+
+// ── Tab switching ─────────────────────────────────────────────────────────
+function switchTab(tab) {
+  ['scan','manual','csv'].forEach(function(t) {
+    document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
+    var btn = document.getElementById('tab-btn-' + t);
+    btn.style.background = t === tab ? 'var(--mint)' : 'transparent';
+    btn.style.color      = t === tab ? '#fff' : 'var(--text3)';
+  });
 }
-function processFile(file){
-  document.getElementById('upload-section').style.display='none';
-  document.getElementById('processing-section').style.display='block';
-  if(file.type.startsWith('image/')){var r=new FileReader();r.onload=e=>{document.getElementById('img-preview').innerHTML='<img src="'+e.target.result+'" style="width:100%;max-height:180px;object-fit:contain;border-radius:8px;border:1px solid var(--border);margin-bottom:10px">';};r.readAsDataURL(file);}
+
+// ── Scan tab ──────────────────────────────────────────────────────────────
+function ev(e, on) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.toggle('drag', on);
+}
+function dropFile(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.remove('drag');
+  if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]);
+}
+function handleFile(input) { if (input.files.length) processFile(input.files[0]); }
+
+function setStep(n) {
+  var msgs = ['','Reading document...','Extracting data with AI...','Posting to Ledger...'];
+  document.getElementById('proc-text').textContent = msgs[n] || 'Processing...';
+  ['s1','s2','s3'].forEach(function(id, i) {
+    var el = document.getElementById(id);
+    el.style.color = i+1 < n ? 'var(--mint)' : i+1 === n ? 'var(--text)' : 'var(--text3)';
+    el.style.fontWeight = i+1 === n ? '700' : '400';
+  });
+}
+
+function processFile(file) {
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('processing-section').style.display = 'block';
+  document.getElementById('result-section').style.display = 'none';
+  if (file.type.startsWith('image/')) {
+    var r = new FileReader();
+    r.onload = function(e) {
+      document.getElementById('img-preview').innerHTML =
+        '<img src="'+e.target.result+'" style="max-width:200px;max-height:150px;border-radius:8px;opacity:.7">';
+    };
+    r.readAsDataURL(file);
+  }
   setStep(1);
-  var reader=new FileReader();
-  reader.onload=function(e){
-    var b64=e.target.result.split(',')[1];
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var b64 = e.target.result.split(',')[1];
     setStep(2);
-    fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({file:b64,media_type:file.type||'image/jpeg'})}).then(r=>r.json()).then(res=>{setStep(3);setTimeout(()=>showResult(res),400);}).catch(err=>{document.getElementById('proc-status').className='status-bar status-error';document.getElementById('proc-text').textContent='Error: '+err.message;});
+    fetch('/api/upload', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({file: b64, media_type: file.type, filename: file.name})
+    }).then(function(r) { return r.json(); }).then(function(res) {
+      setStep(3);
+      setTimeout(function() { showResult(res); }, 500);
+    }).catch(function(err) {
+      document.getElementById('proc-text').textContent = 'Error: ' + err.message;
+    });
   };
   reader.readAsDataURL(file);
 }
-function showResult(res){
-  // Handle bank statement detection — redirect to bank page
-  if(res.is_bank_statement){
-    var go=confirm('This looks like a bank statement.\n\nBank statements should be uploaded from the Bank page for proper processing with GL account assignment.\n\nGo to Bank page now?');
-    if(go) window.location.href='/bank';
-    else resetUpload();
+
+function showResult(res) {
+  if (res.is_bank_statement) {
+    window.location.href = '/bank?imported=1';
     return;
   }
-  // Handle duplicate detection
-  if(res.duplicate){
-    var msg='⚠ Possible duplicate detected!\n\n'+res.duplicate_vendor+'\nPreviously uploaded: '+res.duplicate_date+'\nAmount: '+fmt(res.duplicate_amount)+'\n\nDo you want to save this as a new document anyway?';
-    if(confirm(msg)){
-      // User wants to save anyway — force upload
-      forceSave(res.extracted);
-      return;
-    } else {
-      var viewLink=confirm('View the existing document?');
-      if(viewLink) window.open('/documents/'+res.duplicate_id,'_blank');
-      resetUpload();
-      return;
+  document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('result-section').style.display = 'block';
+  if (!res.ok) {
+    document.getElementById('result-grid').innerHTML =
+      '<div style="color:var(--red);grid-column:1/-1">Error: ' + (res.error||'Unknown') + '</div>';
+    return;
+  }
+  currentDocId = res.document_id;
+  var d = res.extracted || {};
+  var grid = document.getElementById('result-grid');
+  var fields = [
+    ['Vendor', d.vendor_name||'—'],
+    ['Invoice #', d.invoice_number||'—'],
+    ['Date', d.invoice_date||'—'],
+    ['Due Date', d.due_date||'—'],
+    ['Subtotal', d.currency+' '+(d.subtotal||0)],
+    ['Tax', d.currency+' '+(d.tax_amount||0)],
+    ['Total', d.currency+' '+(d.total_amount||0)],
+    ['Status', res.duplicate ? '⚠ Duplicate detected' : '✓ Posted to ledger']
+  ];
+  grid.innerHTML = fields.map(function(f) {
+    return '<div><span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.05em">'+f[0]+'</span><div style="font-weight:600;font-size:13px;margin-top:2px">'+f[1]+'</div></div>';
+  }).join('');
+  var items = d.line_items || [];
+  if (items.length) {
+    document.getElementById('line-items-card').style.display = 'block';
+    document.getElementById('line-items-body').innerHTML = items.map(function(it) {
+      return '<tr><td>'+it.description+'</td><td style="text-align:right">'+it.qty+'</td><td style="text-align:right">'+it.unit_price+'</td><td style="text-align:right">'+it.total+'</td></tr>';
+    }).join('');
+    currentLineItems = items;
+    if (INV_ENABLED && items.some(function(it) { return it.is_inventory; })) {
+      document.getElementById('inventory-confirm').style.display = 'block';
     }
   }
-  window._lastExtracted = res.extracted;
-  document.getElementById('processing-section').style.display='none';
-  document.getElementById('result-section').style.display='block';
-  var bar=document.getElementById('result-bar');
-  if(!res.ok){bar.className='status-bar status-error';document.getElementById('result-msg').textContent='Error: '+res.error;if(res.upgrade)bar.innerHTML+=' <a href="/settings" style="color:var(--red);font-weight:500">Upgrade plan</a>';return;}
-  var d=res.extracted;
-  document.getElementById('result-msg').textContent=res.message;
-  document.getElementById('r-vendor').textContent=d.vendor_name||'—';
-  document.getElementById('r-taxid').textContent=d.vendor_tax_id||'Not found';
-  document.getElementById('r-invno').textContent=d.invoice_number||'—';
-  document.getElementById('r-date').textContent=d.invoice_date||'—';
-  document.getElementById('r-type').innerHTML='<span class="badge badge-gray">'+d.doc_type+'</span>';
-  document.getElementById('r-cat').textContent=d.category||'Other';
-  document.getElementById('r-sub').textContent=(d.currency||'MVR')+' '+fmt(d.subtotal);
-  document.getElementById('r-tax').textContent=(d.currency||'MVR')+' '+fmt(d.tax_amount);
-  document.getElementById('r-total').textContent=(d.currency||'MVR')+' '+fmt(d.total_amount);
-  var cb=document.getElementById('conf-badge');
-  cb.className='badge badge-'+(d.confidence==='low'?'amber':'green');cb.textContent=(d.confidence||'high').toUpperCase();
-  currentDocId=res.document_id;currentLineItems=d.line_items;
-  if(d.line_items&&d.line_items.length){
-    document.getElementById('line-items-card').style.display='block';
-    var tbody=document.getElementById('line-items-body');tbody.innerHTML='';
-    d.line_items.forEach(item=>{var tr=document.createElement('tr');tr.innerHTML='<td>'+esc(item.description)+'</td><td>'+(item.quantity||1)+'</td><td>'+fmt(item.unit_price)+'</td><td style="text-align:right;font-family:var(--mono)">'+fmt(item.total)+'</td>';tbody.appendChild(tr);});
-    if(INV_ENABLED)showInventoryConfirm(d.line_items);
-  }
-}
-function showInventoryConfirm(items){
-  document.getElementById('inventory-confirm').style.display='block';
-  var list=document.getElementById('inv-items-list');list.innerHTML='';
-  items.forEach((item,i)=>{var div=document.createElement('div');div.style.cssText='display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px';div.innerHTML='<input type="checkbox" id="inv-'+i+'" checked style="accent-color:var(--mint);width:15px;height:15px"><div style="flex:1"><div style="color:var(--text)">'+esc(item.description)+'</div><div style="color:var(--text3)">Qty: '+(item.quantity||1)+' · Cost: '+fmt(item.unit_price)+'</div></div>';list.appendChild(div);});
-}
-function confirmInventory(){
-  var items=(currentLineItems||[]).map((item,i)=>({description:item.description,quantity:item.quantity||1,unit_price:item.unit_price||0,include:document.getElementById('inv-'+i)?.checked??true}));
-  fetch('/api/inventory/from-upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({items,document_id:currentDocId})}).then(r=>r.json()).then(res=>{
-    document.getElementById('inventory-confirm').style.display='none';
-    if(res.ok){var bar=document.getElementById('result-bar');bar.innerHTML+=` <strong style="margin-left:8px">· ${res.updated} inventory items updated</strong>`;}
-  });
-}
-function toggleEditMode(){
-  var vm=document.getElementById('view-mode'),em=document.getElementById('edit-mode');
-  var btn=document.getElementById('edit-toggle-btn');
-  if(vm.style.display==='none'){
-    vm.style.display='block';em.style.display='none';btn.textContent='Edit';
-  } else {
-    // Populate edit fields from current display values
-    var d=window._lastExtracted||{};
-    document.getElementById('e-vendor').value=d.vendor_name||'';
-    document.getElementById('e-taxid').value=d.vendor_tax_id||'';
-    document.getElementById('e-invno').value=d.invoice_number||'';
-    document.getElementById('e-date').value=d.invoice_date||'';
-    document.getElementById('e-sub').value=d.subtotal||0;
-    document.getElementById('e-tax').value=d.tax_amount||0;
-    document.getElementById('e-total').value=d.total_amount||0;
-    document.getElementById('e-currency').value=d.currency||'MVR';
-    vm.style.display='none';em.style.display='block';btn.textContent='Cancel';
-  }
 }
 
-function recalcTotal(){
-  var s=parseFloat(document.getElementById('e-sub').value)||0;
-  var t=parseFloat(document.getElementById('e-tax').value)||0;
-  document.getElementById('e-total').value=(s+t).toFixed(2);
-}
-
-function saveEdits(){
-  if(!currentDocId){alert('No document to save');return;}
-  var payload={
-    vendor_name:document.getElementById('e-vendor').value,
-    vendor_tax_id:document.getElementById('e-taxid').value,
-    invoice_number:document.getElementById('e-invno').value,
-    invoice_date:document.getElementById('e-date').value,
-    subtotal:parseFloat(document.getElementById('e-sub').value)||0,
-    tax_amount:parseFloat(document.getElementById('e-tax').value)||0,
-    total_amount:parseFloat(document.getElementById('e-total').value)||0,
-    currency:document.getElementById('e-currency').value
-  };
-  fetch('/api/document/'+currentDocId+'/update',{
-    method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
-  }).then(r=>r.json()).then(res=>{
-    var msg=document.getElementById('save-msg');msg.style.display='block';
-    if(res.ok){
-      msg.style.color='var(--mint)';msg.textContent='✓ Changes saved';
-      // Update display
-      document.getElementById('r-vendor').textContent=payload.vendor_name||'—';
-      document.getElementById('r-taxid').textContent=payload.vendor_tax_id||'Not found';
-      document.getElementById('r-invno').textContent=payload.invoice_number||'—';
-      document.getElementById('r-date').textContent=payload.invoice_date||'—';
-      document.getElementById('r-sub').textContent=payload.currency+' '+fmt(payload.subtotal);
-      document.getElementById('r-tax').textContent=payload.currency+' '+fmt(payload.tax_amount);
-      document.getElementById('r-total').textContent=payload.currency+' '+fmt(payload.total_amount);
-      setTimeout(()=>toggleEditMode(),1000);
-    } else {msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}
+function confirmInventory(yes) {
+  document.getElementById('inventory-confirm').style.display = 'none';
+  if (!yes || !currentDocId || !currentLineItems) return;
+  fetch('/api/inventory/update-from-doc', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({document_id: currentDocId, items: currentLineItems})
   });
 }
 
-function forceSave(extracted){
-  // Save document even if duplicate — user confirmed
-  fetch('/api/document/manual',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      doc_type:extracted.doc_type||'BILL',
-      vendor_name:extracted.vendor_name||'',
-      vendor_tax_id:extracted.vendor_tax_id||'',
-      invoice_number:extracted.invoice_number||'',
-      invoice_date:extracted.invoice_date||'',
-      currency:extracted.currency||'MVR',
-      subtotal:extracted.subtotal||0,
-      tax_amount:extracted.tax_amount||0,
-      total_amount:extracted.total_amount||0,
-      category:extracted.category||'Other',
-      force:true
+function resetUpload() {
+  document.getElementById('upload-section').style.display = 'block';
+  document.getElementById('processing-section').style.display = 'none';
+  document.getElementById('result-section').style.display = 'none';
+  document.getElementById('doc-file').value = '';
+  document.getElementById('img-preview').innerHTML = '';
+  document.getElementById('line-items-card').style.display = 'none';
+  document.getElementById('line-items-body').innerHTML = '';
+  document.getElementById('inventory-confirm').style.display = 'none';
+}
+
+// ── Manual bill entry ─────────────────────────────────────────────────────
+function saveManualBill() {
+  var vendor = document.getElementById('mb-vendor').value.trim();
+  var amount = parseFloat(document.getElementById('mb-amount').value) || 0;
+  if (!vendor) { alert('Vendor name required'); return; }
+  if (amount <= 0) { alert('Enter a valid amount'); return; }
+  var btn = document.getElementById('mb-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  fetch('/api/document/manual', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      doc_type:       document.getElementById('mb-type').value,
+      vendor_name:    vendor,
+      invoice_number: document.getElementById('mb-invnum').value,
+      invoice_date:   document.getElementById('mb-date').value,
+      due_date:       document.getElementById('mb-due').value,
+      currency:       document.getElementById('mb-currency').value,
+      subtotal:       amount - (parseFloat(document.getElementById('mb-tax').value) || 0),
+      tax_amount:     parseFloat(document.getElementById('mb-tax').value) || 0,
+      total_amount:   amount,
+      notes:          document.getElementById('mb-notes').value,
+      post_journal:   true
     })
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok){alert('✓ Saved as new document (ID: '+res.document_id+')');resetUpload();}
-    else alert('Error: '+res.error);
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    var m = document.getElementById('mb-msg');
+    m.style.display = 'block';
+    if (res.ok) {
+      m.style.background = 'rgba(16,185,129,.1)';
+      m.style.border = '1px solid rgba(16,185,129,.3)';
+      m.style.color = 'var(--mint)';
+      m.textContent = '✓ ' + vendor + ' bill saved and posted to ledger';
+      clearManualBill();
+    } else {
+      m.style.background = 'rgba(239,68,68,.1)';
+      m.style.border = '1px solid rgba(239,68,68,.3)';
+      m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + (res.error || 'Unknown error');
+    }
+    btn.disabled = false;
+    btn.textContent = '💾 Save & Post to Ledger';
   });
 }
 
-function resetUpload(){
-  document.getElementById('upload-section').style.display='block';
-  document.getElementById('processing-section').style.display='none';
-  document.getElementById('result-section').style.display='none';
-  document.getElementById('doc-file').value='';
-  document.getElementById('img-preview').innerHTML='';
-  document.getElementById('line-items-card').style.display='none';
-  document.getElementById('line-items-body').innerHTML='';
-  document.getElementById('inventory-confirm').style.display='none';
+function clearManualBill() {
+  ['mb-vendor','mb-invnum','mb-notes'].forEach(function(id) {
+    document.getElementById(id).value = '';
+  });
+  ['mb-amount','mb-tax','mb-date','mb-due'].forEach(function(id) {
+    document.getElementById(id).value = '';
+  });
+  var m = document.getElementById('mb-msg');
+  m.style.display = 'none';
+}
+
+// ── CSV import ────────────────────────────────────────────────────────────
+function importBillsCSV() {
+  var csv = document.getElementById('bills-csv').value.trim();
+  if (!csv) { alert('Paste your CSV content first'); return; }
+  var btn = document.getElementById('csv-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing...';
+  fetch('/api/bills/import-csv', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({csv_text: csv})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(res) {
+    var m = document.getElementById('bills-csv-msg');
+    m.style.display = 'block';
+    if (res.ok) {
+      m.style.background = 'rgba(16,185,129,.1)';
+      m.style.border = '1px solid rgba(16,185,129,.3)';
+      m.style.color = 'var(--mint)';
+      m.textContent = '✓ ' + res.message + (res.errors && res.errors.length ? ' | ' + res.errors.length + ' warning(s)' : '');
+    } else {
+      m.style.background = 'rgba(239,68,68,.1)';
+      m.style.border = '1px solid rgba(239,68,68,.3)';
+      m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + res.error;
+    }
+    btn.disabled = false;
+    btn.textContent = '📥 Import Bills';
+  });
 }
 </script>
 {% endblock %}
