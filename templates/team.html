@@ -112,7 +112,16 @@ function sendInvite() {
     var m=document.getElementById('inv-msg');m.style.display='block';
     if(res.ok){
       m.style.color='var(--mint)';
-      m.textContent='✓ '+res.message+(res.email_sent?' — email sent':' — share login link manually');
+      m.textContent='✓ '+res.message;
+      if(res.show_link && res.invite_url){
+        // Email failed — show link to copy manually
+        m.innerHTML = '✓ '+res.message+'<br><br>'+
+          '<strong>Share this link with '+document.getElementById('inv-email').value+':</strong><br>'+
+          '<span style="font-family:monospace;font-size:11px;word-break:break-all;color:var(--text)">'+res.invite_url+'</span>'+
+          '<button onclick="navigator.clipboard&&navigator.clipboard.writeText(''+res.invite_url+'').then(function(){alert('Copied!');})" '+
+          'style="margin-left:8px;padding:3px 8px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:4px;background:var(--surface2);color:var(--text)">Copy</button>';
+        return; // Don't close modal so they can copy the link
+      }
       setTimeout(()=>{closeModal('invite-modal');location.reload();},1800);
     } else {
       m.style.color='var(--red)';m.textContent='Error: '+res.error;

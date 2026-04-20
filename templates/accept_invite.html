@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Accept Invitation — LEDGR</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0a0e17;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.card{background:#111827;border:1px solid #1f2d45;border-radius:14px;padding:32px;width:100%;max-width:420px}
+.brand{font-size:24px;font-weight:800;color:#10b981;letter-spacing:-1px;margin-bottom:4px}
+.brand span{color:#e2e8f0}
+.sub{font-size:10px;color:#4a6080;text-transform:uppercase;letter-spacing:.1em;margin-bottom:28px}
+h2{font-size:18px;font-weight:700;color:#e2e8f0;margin-bottom:8px}
+.invite-info{background:#0a0e17;border-radius:8px;padding:12px 14px;margin-bottom:20px;font-size:13px;color:#8899aa;line-height:1.7}
+.invite-info strong{color:#e2e8f0}
+.label{font-size:10px;font-weight:600;color:#4a6080;text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.field{margin-bottom:14px}
+input{width:100%;padding:10px 12px;background:#0a0e17;border:1px solid #1f2d45;border-radius:8px;color:#e2e8f0;font-size:13px;outline:none;transition:border .15s}
+input:focus{border-color:#10b981}
+.btn{width:100%;padding:12px;background:#10b981;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;margin-top:4px}
+.btn:hover{background:#059669}
+.btn:disabled{opacity:.6;cursor:not-allowed}
+.msg{display:none;margin-top:12px;padding:10px 12px;border-radius:7px;font-size:12px;text-align:center}
+.role-badge{display:inline-block;padding:3px 10px;background:rgba(16,185,129,.15);color:#10b981;border-radius:20px;font-size:11px;font-weight:600;margin-left:6px}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="brand">L<span>EDGR</span></div>
+  <div class="sub">Business Financial OS</div>
+
+  <h2>You're invited! 🎉</h2>
+  <div class="invite-info">
+    <strong>{{ business.display_name() }}</strong> has invited you to join their team on LEDGR
+    as <span class="role-badge">{{ invite.role.title() }}</span>
+  </div>
+
+  <div class="field">
+    <div class="label">Your Full Name *</div>
+    <input type="text" id="inv-name" placeholder="e.g. Ahmed Ali" autocomplete="name">
+  </div>
+  <div class="field">
+    <div class="label">Email</div>
+    <input type="email" value="{{ invite.email }}" readonly style="color:#4a6080">
+  </div>
+  <div class="field">
+    <div class="label">Create Password *</div>
+    <input type="password" id="inv-pw" placeholder="At least 6 characters" autocomplete="new-password">
+  </div>
+  <div class="field">
+    <div class="label">Confirm Password *</div>
+    <input type="password" id="inv-pw2" placeholder="Repeat password" autocomplete="new-password">
+  </div>
+
+  <button class="btn" id="accept-btn" onclick="acceptInvite()">Join {{ business.display_name() }} →</button>
+  <div class="msg" id="accept-msg"></div>
+</div>
+
+<script>
+function acceptInvite() {
+  var name = document.getElementById('inv-name').value.trim();
+  var pw   = document.getElementById('inv-pw').value;
+  var pw2  = document.getElementById('inv-pw2').value;
+  var btn  = document.getElementById('accept-btn');
+  var msg  = document.getElementById('accept-msg');
+
+  if (!name) { showMsg('Name required', false); return; }
+  if (pw.length < 6) { showMsg('Password must be at least 6 characters', false); return; }
+  if (pw !== pw2) { showMsg('Passwords do not match', false); return; }
+
+  btn.disabled = true; btn.textContent = 'Setting up your account...';
+
+  fetch('/api/accept-invite/{{ token }}', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name: name, password: pw})
+  })
+  .then(r => r.json())
+  .then(res => {
+    if (res.ok) {
+      showMsg('✓ ' + res.message + ' Redirecting...', true);
+      setTimeout(function() { window.location.href = res.redirect || '/dashboard'; }, 1500);
+    } else {
+      showMsg('Error: ' + res.error, false);
+      btn.disabled = false;
+      btn.textContent = 'Join {{ business.display_name() }} →';
+    }
+  });
+}
+
+function showMsg(text, ok) {
+  var m = document.getElementById('accept-msg');
+  m.style.display = 'block';
+  m.style.background = ok ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)';
+  m.style.color = ok ? '#10b981' : '#ef4444';
+  m.textContent = text;
+}
+
+document.getElementById('inv-name').focus();
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') acceptInvite();
+});
+</script>
+</body>
+</html>
