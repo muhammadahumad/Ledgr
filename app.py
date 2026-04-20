@@ -1081,6 +1081,21 @@ class TaxRuleOverride(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_by = db.Column(db.String(100))
 
+
+class UserInvite(db.Model):
+    """Pending team invitations with secure tokens"""
+    __tablename__ = 'user_invites'
+    id           = db.Column(db.Integer, primary_key=True)
+    business_id  = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
+    invited_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    email        = db.Column(db.String(200), nullable=False)
+    role         = db.Column(db.String(30), default='staff')
+    token        = db.Column(db.String(100), unique=True, nullable=False)
+    accepted     = db.Column(db.Boolean, default=False)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+    expires_at   = db.Column(db.DateTime)
+    business     = db.relationship('Business', backref='invites')
+
 with app.app_context():
     try:
         db.create_all()
@@ -4927,64 +4942,112 @@ def team():
 @app.route("/api/team/invite", methods=["POST"])
 @login_required
 def api_team_invite():
-    """Invite a user to the business by email"""
+    """Invite a user to the business — generates secure token + sends proper email"""
+    user = current_user()
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
     email = (data.get("email") or "").strip().lower()
-    role = data.get("role","staff")
-    if not email: return jsonify({"ok":False,"error":"Email required"})
-    if role not in ["owner","accountant","hr","sales","warehouse","readonly"]:
+    role  = data.get("role","staff")
+    if not email:
+        return jsonify({"ok":False,"error":"Email required"})
+    if role not in ["owner","accountant","hr","sales","warehouse","readonly","staff"]:
         return jsonify({"ok":False,"error":"Invalid role"})
-    # Check if user exists
-    invited_user = User.query.filter_by(email=email).first()
-    if not invited_user:
-        # Create a placeholder account — they set password on first login
-        import secrets
-        temp_pw = secrets.token_urlsafe(16)
-        invited_user = User(
-            name=email.split("@")[0].title(),
-            email=email,
-            password_hash=generate_password_hash(temp_pw),
-            role=role,
-            business_id=business.id
-        )
-        db.session.add(invited_user)
-        db.session.flush()
+
     # Check if already a member
-    existing = UserBusiness.query.filter_by(
-        user_id=invited_user.id, business_id=business.id).first()
-    if existing:
-        existing.role = role
-        db.session.commit()
-        return jsonify({"ok":True,"message":"Role updated for " + email})
-    # Add to business
-    ub = UserBusiness(user_id=invited_user.id, business_id=business.id, role=role)
-    db.session.add(ub)
+    existing_user = User.query.filter_by(email=email).first()
+    if existing_user:
+        existing_ub = UserBusiness.query.filter_by(
+            user_id=existing_user.id, business_id=business.id).first()
+        if existing_ub:
+            existing_ub.role = role
+            db.session.commit()
+            return jsonify({"ok":True,
+                "message":f"{email} is already a member — role updated to {role.title()}"})
+
+    # Generate secure invite token (expires in 7 days)
+    token = secrets.token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(days=7)
+
+    # Remove any existing pending invite for this email+business
+    UserInvite.query.filter_by(
+        email=email, business_id=business.id, accepted=False
+    ).delete()
+
+    invite = UserInvite(
+        business_id=business.id,
+        invited_by=user.id,
+        email=email,
+        role=role,
+        token=token,
+        expires_at=expires
+    )
+    db.session.add(invite)
     db.session.commit()
-    # Send invite email if SMTP configured
-    invite_url = "https://ledgrglobal.com/login?email=" + email
+
+    invite_url = f"https://ledgrglobal.com/accept-invite/{token}"
+
+    # Build HTML email
+    html_body = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:500px;margin:0 auto;background:#f8fafc;padding:32px 16px">
+      <div style="background:#fff;border-radius:12px;padding:32px;border:1px solid #e2e8f0">
+        <div style="font-size:24px;font-weight:800;color:#10b981;letter-spacing:-1px;margin-bottom:4px">LEDGR</div>
+        <div style="font-size:11px;color:#94a3b8;margin-bottom:24px;text-transform:uppercase;letter-spacing:.1em">Business Financial OS</div>
+        <h2 style="font-size:18px;color:#1a202c;margin:0 0 12px">You've been invited!</h2>
+        <p style="color:#475569;font-size:14px;line-height:1.7;margin:0 0 16px">
+          <strong>{user.name or user.email}</strong> has invited you to join
+          <strong>{business.display_name()}</strong> on LEDGR as <strong>{role.title()}</strong>.
+        </p>
+        <a href="{invite_url}" style="display:inline-block;background:#10b981;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;margin:8px 0 20px">
+          Accept Invitation →
+        </a>
+        <p style="color:#94a3b8;font-size:12px;margin:0 0 4px">This link expires in 7 days.</p>
+        <p style="color:#94a3b8;font-size:12px;margin:0">Or copy this link:<br>
+          <span style="color:#0369a1;word-break:break-all">{invite_url}</span>
+        </p>
+        <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0">
+        <p style="color:#94a3b8;font-size:11px;margin:0">
+          LEDGR Global · ledgrglobal.com<br>
+          If you weren't expecting this invitation, you can ignore this email.
+        </p>
+      </div>
+    </div>"""
+
+    plain_body = (
+        f"Hi,\n\n"
+        f"{user.name or user.email} has invited you to join {business.display_name()} "
+        f"on LEDGR as {role.title()}.\n\n"
+        f"Accept your invitation here:\n{invite_url}\n\n"
+        f"This link expires in 7 days.\n\n"
+        f"LEDGR Global — ledgrglobal.com"
+    )
+
     email_sent = send_email_via_smtp(
         business=business,
         to_email=email,
-        subject="You have been invited to " + business.display_name() + " on LEDGR",
-        body=f"""Hi,
-
-You have been invited to join {business.display_name()} on LEDGR as {role.title()}.
-
-Log in at: {invite_url}
-
-If you don't have an account yet, register with this email address at https://ledgrglobal.com/register
-
-LEDGR Global
-"""
+        subject=f"You're invited to join {business.display_name()} on LEDGR",
+        body=plain_body,
+        html_body=html_body
     )
-    return jsonify({
-        "ok":True,
-        "message":"Invitation sent to " + email,
-        "email_sent":email_sent,
-        "invite_url":invite_url
-    })
+
+    response = {
+        "ok": True,
+        "email_sent": email_sent,
+        "invite_url": invite_url,
+        "token": token,
+    }
+
+    if email_sent:
+        response["message"] = f"Invitation email sent to {email}"
+    else:
+        response["message"] = (
+            f"Invitation created but email could not be sent "
+            f"(check SMTP settings in Settings). "
+            f"Share this link manually: {invite_url}"
+        )
+        response["show_link"] = True
+
+    return jsonify(response)
 
 
 @app.route("/api/team/member/<int:mid>/role", methods=["POST"])
@@ -6475,6 +6538,90 @@ def migration_dashboard():
         total_bills=total_bills, ob_entry=ob_entry,
         year_close=year_close,
         total_customers=total_customers, total_suppliers=total_suppliers)
+
+
+
+
+@app.route("/accept-invite/<token>")
+def accept_invite(token):
+    """Public page — invited user sets password and joins the business"""
+    invite = UserInvite.query.filter_by(token=token, accepted=False).first()
+    if not invite:
+        return render_template("invite_invalid.html",
+            reason="This invitation link is invalid or has already been used.")
+    if invite.expires_at and datetime.utcnow() > invite.expires_at:
+        return render_template("invite_invalid.html",
+            reason="This invitation link has expired. Ask to be re-invited.")
+    business = Business.query.get(invite.business_id)
+    return render_template("accept_invite.html",
+        invite=invite, business=business, token=token)
+
+
+@app.route("/api/accept-invite/<token>", methods=["POST"])
+def api_accept_invite(token):
+    """Process invite acceptance — create account or link existing"""
+    invite = UserInvite.query.filter_by(token=token, accepted=False).first()
+    if not invite:
+        return jsonify({"ok":False,"error":"Invalid or expired invitation"})
+    if invite.expires_at and datetime.utcnow() > invite.expires_at:
+        return jsonify({"ok":False,"error":"Invitation has expired"})
+
+    data = request.get_json()
+    name     = (data.get("name") or "").strip()
+    password = data.get("password","")
+
+    if not name: return jsonify({"ok":False,"error":"Name required"})
+    if len(password) < 6:
+        return jsonify({"ok":False,"error":"Password must be at least 6 characters"})
+
+    # Check if user already exists
+    user = User.query.filter_by(email=invite.email).first()
+    if user:
+        # Update name if provided
+        if name: user.name = name
+        if password: user.password_hash = generate_password_hash(password)
+    else:
+        # Create new user
+        user = User(
+            email=invite.email,
+            name=name,
+            password_hash=generate_password_hash(password),
+            plan='free'
+        )
+        db.session.add(user)
+        db.session.flush()
+
+    # Link to business
+    existing_ub = UserBusiness.query.filter_by(
+        user_id=user.id, business_id=invite.business_id).first()
+    if not existing_ub:
+        ub = UserBusiness(
+            user_id=user.id,
+            business_id=invite.business_id,
+            role=invite.role
+        )
+        db.session.add(ub)
+
+    # Mark invite accepted
+    invite.accepted = True
+    db.session.commit()
+
+    # Auto-login
+    business = Business.query.get(invite.business_id)
+    session.permanent = True
+    session['user_id']        = user.id
+    session['user_name']      = user.name
+    session['user_email']     = user.email
+    session['plan']           = user.plan.title()
+    session['business_id']    = business.id
+    session['current_business_id'] = business.id
+    session['business_name']  = business.name
+
+    return jsonify({
+        "ok": True,
+        "redirect": "/dashboard",
+        "message": f"Welcome to {business.display_name()}, {user.name}!"
+    })
 
 
 
