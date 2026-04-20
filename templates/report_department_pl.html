@@ -1,0 +1,141 @@
+{% extends "base.html" %}{% block title %}Department P&L — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Department P&L</div>
+  <div class="page-sub">Income and expenses by department / cost centre</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="openModal('new-dept-modal')">+ Department</button>
+    <a href="/reports" class="btn">← Reports</a>
+  </div>
+</div>
+<div class="content">
+
+  {% if not departments %}
+  <div class="card" style="text-align:center;padding:50px">
+    <div style="font-size:36px;margin-bottom:12px">🏢</div>
+    <div style="font-weight:600;color:var(--text2);margin-bottom:6px">No departments set up</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:16px">
+      Create departments to track P&L by division — e.g. Sales, Operations, Marketing, F&B, Rooms
+    </div>
+    <button class="btn btn-primary" onclick="openModal('new-dept-modal')">Create First Department</button>
+  </div>
+  {% else %}
+
+  <!-- Summary -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
+    {% set total_dept_rev = departments|sum(attribute='revenue') %}
+    {% set total_dept_exp = departments|sum(attribute='expenses') %}
+    <div class="stat-card"><div class="stat-label">Departments</div><div class="stat-value">{{ departments|length }}</div></div>
+    <div class="stat-card" style="border-color:rgba(16,185,129,.3)"><div class="stat-label">Tagged Revenue</div><div class="stat-value" style="font-size:18px;color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(total_dept_rev) }}</div></div>
+    <div class="stat-card" style="border-color:rgba(239,68,68,.2)"><div class="stat-label">Tagged Expenses</div><div class="stat-value" style="font-size:18px;color:var(--red)">{{ tax.currency }} {{ "%.0f"|format(total_dept_exp) }}</div></div>
+    <div class="stat-card"><div class="stat-label">Net Profit (Tagged)</div>
+      <div class="stat-value" style="font-size:18px;color:{% if total_dept_rev - total_dept_exp >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+        {{ tax.currency }} {{ "%.0f"|format(total_dept_rev - total_dept_exp) }}
+      </div>
+    </div>
+  </div>
+
+  <!-- Department table -->
+  <div class="card" style="padding:0;margin-bottom:14px">
+    <table class="table">
+      <thead><tr>
+        <th>Department</th><th>Code</th>
+        <th style="text-align:right">Revenue</th>
+        <th style="text-align:right">Expenses</th>
+        <th style="text-align:right">Net Profit</th>
+        <th style="text-align:right">Margin</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+      {% for d in departments %}
+      <tr>
+        <td style="font-weight:600;color:var(--text)">{{ d.dept.name }}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ d.dept.code }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--mint);font-weight:600">{{ tax.currency }} {{ "%.2f"|format(d.revenue) }}</td>
+        <td style="text-align:right;font-family:var(--mono);color:var(--red)">{{ tax.currency }} {{ "%.2f"|format(d.expenses) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:{% if d.profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+          {{ tax.currency }} {{ "%.2f"|format(d.profit) }}
+        </td>
+        <td style="text-align:right;color:{% if d.margin > 20 %}var(--mint){% elif d.margin > 0 %}var(--amber){% else %}var(--red){% endif %}">
+          {{ d.margin }}%
+        </td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <a href="/invoices?dept={{ d.dept.id }}" class="btn btn-sm">Invoices</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Visual bars -->
+  <div class="card">
+    <div class="card-title">Revenue vs Expenses by Department</div>
+    {% for d in departments %}
+    {% set max_val = departments|map(attribute='revenue')|max %}
+    {% set bar_rev = (d.revenue / max_val * 100)|round if max_val > 0 else 0 %}
+    {% set bar_exp = (d.expenses / max_val * 100)|round if max_val > 0 else 0 %}
+    <div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span style="font-weight:500;color:var(--text)">{{ d.dept.name }}</span>
+        <span style="font-family:var(--mono);color:{% if d.profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+          {{ tax.currency }} {{ "%.0f"|format(d.profit) }}
+        </span>
+      </div>
+      <div style="background:var(--bg);border-radius:4px;height:8px;margin-bottom:2px;overflow:hidden">
+        <div style="background:var(--mint);height:100%;width:{{ bar_rev }}%;border-radius:4px;transition:width .3s"></div>
+      </div>
+      <div style="background:var(--bg);border-radius:4px;height:6px;overflow:hidden">
+        <div style="background:rgba(239,68,68,.6);height:100%;width:{{ bar_exp }}%;border-radius:4px;transition:width .3s"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:2px">
+        <span style="color:var(--mint)">▪ Revenue {{ tax.currency }} {{ "%.0f"|format(d.revenue) }}</span>
+        <span style="margin-left:12px;color:var(--red)">▪ Expenses {{ tax.currency }} {{ "%.0f"|format(d.expenses) }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="background:var(--surface2);border-radius:8px;padding:12px;font-size:11px;color:var(--text3);margin-top:8px">
+    💡 To tag transactions to departments: when creating invoices, select the department. For expenses, assign department in the journal entry. Data shown reflects tagged transactions only.
+  </div>
+
+  {% endif %}
+</div>
+
+<!-- New Department Modal -->
+<div id="new-dept-modal" class="modal-overlay">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">New Department <button class="modal-close" onclick="closeModal('new-dept-modal')">×</button></div>
+    <div class="field-group"><div class="field-label">Department Name *</div>
+      <input class="field-input" id="dept-name" placeholder="e.g. Sales, Operations, F&B, Rooms"></div>
+    <div class="field-group"><div class="field-label">Code (short)</div>
+      <input class="field-input" id="dept-code" placeholder="e.g. SALES, OPS, FB" style="text-transform:uppercase"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-primary" onclick="createDept()">Create</button>
+      <button class="btn" onclick="closeModal('new-dept-modal')">Cancel</button>
+    </div>
+    <div id="dept-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+function createDept() {
+  var name = document.getElementById('dept-name').value.trim();
+  if (!name) { alert('Name required'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Creating...';
+  fetch('/api/department/create', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({name:name, code:document.getElementById('dept-code').value.toUpperCase()})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok){closeModal('new-dept-modal');location.reload();}
+    else{
+      var m=document.getElementById('dept-msg');m.style.display='block';
+      m.style.color='var(--red)';m.textContent='Error: '+res.error;
+      btn.disabled=false;btn.textContent='Create';
+    }
+  });
+}
+</script>{% endblock %}

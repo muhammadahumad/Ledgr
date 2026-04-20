@@ -14,6 +14,7 @@
     <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='SENT' %}blue{% else %}gray{% endif %}">{{ inv.status }}</span></td>
     <td style="display:flex;gap:4px;flex-wrap:wrap">
       <a href="/invoice/{{ inv.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
+      <button class="btn btn-sm" data-action="setrecur" data-id="{{ inv.id }}" data-recur="{{ 'true' if inv.is_recurring else 'false' }}" data-interval="{{ inv.recur_interval or 'monthly' }}" style="{% if inv.is_recurring %}color:var(--mint);border-color:var(--mint){% endif %}">🔄{% if inv.is_recurring %} {{ inv.recur_interval|title }}{% else %} Recur{% endif %}</button>
       <button class="btn btn-sm" data-action="paylink" data-id="{{ inv.id }}" style="color:var(--mint);border-color:var(--mint)">💳 Pay Link</button>
       {% if inv.status != 'PAID' %}
       <button class="btn btn-sm btn-primary"
@@ -74,6 +75,25 @@ document.addEventListener('click', function(e) {
   var email = btn.dataset.email || '';
   if (action === 'markpaid') { markPaid(id); }
   else if (action === 'paylink') { generatePayLink(id); }
+  else if (action === 'setrecur') {
+    var isRecur = btn.dataset.recur === 'true';
+    if (isRecur) {
+      if (confirm('Stop recurring for this invoice?')) {
+        fetch('/api/invoice/'+id+'/stop-recurring', {method:'POST'})
+          .then(r=>r.json()).then(res=>{if(res.ok)location.reload();else alert(res.error);});
+      }
+    } else {
+      var interval = prompt('Recurring interval:\nweekly / monthly / quarterly / yearly', 'monthly');
+      if (!interval) return;
+      fetch('/api/invoice/'+id+'/set-recurring', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({interval: interval.toLowerCase()})
+      }).then(r=>r.json()).then(res=>{
+        if(res.ok){alert('✓ '+res.message);location.reload();}
+        else alert('Error: '+res.error);
+      });
+    }
+  }
   else if (action === 'delinv') { deleteInv(id, num); }
   else if (action === 'creditnote') { issueCreditNote(id, amount, num); }
   else if (action === 'debitnote') { issueDebitNote(id, num); }
