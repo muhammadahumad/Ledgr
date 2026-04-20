@@ -1153,7 +1153,7 @@ def api_business_guard():
         return None, jsonify({'ok':False,'error':'No business selected. Please create or select a business.'})
     return b, None
 
-def post_journal(business_id, user_id, description, reference, entry_type, lines, document_id=None):
+def post_journal(business_id, user_id, description, reference, entry_type, lines, document_id=None, entry_date=None):
     lines = [l for l in lines if l]
     total_d = sum(float(l.get('debit',0)) for l in lines)
     total_c = sum(float(l.get('credit',0)) for l in lines)
@@ -1161,6 +1161,8 @@ def post_journal(business_id, user_id, description, reference, entry_type, lines
         raise ValueError(f'Unbalanced: debits={total_d:.2f} credits={total_c:.2f}')
     entry = JournalEntry(business_id=business_id, description=description, reference=reference,
                          entry_type=entry_type, document_id=document_id, created_by=user_id)
+    if entry_date:
+        entry.date = datetime.combine(entry_date, datetime.min.time()) if hasattr(entry_date, 'year') else entry.date
     db.session.add(entry)
     db.session.flush()
     for l in lines:
@@ -6607,13 +6609,15 @@ def api_document_manual():
     except: pass
     total = float(data.get("total_amount",0))
     tax_amt = float(data.get("tax_amount",0))
+    notes = data.get("notes","") or data.get("description","")
     doc = Document(business_id=business.id, user_id=user.id,
                    doc_type=data.get("doc_type","BILL"), vendor_name=data.get("vendor_name",""),
                    vendor_tax_id=data.get("vendor_tax_id"), invoice_number=data.get("invoice_number",""),
                    invoice_date=inv_date, due_date=due_date,
                    currency=data.get("currency",business.base_currency),
                    subtotal=float(data.get("subtotal",0)), tax_amount=tax_amt, total_amount=total,
-                   raw_ai_data="{}", status="PROCESSED")
+                   raw_ai_data="{}", status="PROCESSED",
+                   payment_status="UNPAID" if data.get("doc_type","BILL")=="BILL" else "PAID")
     db.session.add(doc)
     db.session.flush()
     cat_map = {"Office Supplies":"5400","Utilities":"5300","Travel":"5700","Meals":"5800",
