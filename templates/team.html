@@ -100,6 +100,15 @@
 {% endblock %}
 
 {% block scripts %}<script>
+// Event delegation for data-action buttons
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  if (btn.dataset.action === 'removemember') {
+    removeMember(btn.dataset.id, btn.dataset.name);
+  }
+});
+
 function sendInvite() {
   var email = document.getElementById('inv-email').value.trim();
   var role = document.getElementById('inv-role').value;
@@ -115,12 +124,28 @@ function sendInvite() {
       m.textContent='✓ '+res.message;
       if(res.show_link && res.invite_url){
         // Email failed — show link to copy manually
-        m.innerHTML = '✓ '+res.message+'<br><br>'+
-          '<strong>Share this link with '+document.getElementById('inv-email').value+':</strong><br>'+
-          '<span style="font-family:monospace;font-size:11px;word-break:break-all;color:var(--text)">'+res.invite_url+'</span>'+
-          '<button onclick="navigator.clipboard&&navigator.clipboard.writeText(''+res.invite_url+'').then(function(){alert('Copied!');})" '+
-          'style="margin-left:8px;padding:3px 8px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:4px;background:var(--surface2);color:var(--text)">Copy</button>';
-        return; // Don't close modal so they can copy the link
+        var linkUrl = res.invite_url;
+        var email = document.getElementById('inv-email').value;
+        m.innerHTML = '<div style="margin-bottom:8px">⚠ ' + res.message + '</div>' +
+          '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">Share this link with ' + email + ':</div>' +
+          '<div id="invite-link-box" style="font-family:monospace;font-size:11px;word-break:break-all;background:var(--bg);padding:8px;border-radius:6px;border:1px solid var(--border);color:var(--text)">' + linkUrl + '</div>' +
+          '<button id="copy-inv-btn" style="margin-top:6px;padding:5px 12px;font-size:11px;cursor:pointer;border:1px solid var(--border);border-radius:5px;background:var(--surface2);color:var(--text)">📋 Copy Link</button>';
+        document.getElementById('copy-inv-btn').onclick = function() {
+          if(navigator.clipboard) {
+            navigator.clipboard.writeText(linkUrl).then(function(){ 
+              document.getElementById('copy-inv-btn').textContent = '✓ Copied!';
+            });
+          } else {
+            var box = document.getElementById('invite-link-box');
+            var sel = window.getSelection();
+            var range = document.createRange();
+            range.selectNodeContents(box);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            alert('Link selected — press Ctrl+C / Cmd+C to copy');
+          }
+        };
+        return;
       }
       setTimeout(()=>{closeModal('invite-modal');location.reload();},1800);
     } else {
