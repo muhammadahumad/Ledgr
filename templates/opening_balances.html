@@ -1,0 +1,289 @@
+{% extends "base.html" %}{% block title %}Opening Balances — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Opening Balances & Data Migration</div>
+  <div class="page-sub">Set up starting balances · Import trial balance · Migrate from previous system</div></div>
+  <a href="/settings" class="btn">← Settings</a>
+</div>
+<div class="content">
+
+  {% if existing_ob %}
+  <div style="padding:12px 16px;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:8px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:12px;color:var(--mint)">✓ Opening balances already posted on {{ existing_ob.date.strftime('%d %b %Y') }}</div>
+    <button class="btn btn-sm" onclick="showOverwrite()" style="color:var(--amber);border-color:var(--amber)">Update / Overwrite</button>
+  </div>
+  {% endif %}
+
+  <!-- Tab selector -->
+  <div style="display:flex;gap:0;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px">
+    <button onclick="showTab('manual')" id="tab-manual" class="tab-btn active" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s">✏️ Manual Entry</button>
+    <button onclick="showTab('csv')" id="tab-csv" class="tab-btn" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:transparent;color:var(--text3)">📊 CSV Import</button>
+    <button onclick="showTab('info')" id="tab-info" class="tab-btn" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;background:transparent;color:var(--text3)">ℹ️ How it works</button>
+  </div>
+
+  <!-- Manual Entry Tab -->
+  <div id="tab-manual-content">
+    <div style="margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:12px;color:var(--text3)">Enter opening debit/credit balance for each account. Debits must equal Credits.</div>
+      <div style="font-family:var(--mono);font-size:12px" id="balance-check" style="color:var(--text3)">Balance: checking...</div>
+    </div>
+    <div class="field-row" style="margin-bottom:10px">
+      <div><div class="field-label">As of Date (Year-end closing / Migration date)</div>
+        <input class="field-input" type="date" id="ob-date" value="{{ today }}"></div>
+    </div>
+
+    {% for account_type, accts in grouped.items() %}
+    <div class="card" style="padding:0;margin-bottom:10px">
+      <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">
+        {{ account_type }}
+      </div>
+      {% for a in accts %}
+      <div style="display:grid;grid-template-columns:60px 1fr 1fr 1fr;gap:8px;padding:8px 16px;border-bottom:1px solid var(--border);align-items:center" id="acct-row-{{ a.id }}">
+        <span style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ a.code }}</span>
+        <span style="font-size:12px;color:var(--text)">{{ a.name }}</span>
+        <div>
+          <div class="field-label" style="margin-bottom:2px">Debit (Dr)</div>
+          <input class="field-input ob-debit" type="number" step="0.01" value="0"
+            data-code="{{ a.code }}" data-name="{{ a.name }}" data-id="{{ a.id }}"
+            oninput="updateBalance()" style="font-size:12px;padding:5px 8px">
+        </div>
+        <div>
+          <div class="field-label" style="margin-bottom:2px">Credit (Cr)</div>
+          <input class="field-input ob-credit" type="number" step="0.01" value="0"
+            data-code="{{ a.code }}" data-name="{{ a.name }}"
+            oninput="updateBalance()" style="font-size:12px;padding:5px 8px">
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px;background:var(--surface);border-radius:10px;border:1px solid var(--border);margin-bottom:14px">
+      <div>
+        <div style="font-size:12px;font-weight:600;color:var(--text)">Trial Balance Summary</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px" id="balance-summary">Fill in balances above</div>
+      </div>
+      <div id="balance-status" style="font-size:13px;font-weight:700;color:var(--text3)">⊝ Not balanced</div>
+    </div>
+
+    <button class="btn btn-primary" onclick="postOpeningBalances(false)" id="post-ob-btn" style="padding:10px 28px">
+      Post Opening Balances
+    </button>
+    <div id="ob-msg" style="margin-top:10px;font-size:12px;display:none"></div>
+  </div>
+
+  <!-- CSV Import Tab -->
+  <div id="tab-csv-content" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">📊 Import Trial Balance from CSV</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.7">
+        Paste or type your trial balance CSV below. Expected columns:<br>
+        <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:11px">Account Code, Account Name, Debit, Credit</code><br>
+        Works with QB, Xero, Sage, Tally, and Excel exports. Column names are flexible.
+      </div>
+      <div class="field-group">
+        <div class="field-label">Paste CSV content here</div>
+        <textarea class="field-input" id="csv-input" rows="10" style="width:100%;font-family:var(--mono);font-size:11px"
+          placeholder="Account Code,Account Name,Debit,Credit
+1000,Cash on Hand,50000,0
+1010,Bank Account,250000,0
+1100,Accounts Receivable,85000,0
+2000,Accounts Payable,0,120000
+3000,Owner Equity,0,265000"></textarea>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">As of Date</div><input class="field-input" type="date" id="csv-date" value="{{ today }}"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary" onclick="parseCSV()">Parse & Preview</button>
+        <button class="btn" onclick="clearCSV()">Clear</button>
+      </div>
+    </div>
+
+    <div id="csv-preview" style="display:none">
+      <div class="card" style="padding:0;margin-bottom:14px">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <div class="card-title" style="margin:0">Preview</div>
+          <div id="csv-balance-status" style="font-size:12px;font-weight:700"></div>
+        </div>
+        <table class="table" id="csv-preview-table">
+          <thead><tr><th>Code</th><th>Account</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th></tr></thead>
+          <tbody id="csv-preview-body"></tbody>
+          <tfoot>
+            <tr style="font-weight:700;background:var(--surface2)">
+              <td colspan="2" style="padding:8px 12px">TOTAL</td>
+              <td style="text-align:right;padding:8px 12px;font-family:var(--mono)" id="csv-total-dr">0.00</td>
+              <td style="text-align:right;padding:8px 12px;font-family:var(--mono)" id="csv-total-cr">0.00</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <button class="btn btn-primary" onclick="postCSVBalances()" id="post-csv-btn" style="padding:10px 28px">Post These Opening Balances</button>
+      <div id="csv-msg" style="margin-top:10px;font-size:12px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- How it works Tab -->
+  <div id="tab-info-content" style="display:none">
+    <div class="card">
+      <div class="card-title">How Opening Balances Work in LEDGR</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.8">
+        <p style="margin-bottom:12px">Opening balances are a single journal entry that sets your starting financial position. They represent your balance sheet on a specific date — typically:</p>
+        <ul style="list-style:disc;padding-left:20px;margin-bottom:16px">
+          <li>The last day of your previous financial year (year-end close)</li>
+          <li>The date you switched from your old accounting software to LEDGR</li>
+        </ul>
+        <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:12px;margin-bottom:16px">
+          <strong style="color:var(--amber)">Important:</strong> Debits must always equal Credits. If your trial balance from your old system has a balancing retained earnings figure, include it in account 3000 (Owner Equity) or 3100 (Retained Earnings).
+        </div>
+        <p style="margin-bottom:8px"><strong style="color:var(--text)">What to include:</strong></p>
+        <ul style="list-style:disc;padding-left:20px;margin-bottom:16px">
+          <li><strong>Assets</strong> (Cash, Bank, AR, Inventory) — enter as Debit</li>
+          <li><strong>Liabilities</strong> (AP, Loans, Tax payable) — enter as Credit</li>
+          <li><strong>Equity</strong> (Owner equity, Retained earnings) — enter as Credit</li>
+          <li>Leave Revenue and Expense accounts at zero (they start fresh each year)</li>
+        </ul>
+        <p><strong style="color:var(--text)">Getting your trial balance from:</strong></p>
+        <ul style="list-style:disc;padding-left:20px">
+          <li><strong>QuickBooks:</strong> Reports → Trial Balance → Export to Excel</li>
+          <li><strong>Xero:</strong> Accounting → Reports → Trial Balance → Export CSV</li>
+          <li><strong>Tally:</strong> Gateway → Display → Trial Balance → Export</li>
+          <li><strong>Excel/Manual:</strong> Use the CSV Import tab with Account Code, Name, Debit, Credit columns</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+var currency = '{{ tax.currency }}';
+var parsedCSVBalances = [];
+
+function showTab(tab) {
+  ['manual','csv','info'].forEach(function(t) {
+    document.getElementById('tab-'+t+'-content').style.display = t===tab ? 'block' : 'none';
+    var btn = document.getElementById('tab-'+t);
+    btn.style.background = t===tab ? 'var(--mint)' : 'transparent';
+    btn.style.color = t===tab ? '#fff' : 'var(--text3)';
+  });
+}
+
+function updateBalance() {
+  var totalDr = 0, totalCr = 0;
+  document.querySelectorAll('.ob-debit').forEach(function(el){totalDr+=parseFloat(el.value)||0;});
+  document.querySelectorAll('.ob-credit').forEach(function(el){totalCr+=parseFloat(el.value)||0;});
+  var diff = Math.abs(totalDr - totalCr);
+  var balanced = diff < 0.01;
+  var status = document.getElementById('balance-status');
+  var summary = document.getElementById('balance-summary');
+  summary.textContent = 'Dr: '+currency+' '+totalDr.toFixed(2)+' | Cr: '+currency+' '+totalCr.toFixed(2)+(balanced?'':' | Diff: '+diff.toFixed(2));
+  status.textContent = balanced ? '✓ Balanced' : '✗ Not balanced (diff: '+diff.toFixed(2)+')';
+  status.style.color = balanced ? 'var(--mint)' : 'var(--red)';
+}
+
+function postOpeningBalances(overwrite) {
+  var balances = [];
+  var rows = document.querySelectorAll('[data-code]');
+  var seen = {};
+  rows.forEach(function(el) {
+    var code = el.dataset.code;
+    if (!seen[code]) { seen[code] = {debit:0, credit:0, name:el.dataset.name}; }
+    if (el.classList.contains('ob-debit')) seen[code].debit = parseFloat(el.value)||0;
+    else seen[code].credit = parseFloat(el.value)||0;
+  });
+  Object.keys(seen).forEach(function(code) {
+    var b = seen[code];
+    if (b.debit > 0 || b.credit > 0) {
+      balances.push({account_code:code, account_name:b.name, debit:b.debit, credit:b.credit});
+    }
+  });
+  if (!balances.length) { alert('Enter at least one balance'); return; }
+  var btn = document.getElementById('post-ob-btn');
+  btn.disabled = true; btn.textContent = 'Posting...';
+  fetch('/api/opening-balances/post', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({balances:balances, as_of_date:document.getElementById('ob-date').value, overwrite:overwrite})
+  }).then(r=>r.json()).then(res=>{
+    var m = document.getElementById('ob-msg');
+    m.style.display = 'block';
+    if (res.ok) {
+      m.style.color='var(--mint)';
+      m.textContent = '✓ '+res.message;
+      btn.textContent='Posted ✓';
+    } else if (res.has_existing) {
+      if (confirm('Opening balances already exist from '+res.existing_date+'.\n\nOverwrite with new balances?')) {
+        btn.disabled=false;btn.textContent='Post Opening Balances';
+        postOpeningBalances(true);
+      } else { btn.disabled=false;btn.textContent='Post Opening Balances'; }
+    } else {
+      m.style.color='var(--red)';
+      m.textContent = 'Error: '+res.error;
+      btn.disabled=false; btn.textContent='Post Opening Balances';
+    }
+  });
+}
+
+function parseCSV() {
+  var csv = document.getElementById('csv-input').value.trim();
+  if (!csv) { alert('Paste CSV content first'); return; }
+  fetch('/api/opening-balances/import-csv', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({csv_text:csv})
+  }).then(r=>r.json()).then(res=>{
+    if (!res.ok) { alert('Error: '+res.error); return; }
+    parsedCSVBalances = res.balances;
+    var tbody = document.getElementById('csv-preview-body');
+    tbody.innerHTML = res.balances.map(function(b){
+      return '<tr><td style="font-family:var(--mono);font-size:11px">'+b.account_code+'</td><td style="font-size:12px">'+b.account_name+'</td><td style="text-align:right;font-family:var(--mono)">'+(b.debit>0?b.debit.toFixed(2):'')+'</td><td style="text-align:right;font-family:var(--mono)">'+(b.credit>0?b.credit.toFixed(2):'')+'</td></tr>';
+    }).join('');
+    document.getElementById('csv-total-dr').textContent = res.total_debit.toFixed(2);
+    document.getElementById('csv-total-cr').textContent = res.total_credit.toFixed(2);
+    var diff = Math.abs(res.total_debit - res.total_credit);
+    var bs = document.getElementById('csv-balance-status');
+    bs.textContent = diff < 0.01 ? '✓ Balanced — '+res.count+' accounts' : '✗ Not balanced (diff: '+diff.toFixed(2)+')';
+    bs.style.color = diff < 0.01 ? 'var(--mint)' : 'var(--red)';
+    document.getElementById('csv-preview').style.display='block';
+    if (res.errors.length) alert('Warnings:\n'+res.errors.join('\n'));
+  });
+}
+
+function clearCSV() {
+  document.getElementById('csv-input').value='';
+  document.getElementById('csv-preview').style.display='none';
+  parsedCSVBalances=[];
+}
+
+function postCSVBalances() {
+  if (!parsedCSVBalances.length) { alert('Parse CSV first'); return; }
+  var btn = document.getElementById('post-csv-btn');
+  btn.disabled=true; btn.textContent='Posting...';
+  fetch('/api/opening-balances/post', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({balances:parsedCSVBalances, as_of_date:document.getElementById('csv-date').value, overwrite:false})
+  }).then(r=>r.json()).then(res=>{
+    var m = document.getElementById('csv-msg');
+    m.style.display='block';
+    if (res.ok) {
+      m.style.color='var(--mint)'; m.textContent='✓ '+res.message;
+      btn.textContent='Posted ✓';
+    } else if (res.has_existing) {
+      if (confirm('Opening balances exist from '+res.existing_date+'. Overwrite?')) {
+        fetch('/api/opening-balances/post', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({balances:parsedCSVBalances, as_of_date:document.getElementById('csv-date').value, overwrite:true})
+        }).then(r=>r.json()).then(res2=>{
+          if(res2.ok){m.style.color='var(--mint)';m.textContent='✓ '+res2.message;btn.textContent='Posted ✓';}
+          else{m.style.color='var(--red)';m.textContent='Error: '+res2.error;btn.disabled=false;btn.textContent='Post';}
+        });
+      } else { btn.disabled=false; btn.textContent='Post These Opening Balances'; }
+    } else {
+      m.style.color='var(--red)'; m.textContent='Error: '+res.error;
+      btn.disabled=false; btn.textContent='Post These Opening Balances';
+    }
+  });
+}
+
+// Init
+updateBalance();
+</script>{% endblock %}

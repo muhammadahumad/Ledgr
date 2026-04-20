@@ -6,6 +6,13 @@
   <div style="font-size:11px;color:var(--text3)">{{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }} uploads remaining</div>
 </div>
 <div class="content" style="max-width:720px">
+  <!-- Upload tabs -->
+  <div style="display:flex;gap:0;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px">
+    <button onclick="showUploadTab('scan')" id="utab-scan" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--mint);color:#fff">📷 Scan / Upload</button>
+    <button onclick="showUploadTab('manual')" id="utab-manual" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">✏️ Manual Entry</button>
+    <button onclick="showUploadTab('csv')" id="utab-csv" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">📊 Bulk CSV</button>
+  </div>
+  <div id="utab-scan-content">
   <div id="upload-section">
     <div class="upload-zone" id="drop-zone" onclick="document.getElementById('doc-file').click()" ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropFile(event)">
       <div style="font-size:36px;margin-bottom:12px;opacity:.6">↑</div>
@@ -141,6 +148,13 @@ function processFile(file){
   reader.readAsDataURL(file);
 }
 function showResult(res){
+  // Handle bank statement detection — redirect to bank page
+  if(res.is_bank_statement){
+    var go=confirm('This looks like a bank statement.\n\nBank statements should be uploaded from the Bank page for proper processing with GL account assignment.\n\nGo to Bank page now?');
+    if(go) window.location.href='/bank';
+    else resetUpload();
+    return;
+  }
   // Handle duplicate detection
   if(res.duplicate){
     var msg='⚠ Possible duplicate detected!\n\n'+res.duplicate_vendor+'\nPreviously uploaded: '+res.duplicate_date+'\nAmount: '+fmt(res.duplicate_amount)+'\n\nDo you want to save this as a new document anyway?';
