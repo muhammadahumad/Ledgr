@@ -1,0 +1,279 @@
+{% extends "base.html" %}{% block title %}Data Migration — LEDGR{% endblock %}{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">📦 Data Migration Centre</div>
+    <div class="page-sub">Migrate historical data · Import transactions · Year-end closing</div>
+  </div>
+  <div style="font-size:11px;color:var(--text3)">{{ business.display_name() }}</div>
+</div>
+<div class="content">
+
+  <!-- Progress tracker -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">Migration Progress — {{ business.display_name() }}</div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:4px">
+      {% set steps = [
+        ('1', 'Opening Balance', ob_entry is not none, '/setup/opening-balances'),
+        ('2', 'Import Invoices', total_invoices > 0, '#tab-invoices'),
+        ('3', 'Import Bills', total_bills > 0, '#tab-bills'),
+        ('4', 'Customers & Suppliers', total_customers > 0 or total_suppliers > 0, '/customers'),
+        ('5', 'Year-End Close', year_close is not none, '#year-end'),
+      ] %}
+      {% for num, label, done, link in steps %}
+      <a href="{{ link }}" style="text-decoration:none">
+        <div style="text-align:center;padding:12px 8px;border-radius:10px;border:1px solid {% if done %}rgba(16,185,129,.3){% else %}var(--border){% endif %};background:{% if done %}rgba(16,185,129,.06){% else %}var(--surface){% endif %}">
+          <div style="font-size:20px;margin-bottom:4px">{% if done %}✅{% else %}⬜{% endif %}</div>
+          <div style="font-size:10px;font-weight:700;color:{% if done %}var(--mint){% else %}var(--text3){% endif %}">Step {{ num }}</div>
+          <div style="font-size:11px;color:var(--text2);margin-top:2px">{{ label }}</div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="stat-card"><div class="stat-label">Invoices</div><div class="stat-value">{{ total_invoices }}</div><div class="stat-sub">{{ migrated_inv }} migrated</div></div>
+    <div class="stat-card"><div class="stat-label">Bills / Expenses</div><div class="stat-value">{{ total_bills }}</div></div>
+    <div class="stat-card"><div class="stat-label">Customers</div><div class="stat-value">{{ total_customers }}</div></div>
+    <div class="stat-card"><div class="stat-label">Suppliers</div><div class="stat-value">{{ total_suppliers }}</div></div>
+  </div>
+
+  <!-- Tab bar -->
+  <div style="display:flex;gap:2px;margin-bottom:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px">
+    <button onclick="mTab('invoices')" id="mt-invoices" style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--mint);color:#fff">🧾 Invoices CSV</button>
+    <button onclick="mTab('bills')"    id="mt-bills"    style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">📄 Bills CSV</button>
+    <button onclick="mTab('yearend')"  id="mt-yearend"  style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">📅 Year-End Close</button>
+    <button onclick="mTab('guide')"    id="mt-guide"    style="flex:1;padding:8px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3)">📖 Guide</button>
+  </div>
+
+  <!-- INVOICES CSV TAB -->
+  <div id="mt-invoices-content">
+    <div class="card">
+      <div class="card-title">🧾 Import Sales Invoices from CSV</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.8">
+        Import all historical invoices. New customers are auto-created. Paid invoices post payment journals automatically.<br>
+        <strong style="color:var(--text)">Flexible columns</strong> — works with QuickBooks, Xero, Tally, Wave, Excel exports.
+      </div>
+      <div style="background:var(--bg);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--text3)">
+        <strong style="color:var(--text)">Supported columns (any order, flexible names):</strong><br>
+        Customer · Invoice Number · Date · Due Date · Total · Subtotal · Tax · Status · Amount Paid · Currency · Notes
+      </div>
+      <div class="field-group">
+        <div class="field-label">Paste CSV content</div>
+        <textarea id="inv-csv" rows="10" class="field-input" style="width:100%;font-family:monospace;font-size:11px;resize:vertical"
+placeholder="Customer,Invoice Number,Date,Due Date,Total,Tax,Status,Amount Paid
+Akira &amp; Co,INV-2025-001,2025-01-15,2025-02-15,15000,1200,PAID,15000
+Ocean Resort,INV-2025-002,2025-01-20,2025-02-20,8500,680,SENT,0
+Blue Lagoon Ltd,INV-2025-003,2025-02-01,2025-03-01,22000,1760,PARTIAL,10000"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <button class="btn btn-primary" id="inv-import-btn" onclick="importInvoices()">📥 Import Invoices</button>
+        <button class="btn" onclick="document.getElementById('inv-csv').value=''">Clear</button>
+        <span style="font-size:11px;color:var(--text3)">Each row = 1 invoice + auto journal entry</span>
+      </div>
+      <div id="inv-msg" style="margin-top:10px;font-size:12px;padding:10px 12px;border-radius:7px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- BILLS CSV TAB -->
+  <div id="mt-bills-content" style="display:none">
+    <div class="card">
+      <div class="card-title">📄 Import Supplier Bills from CSV</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.8">
+        Import all historical supplier bills and expenses.
+      </div>
+      <div class="field-group">
+        <div class="field-label">Paste CSV content</div>
+        <textarea id="bills-csv2" rows="10" class="field-input" style="width:100%;font-family:monospace;font-size:11px;resize:vertical"
+placeholder="Vendor,Invoice Number,Date,Amount,Type
+Island Supplies Ltd,INV-S-001,2025-01-10,5400,BILL
+STELCO,ELEC-JAN25,2025-01-31,2800,EXPENSE
+STO Trading,PO-2025-015,2025-02-05,18000,BILL"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button class="btn btn-primary" id="bills-import-btn" onclick="importBills()">📥 Import Bills</button>
+        <button class="btn" onclick="document.getElementById('bills-csv2').value=''">Clear</button>
+      </div>
+      <div id="bills-msg2" style="margin-top:10px;font-size:12px;padding:10px 12px;border-radius:7px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- YEAR-END CLOSE TAB -->
+  <div id="mt-yearend-content" style="display:none" id="year-end">
+    <div class="card">
+      <div class="card-title">📅 Year-End Closing Journal</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.8">
+        Closes all revenue and expense accounts to zero. Net income (or loss) moves to Retained Earnings.<br>
+        This is a permanent accounting entry — confirm with your accountant before proceeding.
+      </div>
+
+      {% if year_close %}
+      <div style="background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px;margin-bottom:12px;font-size:12px;color:var(--mint)">
+        ✓ Year-end close already posted on {{ year_close.date.strftime('%d %b %Y') if year_close.date else '—' }}<br>
+        <span style="color:var(--text3)">Reference: {{ year_close.ref_number or year_close.reference }}</span>
+      </div>
+      {% endif %}
+
+      <div class="field-row">
+        <div>
+          <div class="field-label">Closing Date *</div>
+          <input class="field-input" type="date" id="ye-date" value="{{ today }}">
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">Usually Dec 31 of the financial year</div>
+        </div>
+        <div>
+          <div class="field-label">Financial Year</div>
+          <input class="field-input" id="ye-year" value="{{ today.year }}" readonly style="color:var(--text3)">
+        </div>
+      </div>
+
+      <div style="background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
+        <strong style="color:var(--amber)">⚠ What happens:</strong>
+        <ul style="margin:6px 0 0 16px;color:var(--text2);line-height:1.8">
+          <li>All 4xxx Revenue accounts → debited to zero</li>
+          <li>All 5xxx/6xxx Expense accounts → credited to zero</li>
+          <li>Net profit/loss → posted to Account 3100 (Retained Earnings)</li>
+          <li>P&L accounts start fresh for the new year</li>
+        </ul>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-primary" id="ye-btn" onclick="runYearEnd(false)" style="background:var(--amber);border-color:var(--amber)">
+          🔒 Run Year-End Close
+        </button>
+        {% if year_close %}
+        <button class="btn" onclick="runYearEnd(true)" style="color:var(--red);border-color:var(--red)">Force Re-close</button>
+        {% endif %}
+      </div>
+      <div id="ye-msg" style="margin-top:10px;font-size:12px;padding:10px 12px;border-radius:7px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- GUIDE TAB -->
+  <div id="mt-guide-content" style="display:none">
+    <div class="card">
+      <div class="card-title">📖 Migration Guide — Step by Step</div>
+      <div style="font-size:13px;color:var(--text2);line-height:2">
+        <p><strong style="color:var(--mint)">Step 1 — Opening Balances</strong><br>
+        Go to <a href="/setup/opening-balances" style="color:var(--mint)">Opening Balances</a>. Enter your balance sheet as of Dec 31, 2024 (or start of your migration date). This sets cash, AR, AP, loans, equity.</p>
+        <p><strong style="color:var(--mint)">Step 2 — Import Sales Invoices</strong><br>
+        Export invoices from your old system. In QuickBooks: Reports → Sales → Invoice List → Export CSV. In Xero: Accounts → Sales → Export. Paste here → Import.</p>
+        <p><strong style="color:var(--mint)">Step 3 — Import Supplier Bills</strong><br>
+        Export bills from your old system. In QuickBooks: Reports → Expenses → Vendor Balance Detail → Export. Paste here → Import.</p>
+        <p><strong style="color:var(--mint)">Step 4 — Verify</strong><br>
+        Check the P&L report and Balance Sheet. The numbers should match your old system's reports for the same period.</p>
+        <p><strong style="color:var(--mint)">Step 5 — Year-End Close</strong><br>
+        Once all 2025 transactions are imported and verified, run the Year-End Close. This finalises 2025 and prepares LEDGR for 2026.</p>
+        <div style="background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px">
+          💡 <strong>For Akira &amp; Co:</strong> If transactions exist from Jan 2025 onwards and year-end was not done, skip Step 1 (opening balance) and go straight to Steps 2 &amp; 3 to import all 2025 transactions. Then run Year-End Close on Dec 31, 2025.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick links -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+    <a href="/setup/opening-balances" class="btn">⚖ Opening Balances</a>
+    <a href="/reports/pl" class="btn">📊 P&L Report</a>
+    <a href="/reports/balance-sheet" class="btn">📋 Balance Sheet</a>
+    <a href="/invoices" class="btn">🧾 View Invoices</a>
+    <a href="/documents" class="btn">📄 View Bills</a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}<script>
+function mTab(tab) {
+  ['invoices','bills','yearend','guide'].forEach(function(t) {
+    var c = document.getElementById('mt-'+t+'-content');
+    var b = document.getElementById('mt-'+t);
+    if(c) c.style.display = t===tab ? 'block' : 'none';
+    if(b) { b.style.background=t===tab?'var(--mint)':'transparent'; b.style.color=t===tab?'#fff':'var(--text3)'; }
+  });
+}
+
+function showMsg(id, ok, text) {
+  var m = document.getElementById(id);
+  m.style.display = 'block';
+  m.style.background = ok ? 'rgba(16,185,129,.1)' : 'rgba(239,68,68,.1)';
+  m.style.border = ok ? '1px solid rgba(16,185,129,.3)' : '1px solid rgba(239,68,68,.3)';
+  m.style.color = ok ? 'var(--mint)' : 'var(--red)';
+  m.textContent = text;
+}
+
+function importInvoices() {
+  var csv = document.getElementById('inv-csv').value.trim();
+  if (!csv) { alert('Paste your CSV content first'); return; }
+  var btn = document.getElementById('inv-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing...';
+  fetch('/api/invoices/import-csv', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({csv_text: csv})
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) {
+      showMsg('inv-msg', true, '✓ ' + res.message + (res.errors.length ? ' | Warnings: ' + res.errors.slice(0,3).join('; ') : ''));
+      setTimeout(function(){ location.reload(); }, 2000);
+    } else {
+      showMsg('inv-msg', false, 'Error: ' + res.error);
+    }
+    btn.disabled = false; btn.textContent = '📥 Import Invoices';
+  });
+}
+
+function importBills() {
+  var csv = document.getElementById('bills-csv2').value.trim();
+  if (!csv) { alert('Paste your CSV content first'); return; }
+  var btn = document.getElementById('bills-import-btn');
+  btn.disabled = true; btn.textContent = 'Importing...';
+  fetch('/api/bills/import-csv', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({csv_text: csv})
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) {
+      showMsg('bills-msg2', true, '✓ ' + res.message);
+      setTimeout(function(){ location.reload(); }, 2000);
+    } else {
+      showMsg('bills-msg2', false, 'Error: ' + res.error);
+    }
+    btn.disabled = false; btn.textContent = '📥 Import Bills';
+  });
+}
+
+function runYearEnd(force) {
+  var closeDate = document.getElementById('ye-date').value;
+  if (!closeDate) { alert('Select closing date'); return; }
+  if (!force && !confirm(
+    'Run year-end close for ' + closeDate + '?\n\n' +
+    'This will zero out all revenue and expense accounts\n' +
+    'and post net income to Retained Earnings.\n\n' +
+    'Make sure all transactions for the year are imported first.'
+  )) return;
+  var btn = document.getElementById('ye-btn');
+  btn.disabled = true; btn.textContent = 'Running...';
+  fetch('/api/year-end-close', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({close_date: closeDate, force: force})
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) {
+      showMsg('ye-msg', true,
+        '✓ ' + res.message
+      );
+      btn.textContent = 'Done ✓';
+      setTimeout(function(){ location.reload(); }, 3000);
+    } else if (res.has_existing) {
+      showMsg('ye-msg', false, res.error + ' — Use "Force Re-close" if needed.');
+      btn.disabled = false; btn.textContent = '🔒 Run Year-End Close';
+    } else {
+      showMsg('ye-msg', false, 'Error: ' + res.error);
+      btn.disabled = false; btn.textContent = '🔒 Run Year-End Close';
+    }
+  });
+}
+
+// Update year display
+document.getElementById('ye-date').addEventListener('change', function() {
+  var y = this.value.split('-')[0];
+  if (y) document.getElementById('ye-year').value = y;
+});
+</script>{% endblock %}
