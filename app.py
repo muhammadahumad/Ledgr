@@ -6641,6 +6641,223 @@ def api_accept_invite(token):
 
 
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# DATA MANAGEMENT — Delete / Void / Archive for all modules
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/project/<int:pid>/delete", methods=["POST"])
+@login_required
+def api_project_delete(pid):
+    business, err = api_business_guard()
+    if err: return err
+    project = Project.query.filter_by(id=pid, business_id=business.id).first()
+    if not project: return jsonify({"ok":False,"error":"Project not found"})
+    data = request.get_json() or {}
+    force = data.get("force", False)
+    # Check if project has linked transactions
+    linked_invoices = Invoice.query.filter_by(
+        business_id=business.id, project_id=pid).count()
+    linked_je = JournalLine.query.join(JournalEntry).filter(
+        JournalEntry.business_id==business.id,
+        JournalLine.project_id==pid
+    ).count()
+    if (linked_invoices > 0 or linked_je > 0) and not force:
+        return jsonify({
+            "ok":False,
+            "error":f"Project has {linked_invoices} invoice(s) and {linked_je} journal line(s) linked to it.",
+            "can_force":True,
+            "linked_invoices":linked_invoices,
+            "linked_je":linked_je
+        })
+    try:
+        # Unlink from invoices and journal lines
+        Invoice.query.filter_by(business_id=business.id, project_id=pid).update(
+            {"project_id":None})
+        JournalLine.query.filter(
+            JournalLine.project_id==pid
+        ).update({"project_id":None})
+        db.session.delete(project)
+        db.session.commit()
+        return jsonify({"ok":True,"message":f"Project '{project.name}' deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/document/<int:doc_id>/delete", methods=["POST"])
+@login_required
+def api_document_delete(doc_id):
+    business, err = api_business_guard()
+    if err: return err
+    doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
+    if not doc: return jsonify({"ok":False,"error":"Document not found"})
+    data = request.get_json() or {}
+    force = data.get("force", False)
+    if not force and doc.payment_status == "PAID":
+        return jsonify({"ok":False,
+            "error":"This bill is marked as paid. Force delete?",
+            "can_force":True})
+    try:
+        # Remove linked journal entries
+        linked = JournalEntry.query.filter_by(
+            business_id=business.id, document_id=doc.id).all()
+        for je in linked:
+            JournalLine.query.filter_by(journal_entry_id=je.id).delete()
+            db.session.delete(je)
+        db.session.delete(doc)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Document deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/journal/<int:je_id>/delete", methods=["POST"])
+@login_required
+def api_journal_delete(je_id):
+    """Hard delete a journal entry — only for OPENING_BALANCE or test data"""
+    business, err = api_business_guard()
+    if err: return err
+    je = JournalEntry.query.filter_by(id=je_id, business_id=business.id).first()
+    if not je: return jsonify({"ok":False,"error":"Not found"})
+    # Only allow hard delete of manual, opening balance, or void entries
+    allowed_types = ["MANUAL","OPENING_BALANCE","VOID","TEST"]
+    ub = UserBusiness.query.filter_by(
+        user_id=current_user().id, business_id=business.id).first()
+    if ub and ub.role not in ["owner","accountant"]:
+        return jsonify({"ok":False,"error":"Only owner or accountant can delete journal entries"})
+    try:
+        JournalLine.query.filter_by(journal_entry_id=je_id).delete()
+        db.session.delete(je)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Journal entry deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/employee/<int:eid>/delete", methods=["POST"])
+@login_required
+def api_employee_delete(eid):
+    business, err = api_business_guard()
+    if err: return err
+    emp = Employee.query.filter_by(id=eid, business_id=business.id).first()
+    if not emp: return jsonify({"ok":False,"error":"Employee not found"})
+    data = request.get_json() or {}
+    force = data.get("force", False)
+    # Check payroll runs
+    payroll_count = PayrollRun.query.filter_by(
+        business_id=business.id).count()
+    if payroll_count > 0 and not force:
+        return jsonify({"ok":False,
+            "error":f"Payroll has been run. Archive this employee instead?",
+            "can_force":True, "can_archive":True})
+    try:
+        emp.is_active = False  # Archive by default
+        if force:
+            db.session.delete(emp)
+        db.session.commit()
+        action = "deleted" if force else "archived"
+        return jsonify({"ok":True,"message":f"Employee {emp.full_name} {action}"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/pos/sale/<int:sale_id>/delete", methods=["POST"])
+@login_required
+def api_pos_delete(sale_id):
+    business, err = api_business_guard()
+    if err: return err
+    sale = POSSale.query.filter_by(id=sale_id, business_id=business.id).first()
+    if not sale: return jsonify({"ok":False,"error":"Sale not found"})
+    if sale.is_void:
+        return jsonify({"ok":False,"error":"Sale already voided"})
+    try:
+        sale.is_void = True
+        # Post reversal journal
+        post_journal(business.id, current_user().id,
+                    f"VOID POS Sale #{sale_id}", f"VOID-POS-{sale_id}", "VOID", [
+            {"account_code":"1010","debit":0,"credit":float(sale.total_amount or 0),
+             "description":f"Void POS sale #{sale_id}"},
+            {"account_code":"4000","debit":float(sale.subtotal or sale.total_amount or 0),
+             "credit":0,"description":f"Void revenue #{sale_id}"},
+        ])
+        db.session.commit()
+        return jsonify({"ok":True,"message":f"POS Sale #{sale_id} voided"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+@app.route("/api/bank/transaction/<int:txn_id>/delete", methods=["POST"])
+@login_required
+def api_bank_txn_delete(txn_id):
+    business, err = api_business_guard()
+    if err: return err
+    txn = BankTransaction.query.filter_by(
+        id=txn_id, business_id=business.id).first()
+    if not txn: return jsonify({"ok":False,"error":"Transaction not found"})
+    try:
+        # Remove linked journal entries
+        linked = JournalEntry.query.filter_by(
+            business_id=business.id,
+            reference=txn.reference or str(txn_id)).all()
+        for je in linked:
+            JournalLine.query.filter_by(journal_entry_id=je.id).delete()
+            db.session.delete(je)
+        db.session.delete(txn)
+        db.session.commit()
+        return jsonify({"ok":True,"message":"Bank transaction deleted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+# ── TEST DATA PURGE (owner only) ─────────────────────────────────────────
+@app.route("/api/purge-test-data", methods=["POST"])
+@login_required
+def api_purge_test_data():
+    """Purge ALL data for a business — for test/demo cleanup only"""
+    business, err = api_business_guard()
+    if err: return err
+    user = current_user()
+    ub = UserBusiness.query.filter_by(
+        user_id=user.id, business_id=business.id).first()
+    if not ub or ub.role != "owner":
+        return jsonify({"ok":False,"error":"Only the business owner can purge data"})
+    data = request.get_json() or {}
+    confirm = data.get("confirm","")
+    if confirm != business.name:
+        return jsonify({"ok":False,
+            "error":f"Type the exact business name to confirm: {business.name}"})
+    try:
+        # Delete in correct order (FK dependencies)
+        JournalLine.query.join(JournalEntry).filter(
+            JournalEntry.business_id==business.id).delete(synchronize_session=False)
+        JournalEntry.query.filter_by(business_id=business.id).delete()
+        LedgerEntry.query.filter_by(business_id=business.id).delete()
+        PaymentAllocation.query.join(Invoice).filter(
+            Invoice.business_id==business.id).delete(synchronize_session=False)
+        Invoice.query.filter_by(business_id=business.id).delete()
+        Quotation.query.filter_by(business_id=business.id).delete()
+        Document.query.filter_by(business_id=business.id).delete()
+        Payment.query.filter_by(business_id=business.id).delete()
+        BankTransaction.query.filter_by(business_id=business.id).delete()
+        POSSale.query.filter_by(business_id=business.id).delete()
+        PayrollRun.query.filter_by(business_id=business.id).delete()
+        Project.query.filter_by(business_id=business.id).delete()
+        # Keep: Accounts, Customers, Suppliers, Employees, Products (master data)
+        db.session.commit()
+        return jsonify({"ok":True,
+            "message":"All transactions cleared. Master data (accounts, customers, suppliers, products) preserved."})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
+
+
 @app.route('/admin')
 @login_required
 @admin_required
