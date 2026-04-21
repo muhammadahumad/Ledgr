@@ -800,6 +800,22 @@ class Invoice(db.Model):
     total_incl_tax_local = db.Column(db.Numeric(12,2))
     line_items = db.Column(db.Text, default='[]')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # Payment & integration fields
+    payment_link_url = db.Column(db.String(500))
+    stripe_payment_intent = db.Column(db.String(100))
+    myinvois_uuid = db.Column(db.String(100))
+    myinvois_long_id = db.Column(db.String(200))
+    myinvois_status = db.Column(db.String(30))
+    myinvois_submitted_at = db.Column(db.DateTime)
+    # Recurring invoice fields
+    is_recurring = db.Column(db.Boolean, default=False)
+    recur_interval = db.Column(db.String(20))
+    recur_next_date = db.Column(db.Date)
+    recur_end_date = db.Column(db.Date)
+    recur_parent_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
+    # Project & department tagging
+    project_id = db.Column(db.Integer, db.ForeignKey('projects.id'), nullable=True)
+    department_id = db.Column(db.Integer, db.ForeignKey('departments.id'), nullable=True)
     customer = db.relationship('Customer', backref='invoices')
     business = db.relationship('Business', backref='biz_invoices')
     def amount_due(self): return float(self.total_amount or 0) - float(self.amount_paid or 0)
@@ -4300,6 +4316,121 @@ def report_gst_return():
         net_tax=net_tax)
 
 
+
+@app.route("/api/gst/output-details")
+@business_required
+def api_gst_output_details():
+    """Drill-down: all invoices contributing to output GST for a period"""
+    business = current_business()
+    tax = business.tax_rules()
+    start_str = request.args.get("start", "")
+    end_str = request.args.get("end", "")
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end   = datetime.strptime(end_str,   "%Y-%m-%d").date()
+    except:
+        today = date.today()
+        start = date(today.year, today.month, 1)
+        end   = today
+
+    invoices = Invoice.query.filter(
+        Invoice.business_id == business.id,
+        Invoice.invoice_date >= start,
+        Invoice.invoice_date <= end,
+        Invoice.status.notin_(["VOID","DRAFT"])
+    ).order_by(Invoice.invoice_date).all()
+
+    rows = []
+    for inv in invoices:
+        total   = float(inv.total_amount or 0)
+        tax_amt = float(inv.tax_amount or 0)
+        if tax_amt == 0 and total > 0:
+            tax_amt = round(total * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
+        subtotal = total - tax_amt
+        rows.append({
+            "id":             inv.id,
+            "invoice_number": inv.invoice_number,
+            "date":           str(inv.invoice_date),
+            "customer":       inv.customer.name if inv.customer else (inv.buyer_legal_name or "—"),
+            "subtotal":       round(subtotal, 2),
+            "tax_amount":     round(tax_amt,  2),
+            "total":          round(total,    2),
+            "status":         inv.status,
+            "currency":       inv.currency or tax["currency"]
+        })
+
+    total_taxable = sum(r["subtotal"]   for r in rows)
+    total_tax     = sum(r["tax_amount"] for r in rows)
+    total_gross   = sum(r["total"]      for r in rows)
+
+    return jsonify({
+        "ok":            True,
+        "rows":          rows,
+        "total_taxable": round(total_taxable, 2),
+        "total_tax":     round(total_tax,     2),
+        "total_gross":   round(total_gross,   2),
+        "currency":      tax["currency"],
+        "period":        f"{start_str} to {end_str}"
+    })
+
+
+@app.route("/api/gst/input-details")
+@business_required
+def api_gst_input_details():
+    """Drill-down: all bills contributing to input GST for a period"""
+    business = current_business()
+    tax = business.tax_rules()
+    start_str = request.args.get("start", "")
+    end_str   = request.args.get("end",   "")
+    try:
+        start = datetime.strptime(start_str, "%Y-%m-%d").date()
+        end   = datetime.strptime(end_str,   "%Y-%m-%d").date()
+    except:
+        today = date.today()
+        start = date(today.year, today.month, 1)
+        end   = today
+
+    docs = Document.query.filter(
+        Document.business_id == business.id,
+        Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
+        Document.invoice_date >= start,
+        Document.invoice_date <= end
+    ).order_by(Document.invoice_date).all()
+
+    rows = []
+    for doc in docs:
+        total   = float(doc.total_amount or 0)
+        tax_amt = float(doc.tax_amount   or 0)
+        if tax_amt == 0 and total > 0:
+            tax_amt = round(total * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
+        subtotal = total - tax_amt
+        rows.append({
+            "id":             doc.id,
+            "invoice_number": doc.invoice_number or "—",
+            "date":           str(doc.invoice_date) if doc.invoice_date else "—",
+            "vendor":         doc.vendor_name or "—",
+            "vendor_tin":     doc.vendor_tax_id or "—",
+            "subtotal":       round(subtotal, 2),
+            "tax_amount":     round(tax_amt,  2),
+            "total":          round(total,    2),
+            "doc_type":       doc.doc_type,
+            "currency":       doc.currency or tax["currency"]
+        })
+
+    total_taxable = sum(r["subtotal"]   for r in rows)
+    total_tax     = sum(r["tax_amount"] for r in rows)
+    total_gross   = sum(r["total"]      for r in rows)
+
+    return jsonify({
+        "ok":            True,
+        "rows":          rows,
+        "total_taxable": round(total_taxable, 2),
+        "total_tax":     round(total_tax,     2),
+        "total_gross":   round(total_gross,   2),
+        "currency":      tax["currency"],
+        "period":        f"{start_str} to {end_str}"
+    })
+
 # ════════════════════════════════════════════════════════════════════════════
 # CREDIT NOTES
 # ════════════════════════════════════════════════════════════════════════════
@@ -6839,9 +6970,11 @@ def api_purge_test_data():
         # ── Correct deletion order based on FK dependency tree ────────────
         # Must delete children before parents to avoid FK violations
 
-        # Level 0: Null out self-referencing FKs on invoices
-        Invoice.query.filter_by(business_id=bid).update(
-            {"recur_parent_id": None}, synchronize_session=False)
+        # Level 0: Null out self-referencing FK on recurring invoices
+        db.session.execute(
+            db.text("UPDATE invoices SET recur_parent_id = NULL WHERE business_id = :bid"),
+            {"bid": bid}
+        )
         db.session.flush()
 
         # Level 1a: JournalLines (FK → journal_entries)
