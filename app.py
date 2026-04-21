@@ -6836,45 +6836,76 @@ def api_purge_test_data():
     try:
         bid = business.id
 
-        # Step 1: Delete journal lines (get IDs via subquery, no join+delete)
-        je_ids = [j.id for j in JournalEntry.query.filter_by(business_id=bid).all()]
+        # ── Correct deletion order based on FK dependency tree ────────────
+        # Must delete children before parents to avoid FK violations
+
+        # Level 0: Null out self-referencing FKs on invoices
+        Invoice.query.filter_by(business_id=bid).update(
+            {"recur_parent_id": None}, synchronize_session=False)
+        db.session.flush()
+
+        # Level 1a: JournalLines (FK → journal_entries)
+        je_ids = [j.id for j in JournalEntry.query.filter_by(business_id=bid)
+                  .with_entities(JournalEntry.id).all()]
         if je_ids:
             JournalLine.query.filter(
                 JournalLine.journal_entry_id.in_(je_ids)
             ).delete(synchronize_session=False)
-        JournalEntry.query.filter_by(business_id=bid).delete(synchronize_session=False)
+            db.session.flush()
 
-        # Step 2: Ledger entries
-        LedgerEntry.query.filter_by(business_id=bid).delete(synchronize_session=False)
-
-        # Step 3: Payment allocations (get invoice IDs first)
-        inv_ids = [i.id for i in Invoice.query.filter_by(business_id=bid).all()]
+        # Level 1b: PaymentAllocations (FK → payments, invoices)
+        inv_ids = [i.id for i in Invoice.query.filter_by(business_id=bid)
+                   .with_entities(Invoice.id).all()]
         if inv_ids:
             PaymentAllocation.query.filter(
                 PaymentAllocation.invoice_id.in_(inv_ids)
             ).delete(synchronize_session=False)
+            db.session.flush()
 
-        # Step 4: Invoices, Quotations, Documents
+        # Level 1c: CreditNotes (FK → invoices, journal_entries)
+        CreditNote.query.filter_by(business_id=bid).update(
+            {"journal_entry_id": None}, synchronize_session=False)
+        db.session.flush()
+        CreditNote.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        db.session.flush()
+
+        # Level 2a: Payments (FK → journal_entries)
+        Payment.query.filter_by(business_id=bid).update(
+            {"journal_entry_id": None}, synchronize_session=False)
+        db.session.flush()
+        Payment.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        db.session.flush()
+
+        # Level 2b: LedgerEntries
+        LedgerEntry.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        db.session.flush()
+
+        # Level 3: JournalEntries (now safe — payments and credit notes cleared)
+        JournalEntry.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        db.session.flush()
+
+        # Level 4a: Invoices (now safe — credit notes, payment allocs cleared)
         Invoice.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        db.session.flush()
+
+        # Level 4b: Everything else
         Quotation.query.filter_by(business_id=bid).delete(synchronize_session=False)
         Document.query.filter_by(business_id=bid).delete(synchronize_session=False)
-
-        # Step 5: Payments, Bank, POS, Payroll, Projects
-        Payment.query.filter_by(business_id=bid).delete(synchronize_session=False)
         BankTransaction.query.filter_by(business_id=bid).delete(synchronize_session=False)
         POSSale.query.filter_by(business_id=bid).delete(synchronize_session=False)
         PayrollRun.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        StockTransfer.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        PurchaseOrder.query.filter_by(business_id=bid).delete(synchronize_session=False)
         Project.query.filter_by(business_id=bid).delete(synchronize_session=False)
-
-        # Step 6: User invites (clean slate)
+        AIConversation.query.filter_by(business_id=bid).delete(synchronize_session=False)
         UserInvite.query.filter_by(business_id=bid).delete(synchronize_session=False)
 
         db.session.commit()
-        return jsonify({"ok":True,
-            "message":"All transactions cleared. Accounts, customers, suppliers, employees and products preserved."})
+        return jsonify({"ok": True,
+            "message": "All transactions cleared. Accounts, customers, suppliers, employees and products preserved."})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
+        return jsonify({"ok": False, "error": str(e)})
 
 
 
