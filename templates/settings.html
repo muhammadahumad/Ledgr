@@ -286,6 +286,17 @@
 </div>
 {% endif %}
 
+<div class="card" style="margin-bottom:14px;border-color:rgba(239,68,68,.2)">
+  <div class="card-title" style="color:var(--red)">🗑 Purge Test Data</div>
+  <div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.6">
+    Remove ALL transactions (invoices, bills, journals, POS, bank, projects) while keeping master data
+    (accounts, customers, suppliers, employees, products). Use this to clear test data before going live.
+  </div>
+  <button class="btn" style="color:var(--red);border-color:var(--red)" onclick="openModal('purge-modal')">
+    ⚠ Purge Transaction Data
+  </button>
+</div>
+
 <div class="card" style="margin-bottom:14px;border-color:rgba(59,130,246,.2)">
   <div class="card-title">🔄 Data Migration & Opening Balances</div>
   <div style="font-size:12px;color:var(--text3);margin-bottom:10px">
@@ -396,6 +407,29 @@ function saveAll() {
       document.getElementById('save-banner').style.display = 'block';
       setTimeout(() => document.getElementById('save-banner').style.display = 'none', 3000);
     } else alert('Error: ' + res.error);
+  });
+}
+
+function purgeData() {
+  var confirm_name = document.getElementById('purge-confirm').value.trim();
+  if (!confirm_name) { alert('Type the business name to confirm'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Purging...';
+  fetch('/api/purge-test-data', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({confirm: confirm_name})
+  }).then(r=>r.json()).then(res=>{
+    var m = document.getElementById('purge-msg');
+    m.style.display = 'block';
+    if (res.ok) {
+      m.style.color = 'var(--mint)';
+      m.textContent = '✓ ' + res.message;
+      btn.textContent = 'Done';
+      setTimeout(function(){ window.location.href='/dashboard'; }, 2000);
+    } else {
+      m.style.color = 'var(--red)';
+      m.textContent = 'Error: ' + res.error;
+      btn.disabled = false; btn.textContent = 'Purge All Transaction Data';
+    }
   });
 }
 </script>{% endblock %}

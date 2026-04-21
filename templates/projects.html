@@ -62,7 +62,9 @@
         </td>
         <td>
           <div style="display:flex;gap:4px">
-            <button class="btn btn-sm" data-action="editproj" data-id="{{ p.id }}" data-status="{{ p.status }}">Edit</button>
+            <button class="btn btn-sm" data-action="editproj" data-id="{{ p.id }}" data-status="{{ p.status }}"
+          <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)"
+            data-action="delproj" data-id="{{ p.id }}" data-name="{{ p.name|e }}">Delete</button>Edit</button>
           </div>
         </td>
       </tr>
@@ -144,6 +146,36 @@
 {% endblock %}
 
 {% block scripts %}<script>
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  var id = btn.dataset.id, name = btn.dataset.name;
+  if (btn.dataset.action === 'editproj') editProject(id, btn.dataset.status);
+  else if (btn.dataset.action === 'delproj') deleteProject(id, name);
+});
+
+function deleteProject(id, name) {
+  if (!confirm('Delete project "' + name + '"?\n\nThis will unlink all invoices and journal entries from this project.')) return;
+  fetch('/api/project/'+id+'/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({force: false})
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) { location.reload(); }
+    else if (res.can_force) {
+      var msg = res.error + '\n\nDelete anyway? (Transactions will be unlinked but NOT deleted)';
+      if (confirm(msg)) {
+        fetch('/api/project/'+id+'/delete', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({force: true})
+        }).then(r=>r.json()).then(res2=>{
+          if (res2.ok) location.reload();
+          else alert('Error: ' + res2.error);
+        });
+      }
+    } else { alert('Error: ' + res.error); }
+  });
+}
+
 document.addEventListener('click', function(e) {
   var btn = e.target.closest('[data-action]');
   if (!btn) return;

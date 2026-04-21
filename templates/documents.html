@@ -114,6 +114,31 @@
 </div>
 {% endblock %}
 {% block scripts %}<script>
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  if (btn.dataset.action === 'deldoc') deleteDoc(btn.dataset.id);
+});
+function deleteDoc(id) {
+  if (!confirm('Delete this document?\n\nLinked journal entries will also be removed.')) return;
+  fetch('/api/document/'+id+'/delete', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({force:false})
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) location.reload();
+    else if (res.can_force) {
+      if (confirm('⚠ ' + res.error + '\n\nForce delete?')) {
+        fetch('/api/document/'+id+'/delete', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({force:true})
+        }).then(r=>r.json()).then(res2=>{
+          if(res2.ok) location.reload(); else alert('Error: '+res2.error);
+        });
+      }
+    } else alert('Error: ' + res.error);
+  });
+}
+
 function calcTotal(){var s=parseFloat(document.getElementById('m-sub').value)||0,t=parseFloat(document.getElementById('m-tax').value)||0;document.getElementById('m-total').value=(s+t).toFixed(2);}
 function saveManual(){var vendor=document.getElementById('m-vendor').value.trim();if(!vendor){alert('Vendor name required');return;}fetch('/api/document/manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_type:document.getElementById('m-type').value,category:document.getElementById('m-cat').value,vendor_name:vendor,vendor_tax_id:document.getElementById('m-taxid').value,invoice_number:document.getElementById('m-invno').value,invoice_date:document.getElementById('m-date').value,due_date:document.getElementById('m-due').value,currency:document.getElementById('m-currency').value,subtotal:parseFloat(document.getElementById('m-sub').value)||0,tax_amount:parseFloat(document.getElementById('m-tax').value)||0,total_amount:parseFloat(document.getElementById('m-total').value)||0})}).then(r=>r.json()).then(res=>{if(res.ok){closeModal('manual-entry-modal');location.reload();}else{var m=document.getElementById('m-msg');m.textContent='Error: '+res.error;m.style.display='block';m.style.color='var(--red)';}});}
 function markBillPaid(id){if(!confirm('Mark this bill as paid? This will clear Accounts Payable and post a payment entry.'))return;var method=prompt('Payment method (Cash or Bank):','Cash');if(!method)return;fetch('/api/bill/'+id+'/mark-paid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payment_method:method})}).then(r=>r.json()).then(res=>{if(res.ok){alert('✓ '+res.message);location.reload();}else alert('Error: '+res.error);});}
