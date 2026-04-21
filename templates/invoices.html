@@ -173,15 +173,19 @@ function generatePayLink(id) {
 }
 
 function deleteInv(id, num) {
-  if(!confirm('Delete invoice '+num+'?\n\nThis will permanently remove the invoice.\nOnly DRAFT and SENT invoices can be deleted.')) return;
-  fetch('/api/invoice/'+id+'/delete', {method:'POST'})
+  if(!confirm('Delete invoice '+num+'?\n\nThis will permanently remove the invoice and any linked journal entries.')) return;
+  fetch('/api/invoice/'+id+'/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({force:false})})
     .then(r=>r.json()).then(res=>{
-      if(res.ok){
-        alert('Invoice '+num+' deleted.');
-        location.reload();
-      } else {
-        alert('Cannot delete: '+res.error);
-      }
+      if(res.ok){ location.reload(); }
+      else if(res.can_force) {
+        if(confirm('⚠ ' + res.error + '\n\nForce delete anyway? (This cannot be undone)')) {
+          fetch('/api/invoice/'+id+'/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({force:true})})
+            .then(r=>r.json()).then(res2=>{
+              if(res2.ok) location.reload();
+              else alert('Error: '+res2.error);
+            });
+        }
+      } else { alert('Cannot delete: '+res.error); }
     });
 }
 function issueDebitNote(id, num) {

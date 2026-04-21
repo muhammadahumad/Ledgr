@@ -138,7 +138,7 @@ function saveEditQuote() {
 }
 function deleteQuote(id, num) {
   if(!confirm('Delete quotation '+num+'? This cannot be undone.')) return;
-  fetch('/api/quotation/'+id+'/delete',{method:'POST'})
+  fetch('/api/quotation/'+id+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({force:false})})
     .then(r=>r.json()).then(res=>{
       if(res.ok)location.reload();
       else alert('Error: '+res.error);
