@@ -4726,14 +4726,28 @@ def api_invoice_delete(inv_id):
     if err: return err
     inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
     if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
-    if inv.status in ["PAID", "PARTIAL"]:
-        return jsonify({"ok":False,"error":"Cannot delete a paid or partially paid invoice. Issue a credit note instead."})
-    if float(inv.amount_paid or 0) > 0:
-        return jsonify({"ok":False,"error":"Cannot delete - this invoice has recorded payments. Issue a credit note instead."})
+    data = request.get_json() or {}
+    force = data.get("force", False)  # force=True for test data cleanup
+
+    if not force:
+        if inv.status in ["PAID", "PARTIAL"]:
+            return jsonify({"ok":False,"error":"Cannot delete a paid or partially paid invoice. Issue a credit note instead.","can_force":True})
+        if float(inv.amount_paid or 0) > 0:
+            return jsonify({"ok":False,"error":"Cannot delete - this invoice has recorded payments.","can_force":True})
     try:
+        # Delete linked journal entries first (avoid FK constraint errors)
+        linked_journals = JournalEntry.query.filter_by(
+            business_id=business.id,
+            reference=inv.invoice_number
+        ).all()
+        for je in linked_journals:
+            JournalLine.query.filter_by(journal_entry_id=je.id).delete()
+            db.session.delete(je)
+        # Delete payment allocations if any
+        PaymentAllocation.query.filter_by(invoice_id=inv.id).delete()
         db.session.delete(inv)
         db.session.commit()
-        return jsonify({"ok":True,"message":"Invoice deleted"})
+        return jsonify({"ok":True,"message":f"Invoice {inv.invoice_number} deleted"})
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
@@ -4767,12 +4781,14 @@ def api_quotation_delete(qid):
     if err: return err
     q = Quotation.query.filter_by(id=qid, business_id=business.id).first()
     if not q: return jsonify({"ok":False,"error":"Quotation not found"})
-    if q.converted_invoice_id:
-        return jsonify({"ok":False,"error":"Cannot delete — this quotation has been converted to an invoice."})
+    data = request.get_json() or {}
+    force = data.get("force", False)
+    if not force and q.converted_invoice_id:
+        return jsonify({"ok":False,"error":"This quotation was converted to an invoice. Delete the invoice first.","can_force":True})
     try:
         db.session.delete(q)
         db.session.commit()
-        return jsonify({"ok":True,"message":"Quotation deleted"})
+        return jsonify({"ok":True,"message":f"Quotation {q.quote_number} deleted"})
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
