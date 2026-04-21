@@ -6671,12 +6671,13 @@ def api_project_delete(pid):
             "linked_je":linked_je
         })
     try:
-        # Unlink from invoices and journal lines
-        Invoice.query.filter_by(business_id=business.id, project_id=pid).update(
-            {"project_id":None})
-        JournalLine.query.filter(
-            JournalLine.project_id==pid
-        ).update({"project_id":None})
+        # Unlink from invoices and journal lines (no join — direct filter)
+        Invoice.query.filter_by(
+            business_id=business.id, project_id=pid
+        ).update({"project_id": None}, synchronize_session=False)
+        JournalLine.query.filter_by(
+            project_id=pid
+        ).update({"project_id": None}, synchronize_session=False)
         db.session.delete(project)
         db.session.commit()
         return jsonify({"ok":True,"message":f"Project '{project.name}' deleted"})
@@ -6833,25 +6834,44 @@ def api_purge_test_data():
         return jsonify({"ok":False,
             "error":f"Type the exact business name to confirm: {business.name}"})
     try:
-        # Delete in correct order (FK dependencies)
-        JournalLine.query.join(JournalEntry).filter(
-            JournalEntry.business_id==business.id).delete(synchronize_session=False)
-        JournalEntry.query.filter_by(business_id=business.id).delete()
-        LedgerEntry.query.filter_by(business_id=business.id).delete()
-        PaymentAllocation.query.join(Invoice).filter(
-            Invoice.business_id==business.id).delete(synchronize_session=False)
-        Invoice.query.filter_by(business_id=business.id).delete()
-        Quotation.query.filter_by(business_id=business.id).delete()
-        Document.query.filter_by(business_id=business.id).delete()
-        Payment.query.filter_by(business_id=business.id).delete()
-        BankTransaction.query.filter_by(business_id=business.id).delete()
-        POSSale.query.filter_by(business_id=business.id).delete()
-        PayrollRun.query.filter_by(business_id=business.id).delete()
-        Project.query.filter_by(business_id=business.id).delete()
-        # Keep: Accounts, Customers, Suppliers, Employees, Products (master data)
+        bid = business.id
+
+        # Step 1: Delete journal lines (get IDs via subquery, no join+delete)
+        je_ids = [j.id for j in JournalEntry.query.filter_by(business_id=bid).all()]
+        if je_ids:
+            JournalLine.query.filter(
+                JournalLine.journal_entry_id.in_(je_ids)
+            ).delete(synchronize_session=False)
+        JournalEntry.query.filter_by(business_id=bid).delete(synchronize_session=False)
+
+        # Step 2: Ledger entries
+        LedgerEntry.query.filter_by(business_id=bid).delete(synchronize_session=False)
+
+        # Step 3: Payment allocations (get invoice IDs first)
+        inv_ids = [i.id for i in Invoice.query.filter_by(business_id=bid).all()]
+        if inv_ids:
+            PaymentAllocation.query.filter(
+                PaymentAllocation.invoice_id.in_(inv_ids)
+            ).delete(synchronize_session=False)
+
+        # Step 4: Invoices, Quotations, Documents
+        Invoice.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        Quotation.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        Document.query.filter_by(business_id=bid).delete(synchronize_session=False)
+
+        # Step 5: Payments, Bank, POS, Payroll, Projects
+        Payment.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        BankTransaction.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        POSSale.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        PayrollRun.query.filter_by(business_id=bid).delete(synchronize_session=False)
+        Project.query.filter_by(business_id=bid).delete(synchronize_session=False)
+
+        # Step 6: User invites (clean slate)
+        UserInvite.query.filter_by(business_id=bid).delete(synchronize_session=False)
+
         db.session.commit()
         return jsonify({"ok":True,
-            "message":"All transactions cleared. Master data (accounts, customers, suppliers, products) preserved."})
+            "message":"All transactions cleared. Accounts, customers, suppliers, employees and products preserved."})
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok":False,"error":str(e)})
