@@ -40,11 +40,13 @@
           {% else %}—{% endif %}
         </td>
         <td>{% if doc.file_data %}<span class="badge badge-blue" style="font-size:10px">Saved</span>{% else %}<span style="color:var(--text3);font-size:11px">—</span>{% endif %}</td>
-        <td style="display:flex;gap:4px">
+        <td style="display:flex;gap:4px;flex-wrap:wrap">
           <a href="/documents/{{ doc.id }}" class="btn btn-sm">View</a>
           {% if doc.doc_type in ['BILL','EXPENSE'] and doc.payment_status != 'PAID' %}
           <button class="btn btn-sm btn-primary" onclick="markBillPaid({{ doc.id }})">Mark Paid</button>
           {% endif %}
+          <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)"
+            data-action="deldoc" data-id="{{ doc.id }}">Delete</button>
         </td>
       </tr>
       {% endfor %}
