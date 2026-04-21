@@ -53,12 +53,50 @@
     {{ box(1, 'Total value of all supplies (Sales)', total_supplies) }}
     {{ box(2, 'Zero-rated and exempt supplies', exempt_supplies, 'var(--text3)') }}
     {{ box(3, 'Taxable supplies (Box 1 minus Box 2)', taxable_supplies) }}
-    {{ box(4, 'Output tax (' + (tax.tax_rate * 100)|round(1)|string + '% of Box 3)', output_tax, 'var(--mint)') }}
+    <!-- Box 4: Output Tax — clickable to expand -->
+    <div style="border-bottom:1px solid var(--border);padding:10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleDrillDown('output')">
+        <div>
+          <span style="font-size:11px;font-weight:700;color:var(--text3);margin-right:8px">Box 4</span>
+          <span style="font-size:13px;color:var(--text2)">Output tax ({{ (tax.tax_rate * 100)|round(1) }}% of Box 3)</span>
+          <span style="font-size:10px;color:var(--mint);margin-left:8px">▼ click to expand</span>
+        </div>
+        <span style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(output_tax) }}</span>
+      </div>
+      <!-- Output drill-down -->
+      <div id="output-drilldown" style="display:none;margin-top:10px">
+        <div id="output-loading" style="font-size:12px;color:var(--text3);padding:8px">Loading invoices...</div>
+        <div id="output-table" style="display:none"></div>
+        <div id="output-export" style="display:none;margin-top:8px">
+          <button onclick="exportDrillDown('output')" class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)">📥 Export CSV</button>
+          <span style="font-size:10px;color:var(--text3);margin-left:8px">For MIRA portal submission</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Input Tax -->
     <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:8px;margin-top:12px">Part B — Input Tax</div>
     {{ box(5, 'Total value of purchases and expenses', total_purchases) }}
-    {{ box(6, 'Input tax claimed (purchases from GST-registered suppliers)', input_tax, '#60a5fa') }}
+    <!-- Box 6: Input Tax — clickable to expand -->
+    <div style="border-bottom:1px solid var(--border);padding:10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleDrillDown('input')">
+        <div>
+          <span style="font-size:11px;font-weight:700;color:var(--text3);margin-right:8px">Box 6</span>
+          <span style="font-size:13px;color:var(--text2)">Input tax claimed (purchases from GST-registered suppliers)</span>
+          <span style="font-size:10px;color:#60a5fa;margin-left:8px">▼ click to expand</span>
+        </div>
+        <span style="font-family:var(--mono);font-weight:700;font-size:14px;color:#60a5fa">{{ tax.currency }} {{ "%.2f"|format(input_tax) }}</span>
+      </div>
+      <!-- Input drill-down -->
+      <div id="input-drilldown" style="display:none;margin-top:10px">
+        <div id="input-loading" style="font-size:12px;color:var(--text3);padding:8px">Loading bills...</div>
+        <div id="input-table" style="display:none"></div>
+        <div id="input-export" style="display:none;margin-top:8px">
+          <button onclick="exportDrillDown('input')" class="btn btn-sm" style="color:#60a5fa;border-color:#60a5fa">📥 Export CSV</button>
+          <span style="font-size:10px;color:var(--text3);margin-left:8px">For MIRA portal submission</span>
+        </div>
+      </div>
+    </div>
 
     <!-- Net -->
     <div style="margin-top:16px;padding:16px;border:2px solid {% if net_tax > 0 %}var(--red){% elif net_tax < 0 %}var(--mint){% else %}var(--border){% endif %};border-radius:9px">
@@ -93,4 +131,122 @@
   </div>
 </div>
 <style>@media print{.sidebar,.topbar,.card:not(#print-area){display:none!important}}</style>
+
 {% endblock %}
+{% block scripts %}<script>
+var GST_START = "{{ start }}";
+var GST_END   = "{{ end }}";
+var GST_CCY   = "{{ tax.currency }}";
+var outputData = null, inputData = null;
+
+function toggleDrillDown(type) {
+  var box = document.getElementById(type + '-drilldown');
+  if (box.style.display === 'none') {
+    box.style.display = 'block';
+    loadDrillDown(type);
+  } else {
+    box.style.display = 'none';
+  }
+}
+
+function loadDrillDown(type) {
+  var loading = document.getElementById(type + '-loading');
+  var table   = document.getElementById(type + '-table');
+  var expBtn  = document.getElementById(type + '-export');
+  // Don't reload if already loaded
+  if (table.innerHTML && table.style.display !== 'none') return;
+  loading.style.display = 'block';
+  table.style.display   = 'none';
+
+  fetch('/api/gst/' + type + '-details?start=' + GST_START + '&end=' + GST_END)
+    .then(r => r.json())
+    .then(res => {
+      loading.style.display = 'none';
+      if (!res.ok) { loading.textContent = 'Error: ' + res.error; loading.style.display='block'; return; }
+      if (type === 'output') outputData = res;
+      else inputData = res;
+
+      var rows = res.rows;
+      if (!rows.length) {
+        table.innerHTML = '<div style="font-size:12px;color:var(--text3);padding:8px">No transactions found for this period.</div>';
+        table.style.display = 'block';
+        return;
+      }
+
+      var isOutput = type === 'output';
+      var html = '<div style="overflow-x:auto"><table class="table" style="font-size:11px">';
+      html += '<thead><tr>';
+      html += '<th>Date</th>';
+      html += isOutput ? '<th>Invoice #</th><th>Customer</th>' : '<th>Ref #</th><th>Vendor</th><th>Vendor TIN</th>';
+      html += '<th style="text-align:right">Taxable Amt</th>';
+      html += '<th style="text-align:right">GST (' + ({{ tax.tax_rate }} * 100).toFixed(0) + '%)</th>';
+      html += '<th style="text-align:right">Total</th>';
+      html += '<th>Status</th></tr></thead><tbody>';
+
+      rows.forEach(function(r) {
+        html += '<tr>';
+        html += '<td style="font-family:monospace">' + r.date + '</td>';
+        html += '<td style="font-family:monospace">' + (isOutput ? r.invoice_number : r.invoice_number) + '</td>';
+        html += '<td>' + (isOutput ? r.customer : r.vendor) + '</td>';
+        if (!isOutput) html += '<td style="font-family:monospace;color:var(--text3)">' + r.vendor_tin + '</td>';
+        html += '<td style="text-align:right;font-family:monospace">' + GST_CCY + ' ' + r.subtotal.toFixed(2) + '</td>';
+        html += '<td style="text-align:right;font-family:monospace;color:' + (isOutput?'var(--mint)':'#60a5fa') + '">'
+              + GST_CCY + ' ' + r.tax_amount.toFixed(2) + '</td>';
+        html += '<td style="text-align:right;font-family:monospace;font-weight:600">'
+              + GST_CCY + ' ' + r.total.toFixed(2) + '</td>';
+        html += '<td><span class="badge badge-' + (r.status==='PAID'?'green':r.status==='VOID'?'red':'amber') + '">'
+              + (r.status||r.doc_type) + '</span></td>';
+        html += '</tr>';
+      });
+
+      // Totals row
+      html += '<tr style="font-weight:700;background:var(--surface2)">';
+      html += '<td colspan="' + (isOutput ? '3' : '4') + '" style="font-size:11px;padding:8px 12px">TOTAL (' + rows.length + ' transactions)</td>';
+      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px">' + GST_CCY + ' ' + res.total_taxable.toFixed(2) + '</td>';
+      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px;color:' + (isOutput?'var(--mint)':'#60a5fa') + '">'
+            + GST_CCY + ' ' + res.total_tax.toFixed(2) + '</td>';
+      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px">' + GST_CCY + ' ' + res.total_gross.toFixed(2) + '</td>';
+      html += '<td></td></tr>';
+      html += '</tbody></table></div>';
+
+      table.innerHTML  = html;
+      table.style.display = 'block';
+      expBtn.style.display = 'block';
+    });
+}
+
+function exportDrillDown(type) {
+  var data = type === 'output' ? outputData : inputData;
+  if (!data) return;
+  var isOutput = type === 'output';
+  var lines = [];
+
+  // Header
+  if (isOutput) {
+    lines.push('Date,Invoice Number,Customer,Taxable Amount,GST Amount,Total,Status');
+    data.rows.forEach(function(r) {
+      lines.push([r.date, r.invoice_number, '"'+r.customer+'"',
+        r.subtotal.toFixed(2), r.tax_amount.toFixed(2), r.total.toFixed(2), r.status].join(','));
+    });
+    lines.push('');
+    lines.push('TOTAL,,,'+data.total_taxable.toFixed(2)+','+data.total_tax.toFixed(2)+','+data.total_gross.toFixed(2)+'');
+  } else {
+    lines.push('Date,Reference,Vendor,Vendor TIN,Taxable Amount,GST Amount,Total,Type');
+    data.rows.forEach(function(r) {
+      lines.push([r.date, r.invoice_number, '"'+r.vendor+'"', r.vendor_tin,
+        r.subtotal.toFixed(2), r.tax_amount.toFixed(2), r.total.toFixed(2), r.doc_type].join(','));
+    });
+    lines.push('');
+    lines.push('TOTAL,,,,'+data.total_taxable.toFixed(2)+','+data.total_tax.toFixed(2)+','+data.total_gross.toFixed(2)+'');
+  }
+
+  var csv  = lines.join('\n');
+  var blob = new Blob([csv], {type:'text/csv'});
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href   = url;
+  a.download = 'GST_' + type + '_' + GST_START + '_to_' + GST_END + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>{% endblock %}
