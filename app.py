@@ -6273,7 +6273,9 @@ def api_bills_import_csv():
             start_line = i
             break
     clean_csv = '\n'.join(lines[start_line:])
-    reader = csv.DictReader(io.StringIO(clean_csv))
+    first_line_b = clean_csv.split('\n')[0] if clean_csv else ''
+    delimiter = '\t' if first_line_b.count('\t') > first_line_b.count(',') else ','
+    reader = csv.DictReader(io.StringIO(clean_csv), delimiter=delimiter)
     for i, row in enumerate(reader):
         try:
             # Flexible header mapping
@@ -6383,9 +6385,11 @@ def api_invoices_import_csv():
             break
 
     clean_csv = '\n'.join(lines[start_line:])
-    reader = csv.DictReader(io.StringIO(clean_csv))
-    # Store detected headers for error reporting
-    detected_headers = clean_csv.split('\n')[0] if clean_csv else 'NO HEADERS FOUND'
+    # Auto-detect delimiter: tab or comma
+    first_line = clean_csv.split('\n')[0] if clean_csv else ''
+    delimiter = '\t' if first_line.count('\t') > first_line.count(',') else ','
+    reader = csv.DictReader(io.StringIO(clean_csv), delimiter=delimiter)
+    detected_headers = first_line if first_line else 'NO HEADERS FOUND'
 
     def col(row, *keys, default=''):
         """Flexible column lookup — exact then partial match, handles None"""
@@ -6459,13 +6463,14 @@ def api_invoices_import_csv():
             # Parse dates
             inv_date = date.today()
             due_date_val = None
-            for fmt in ['%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%m/%d/%Y',
-                        '%d %b %Y','%d-%b-%Y','%b %d, %Y','%d/%m/%y']:
+            for fmt in ['%d/%m/%Y','%d/%m/%y','%Y-%m-%d','%d-%m-%Y',
+                        '%m/%d/%Y','%m/%d/%y','%d %b %Y','%d-%b-%Y',
+                        '%b %d, %Y','%Y/%m/%d']:
                 if date_str:
                     try: inv_date = datetime.strptime(date_str.strip(), fmt).date(); break
                     except: continue
-            for fmt in ['%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%m/%d/%Y',
-                        '%d %b %Y','%d-%b-%Y']:
+            for fmt in ['%d/%m/%Y','%d/%m/%y','%Y-%m-%d','%d-%m-%Y',
+                        '%m/%d/%Y','%m/%d/%y','%d %b %Y','%d-%b-%Y']:
                 if due_str:
                     try: due_date_val = datetime.strptime(due_str.strip(), fmt).date(); break
                     except: continue
