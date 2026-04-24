@@ -6280,14 +6280,17 @@ def api_bills_import_csv():
             def get(keys, default=''):
                 for k in keys:
                     for field in row:
-                        if k.lower() in field.lower():
-                            return str(row[field] or '').strip()
+                        if field is None: continue
+                        if k.lower() in str(field).lower():
+                            v = row[field]
+                            if v is None: continue
+                            return str(v).strip()
                 return default
-            vendor      = get(['vendor','supplier','from','name','vendor/supplier'])
-            inv_num     = get(['invoice','bill','ref','number','no','num','ref no','bill no'])
-            amount_str  = get(['amount','total','value','total amount','amt'])
+            vendor      = get(['vendor','supplier','from','name','vendor/supplier','payee','display name'])
+            inv_num     = get(['invoice','bill','ref','number','no','num','ref no','bill no','receipt no'])
+            amount_str  = get(['amount','total','value','total amount','amt','gross','grand total'])
             tax_str     = get(['tax','vat','gst','tax amount','vat amount','gst amount'])
-            date_str    = get(['date','invoice_date','bill_date','txn date','transaction date'])
+            date_str    = get(['date','invoice_date','bill_date','txn date','transaction date','bill date'])
             doc_type    = get(['type','doc_type','transaction type']) or 'BILL'
             vendor_tin  = get(['tin','tax id','trn','vendor tin','vendor tax','vendor trn',
                                'supplier tin','supplier tax','registration','reg no','fiscal'])
@@ -6385,35 +6388,43 @@ def api_invoices_import_csv():
     detected_headers = clean_csv.split('\n')[0] if clean_csv else 'NO HEADERS FOUND'
 
     def col(row, *keys, default=''):
-        """Flexible column lookup — case-insensitive, strip spaces"""
+        """Flexible column lookup — case-insensitive, handles None values"""
         for k in keys:
             for field in row:
-                if field.strip().lower() == k.lower():
-                    v = str(row[field] or '').strip()
+                if field is None: continue
+                if str(field).strip().lower() == k.lower():
+                    v = row[field]
+                    if v is None: continue
+                    v = str(v).strip()
                     if v: return v
         return default
 
     for i, row in enumerate(reader):
         try:
-            customer_name = col(row,'customer','client','customer name','bill to','name')
-            inv_num       = col(row,'invoice number','invoice #','invoice no','inv no','num','number','ref','transaction no','no.')
-            date_str      = col(row,'date','invoice date','issue date','txn date')
-            due_str       = col(row,'due date','due','payment due')
-            amount_str    = col(row,'total','amount','total amount','invoice total','grand total','amt')
-            subtotal_str  = col(row,'subtotal','sub total','net amount','net')
-            tax_str       = col(row,'tax','vat','gst','tax amount','vat amount')
-            status_str    = col(row,'status','payment status').upper()
-            # QBO: 'Open Balance' = remaining unpaid amount
-            open_balance  = col(row,'open balance','balance','outstanding','remaining')
-            paid_str      = col(row,'amount paid','paid','payment received')
-            currency      = col(row,'currency','cur') or business.base_currency or 'MVR'
-            notes         = col(row,'notes','description','memo','remarks','memo/description')
+            customer_name = col(row,'customer','client','customer name','bill to','name','display name')
+            inv_num       = col(row,'invoice number','invoice #','invoice no','inv no','num','number','ref','transaction no','no.','invoice num')
+            date_str      = col(row,'date','invoice date','issue date','txn date','transaction date')
+            due_str       = col(row,'due date','due','payment due','payment date')
+            amount_str    = col(row,'total','amount','total amount','invoice total','grand total','amt','gross')
+            subtotal_str  = col(row,'subtotal','sub total','net amount','net','taxable amount','excl tax')
+            tax_str       = col(row,'tax','vat','gst','tax amount','vat amount','gst amount')
+            status_str    = col(row,'status','payment status','invoice status').upper()
+            open_balance  = col(row,'open balance','balance','outstanding','remaining','balance due')
+            paid_str      = col(row,'amount paid','paid','payment received','amount received')
+            currency      = col(row,'currency','cur','currency code') or business.base_currency or 'MVR'
+            notes         = col(row,'notes','description','memo','remarks','memo/description','narration')
             buyer_trn     = col(row,'buyer tin','buyer trn','customer tin','customer trn',
-                                'customer tax id','buyer tax id','trn','tax id')
+                                'customer tax id','buyer tax id','trn','tax id','tin')
 
             # Parse amount
             def parse_amount(s):
-                try: return float(str(s).replace(',','').replace(' ','') or 0)
+                if s is None: return 0.0
+                try:
+                    cleaned = str(s).replace(',','').replace(' ','').strip()
+                    # Remove currency symbols/codes
+                    for cur in ['MVR','USD','AED','MYR','SAR','GBP','EUR','$','€','£']:
+                        cleaned = cleaned.replace(cur,'')
+                    return float(cleaned.strip() or 0)
                 except: return 0.0
 
             total    = parse_amount(amount_str)
