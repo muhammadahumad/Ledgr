@@ -6335,85 +6335,168 @@ def api_opening_balances_csv():
 @app.route("/api/bills/import-csv", methods=["POST"])
 @login_required
 def api_bills_import_csv():
-    """Import multiple bills/expenses from CSV"""
+    """Import bills from CSV — groups line items by vendor+ref+date into one bill"""
     user = current_user()
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
-    csv_text = data.get("csv_text","").strip()
+    csv_text = (data.get("csv_text","") or "").strip()
     if not csv_text:
         return jsonify({"ok":False,"error":"No CSV data provided"})
+
     import csv, io
     imported = 0
     errors = []
 
-    # Skip metadata rows (QBO report title, date range etc)
+    # Skip QBO/Xero metadata rows
     lines = csv_text.strip().split('\n')
-    header_keywords = ['vendor','supplier','date','amount','total','bill','ref','name','type','num']
+    header_keywords = ['vendor','supplier','date','amount','total','bill','ref','name','type','num','account']
     start_line = 0
     for i, line in enumerate(lines):
         line_lower = line.lower()
-        matches = sum(1 for kw in header_keywords if kw in line_lower)
-        if matches >= 2:
-            start_line = i
-            break
+        if sum(1 for kw in header_keywords if kw in line_lower) >= 2:
+            start_line = i; break
     clean_csv = '\n'.join(lines[start_line:])
     first_line_b = clean_csv.split('\n')[0] if clean_csv else ''
     delimiter = '\t' if first_line_b.count('\t') > first_line_b.count(',') else ','
     reader = csv.DictReader(io.StringIO(clean_csv), delimiter=delimiter)
-    for i, row in enumerate(reader):
-        try:
-            # Flexible header mapping
-            def get(keys, default=''):
-                for k in keys:
-                    for field in row:
-                        if field is None: continue
-                        if k.lower() in str(field).lower():
-                            v = row[field]
-                            if v is None: continue
-                            return str(v).strip()
-                return default
-            vendor      = get(['vendor','supplier','from','name','vendor/supplier','payee','display name'])
-            inv_num     = get(['invoice','bill','ref','number','no','num','ref no','bill no','receipt no'])
-            amount_str  = get(['amount','total','value','total amount','amt','gross','grand total'])
-            tax_str     = get(['tax','vat','gst','tax amount','vat amount','gst amount'])
-            date_str    = get(['date','invoice_date','bill_date','txn date','transaction date','bill date'])
-            doc_type    = get(['type','doc_type','transaction type']) or 'BILL'
-            vendor_tin  = get(['tin','tax id','trn','vendor tin','vendor tax','vendor trn',
-                               'supplier tin','supplier tax','registration','reg no','fiscal'])
-            if vendor_tin in ['0','none','null','-','n/a']: vendor_tin = ""
-            account_code_b = get(['account code','account','gl code','gl account',
-                                  'expense account','cost account','ledger code','asset account'])
-            # Parse amounts — handle grand total vs subtotal
-            def pa(s):
-                if not s: return 0.0
-                try:
-                    import re as _re
-                    c = _re.sub(r'[A-Z]{3}','',str(s)).replace(',','').replace('$','').replace('€','').replace('£','').strip()
-                    if c.startswith('(') and c.endswith(')'): c = '-'+c[1:-1]
-                    return float(c or 0)
-                except: return 0.0
 
-            amount     = pa(amount_str)   # grand total incl tax
-            tax_amt_b  = pa(tax_str)
-            # Derive subtotal
-            if amount > 0 and tax_amt_b > 0:
-                subtotal_b = amount - tax_amt_b
-            else:
-                subtotal_b = amount
-            if amount <= 0:
-                continue
+    def get(row, keys, default=''):
+        for k in keys:
+            for field in row:
+                if field is None: continue
+                if k.lower() in str(field).lower():
+                    v = row[field]
+                    if v is None: continue
+                    v = str(v).strip()
+                    if v: return v
+        return default
+
+    def pa(s):
+        """Parse amount — handle None, commas, currency symbols, parentheses"""
+        if not s: return 0.0
+        try:
+            c = str(s).strip()
+            if not c or c in ['-','—','n/a','nil']: return 0.0
+            neg = c.startswith('(') and c.endswith(')')
+            if neg: c = '-' + c[1:-1]
+            import re as _re
+            c = _re.sub(r'[A-Z]{3}','',c)
+            for sym in ['$','€','£','¥','₹','﷼','Rp']:
+                c = c.replace(sym,'')
+            return float(c.replace(',','').replace(' ','').strip() or 0)
+        except: return 0.0
+
+    # ── GROUP LINE ITEMS BY (vendor, ref_number, date) ───────────────────
+    # QBO exports one row per line item for the same bill
+    # We collect all rows, group them, then create ONE document per unique bill
+
+    from collections import defaultdict, OrderedDict
+    bill_groups = OrderedDict()  # key=(vendor, ref, date_str) -> list of rows
+
+    all_rows = list(reader)
+    for row in all_rows:
+        vendor   = get(row, ['vendor','supplier','from','name','vendor/supplier','payee','display name'])
+        inv_num  = get(row, ['invoice','bill','ref','number','no','num','ref no','bill no','receipt no'])
+        date_str = get(row, ['date','invoice_date','bill_date','txn date','transaction date','bill date'])
+        if not vendor and not inv_num: continue
+        key = (vendor.lower().strip(), inv_num.lower().strip(), date_str.strip())
+        if key not in bill_groups:
+            bill_groups[key] = []
+        bill_groups[key].append(row)
+
+    # ── PROCESS EACH BILL GROUP ──────────────────────────────────────────
+    for (vendor_key, ref_key, date_key), group_rows in bill_groups.items():
+        try:
+            first = group_rows[0]
+            vendor   = get(first, ['vendor','supplier','from','name','vendor/supplier','payee','display name'])
+            inv_num  = get(first, ['invoice','bill','ref','number','no','num','ref no','bill no'])
+            date_str = get(first, ['date','invoice_date','bill_date','txn date','transaction date','bill date'])
+            due_str  = get(first, ['due date','due','payment due'])
+            doc_type = get(first, ['type','doc_type','transaction type']) or 'BILL'
+            vendor_tin = get(first, ['tin','tax id','trn','vendor tin','supplier tin','registration','reg no'])
+            if vendor_tin in ['0','none','null','-','n/a']: vendor_tin = ""
+
+            if not vendor: continue
+
+            # Parse date
             inv_date = date.today()
-            for fmt in ['%Y-%m-%d','%d/%m/%Y','%d-%m-%Y','%m/%d/%Y','%d %b %Y']:
-                try:
-                    inv_date = datetime.strptime(date_str, fmt).date()
-                    break
-                except:
-                    continue
-            tax_amt = 0
-            if tax_str:
-                try: tax_amt = float(str(tax_str).replace(',','') or 0)
-                except: tax_amt = 0
+            due_date_val = None
+            for fmt in ['%d/%m/%Y','%d/%m/%y','%Y-%m-%d','%d-%m-%Y',
+                        '%m/%d/%Y','%m/%d/%y','%d %b %Y','%d-%b-%Y']:
+                if date_str:
+                    try: inv_date = datetime.strptime(date_str.strip(), fmt).date(); break
+                    except: continue
+            for fmt in ['%d/%m/%Y','%d/%m/%y','%Y-%m-%d','%d-%m-%Y','%m/%d/%Y']:
+                if due_str:
+                    try: due_date_val = datetime.strptime(due_str.strip(), fmt).date(); break
+                    except: continue
+
+            # ── Aggregate line items ──────────────────────────────────────
+            # Each row may have its own amount and account code
+            line_items = []
+            total_amount = 0.0
+            total_tax = 0.0
+
+            for row in group_rows:
+                # Try grand total first, then subtotal
+                amt_str = get(row, ['amount','total amount','grand total','gross'])
+                sub_str = get(row, ['subtotal','sub total','net','net amount','total'])
+                tax_str = get(row, ['tax','vat','gst','tax amount'])
+                desc    = get(row, ['description','memo','item','product','service','narration','detail'])
+                acc_code = get(row, ['account code','account','gl code','gl account','ledger','cost account'])
+
+                amt = pa(amt_str)
+                sub = pa(sub_str)
+                tax = pa(tax_str)
+
+                # Derive amounts
+                if amt > 0 and sub > 0 and sub < amt:
+                    line_total = amt; line_sub = sub
+                    if tax == 0: tax = amt - sub
+                elif amt > 0 and tax > 0:
+                    line_total = amt; line_sub = amt - tax
+                elif sub > 0 and tax > 0:
+                    line_total = sub + tax; line_sub = sub
+                elif amt > 0:
+                    line_total = amt; line_sub = amt
+                elif sub > 0:
+                    line_total = sub; line_sub = sub
+                else:
+                    continue  # skip zero rows
+
+                total_amount += line_total
+                total_tax    += tax
+
+                # Resolve account for this line
+                exp_acc = resolve_account(business, 'cogs',
+                    description=desc or vendor,
+                    explicit_code=acc_code)
+
+                line_items.append({
+                    "description": desc or vendor,
+                    "amount":      round(line_sub, 2),
+                    "tax":         round(tax, 2),
+                    "total":       round(line_total, 2),
+                    "account_code": exp_acc
+                })
+
+            if total_amount <= 0:
+                continue
+
+            total_sub = total_amount - total_tax
+
+            # Check for duplicate
+            existing = Document.query.filter_by(
+                business_id=business.id,
+                vendor_name=vendor,
+                invoice_number=inv_num
+            ).first()
+            if existing:
+                imported += 1
+                continue
+
+            # Create one Document for the entire bill
             doc = Document(
                 business_id=business.id,
                 user_id=user.id,
@@ -6421,49 +6504,77 @@ def api_bills_import_csv():
                 vendor_tax_id=vendor_tin or None,
                 invoice_number=inv_num,
                 doc_type=doc_type.upper() if doc_type.upper() in ['BILL','EXPENSE','RECEIPT'] else 'BILL',
-                total_amount=amount,
-                tax_amount=tax_amt_b,
-                subtotal=subtotal_b,
+                total_amount=round(total_amount, 2),
+                tax_amount=round(total_tax, 2),
+                subtotal=round(total_sub, 2),
                 invoice_date=inv_date,
+                due_date=due_date_val,
+                line_items=json.dumps(line_items),
                 payment_status='UNPAID'
             )
             db.session.add(doc)
-            # Post journal
-            # Resolve expense/asset account — smart capital asset detection
-            exp_account = resolve_account(business, 'cogs',
-                description=f"{vendor} {inv_num}",
-                explicit_code=account_code_b)
-            bill_je_lines = [
-                {"account_code": exp_account, "debit": subtotal_b, "credit": 0,
-                 "description": f"Cost: {vendor}"},
-                {"account_code": "2000", "debit": 0, "credit": amount,
-                 "description": f"AP: {vendor}"},
-            ]
-            if tax_amt_b > 0:
-                bill_je_lines.append(
-                    {"account_code":"2200","debit":tax_amt_b,"credit":0,
-                     "description":f"Input tax: {vendor}"}
-                )
+            db.session.flush()
+
+            # ── Post journal — one line per account code ──────────────────
+            # Group line items by account code for clean posting
+            from collections import defaultdict as _dd
+            acc_totals = _dd(float)
+            acc_tax    = _dd(float)
+            for li in line_items:
+                acc_totals[li['account_code']] += li['amount']
+                acc_tax[li['account_code']]    += li['tax']
+
+            je_lines = []
+            # AP credit = full bill total
+            je_lines.append({
+                "account_code": "2000",
+                "debit": 0,
+                "credit": round(total_amount, 2),
+                "description": f"AP: {vendor} {inv_num}"
+            })
+            # Debit each expense/asset account
+            for acc_code, acc_sub in acc_totals.items():
+                je_lines.append({
+                    "account_code": acc_code,
+                    "debit": round(acc_sub, 2),
+                    "credit": 0,
+                    "description": f"Cost: {vendor}"
+                })
+            # Input tax if any
+            total_input_tax = sum(acc_tax.values())
+            if total_input_tax > 0.01:
+                je_lines.append({
+                    "account_code": "2210",
+                    "debit": round(total_input_tax, 2),
+                    "credit": 0,
+                    "description": f"Input tax: {vendor}"
+                })
+
             post_journal(business.id, user.id,
-                        f"Bill: {vendor} {inv_num}",
-                        inv_num or f"CSV-{i+1}", "EXPENSE", bill_je_lines)
+                        f"Bill: {vendor} {inv_num or ''}",
+                        inv_num or f"BILL-{imported+1}", "EXPENSE", je_lines,
+                        entry_date=inv_date)
             imported += 1
+
         except Exception as e:
-            errors.append(f"Row {i+2}: {str(e)}")
-    db.session.commit()
+            db.session.rollback()
+            errors.append(f"Bill {ref_key or vendor_key}: {str(e)[:150]}")
+            continue
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok":False,"error":str(e)})
+
     return jsonify({
-        "ok":True,
-        "imported":imported,
-        "errors":errors,
-        "message":f"{imported} bills imported and posted to ledger"
+        "ok": True,
+        "imported": imported,
+        "errors": errors,
+        "message": f"{imported} bill(s) imported (line items grouped)"
+            + (f", {len(errors)} error(s)" if errors else "")
     })
 
-
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# DATA MIGRATION — CSV INVOICE IMPORT + YEAR-END CLOSE
-# ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/api/invoices/import-csv", methods=["POST"])
 @login_required
@@ -7279,7 +7390,7 @@ def api_purge_test_data():
         trans.commit()
         conn.close()
         return jsonify({"ok": True,
-            "message": "All transactions cleared. Accounts, customers, suppliers, employees and products preserved."})
+            "message": "All transactions cleared. Master data preserved: customers, suppliers, accounts, employees, products, departments, projects."})
     except Exception as e:
         try:
             trans.rollback()
