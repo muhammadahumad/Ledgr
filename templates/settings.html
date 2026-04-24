@@ -297,6 +297,40 @@
   </button>
 </div>
 
+<div class="card" style="margin-bottom:14px">
+  <div class="card-title">📊 Import Default Accounts</div>
+  <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.7">
+    When importing invoices and bills by CSV, LEDGR will post to these accounts by default.
+    You can override per-row by adding an <strong>Account Code</strong> column in your CSV.
+  </div>
+  <div class="field-row">
+    <div>
+      <div class="field-label">Default Revenue Account (Invoice imports)</div>
+      <select class="select-input" id="s-rev-account">
+        {% for acc in accounts if acc.account_type == 'REVENUE' %}
+        <option value="{{ acc.code }}" {% if business.default_revenue_account == acc.code %}selected{% endif %}>
+          {{ acc.code }} — {{ acc.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <div class="field-label">Default Cost Account (Bill imports)</div>
+      <select class="select-input" id="s-cogs-account">
+        {% for acc in accounts if acc.account_type == 'EXPENSE' %}
+        <option value="{{ acc.code }}" {% if business.default_cogs_account == acc.code %}selected{% endif %}>
+          {{ acc.code }} — {{ acc.name }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--text3);margin-top:6px">
+    💡 Bills containing capital asset keywords (machinery, equipment, vehicle, computer, tools, etc.)
+    will automatically post to <strong>Fixed Assets</strong> instead.
+  </div>
+</div>
+
 <div class="card" style="margin-bottom:14px;border-color:rgba(59,130,246,.2)">
   <div class="card-title">🔄 Data Migration & Opening Balances</div>
   <div style="font-size:12px;color:var(--text3);margin-bottom:10px">
@@ -424,6 +458,8 @@ function saveAll() {
     myinvois_client_id: document.getElementById('s-lhdn-id')?.value || '',
     myinvois_client_secret: document.getElementById('s-lhdn-secret')?.value || '',
     myinvois_tin: document.getElementById('s-lhdn-tin')?.value || '',
+    default_revenue_account: document.getElementById('s-rev-account')?.value || '',
+    default_cogs_account: document.getElementById('s-cogs-account')?.value || '',
   };
   var btn = document.querySelector('.btn-primary'); btn.disabled = true; btn.textContent = 'Saving...';
   fetch('/api/settings/update', {
