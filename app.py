@@ -6449,14 +6449,19 @@ def api_invoices_import_csv():
                 except: return 0.0
 
             total    = parse_amount(amount_str)
-            subtotal = parse_amount(subtotal_str) or total
             tax_amt  = parse_amount(tax_str)
+            subtotal_raw = parse_amount(subtotal_str)
+            # If subtotal not in CSV, derive it from total - tax
+            # This ensures: debit(AR) = credit(revenue) + credit(tax)
+            if subtotal_raw > 0 and subtotal_raw < total:
+                subtotal = subtotal_raw
+            elif tax_amt > 0:
+                subtotal = total - tax_amt   # tax-exclusive revenue
+            else:
+                subtotal = total             # no tax, subtotal = total
             paid_amt = parse_amount(paid_str)
 
             if total <= 0 and subtotal <= 0:
-                # Debug: capture what was found
-                raw_amt = col(row,'total','amount','total amount','amt','grand total','gross')
-                errors.append(f"Row {i+2} skipped (zero amount) — raw value: '{raw_amt}' | columns: {list(row.keys())[:8]}")
                 skipped += 1
                 continue
 
@@ -6552,7 +6557,7 @@ def api_invoices_import_csv():
                 {"account_code": "1100", "debit": float(total),
                  "credit": 0, "description": f"AR: {inv_num}"},
                 {"account_code": "4000", "debit": 0,
-                 "credit": float(subtotal or total - tax_amt),
+                 "credit": float(subtotal),
                  "description": f"Revenue: {inv_num}"},
             ]
             if tax_amt > 0:
