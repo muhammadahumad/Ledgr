@@ -6368,20 +6368,21 @@ def api_invoices_import_csv():
     errors = []
 
     # Skip QBO/Xero metadata rows at top (report title, date range, blank lines)
-    # Find the actual header row — first row with recognizable column names
     lines = csv_text.strip().split('\n')
     header_keywords = ['invoice','date','customer','amount','total','status','balance',
-                       'vendor','supplier','bill','ref','num','due','name','type']
+                       'vendor','supplier','bill','ref','num','due','name','type','no']
     start_line = 0
     for i, line in enumerate(lines):
         line_lower = line.lower()
         matches = sum(1 for kw in header_keywords if kw in line_lower)
-        if matches >= 2:  # at least 2 keyword matches = real header row
+        if matches >= 2:
             start_line = i
             break
 
     clean_csv = '\n'.join(lines[start_line:])
     reader = csv.DictReader(io.StringIO(clean_csv))
+    # Store detected headers for error reporting
+    detected_headers = clean_csv.split('\n')[0] if clean_csv else 'NO HEADERS FOUND'
 
     def col(row, *keys, default=''):
         """Flexible column lookup — case-insensitive, strip spaces"""
@@ -6541,7 +6542,7 @@ def api_invoices_import_csv():
 
         except Exception as e:
             db.session.rollback()
-            errors.append(f"Row {i+2}: {str(e)[:80]}")
+            errors.append(f"Row {i+2}: {str(e)[:200]}")
             continue
 
     try:
@@ -6555,6 +6556,7 @@ def api_invoices_import_csv():
         "imported": imported,
         "skipped": skipped,
         "errors": errors,
+        "detected_headers": detected_headers if imported==0 else "",
         "message": f"{imported} invoice(s) imported"
             + (f", {skipped} skipped (zero amount)" if skipped else "")
             + (f", {len(errors)} error(s)" if errors else "")
