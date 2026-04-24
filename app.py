@@ -6297,10 +6297,23 @@ def api_bills_import_csv():
             vendor_tin  = get(['tin','tax id','trn','vendor tin','vendor tax','vendor trn',
                                'supplier tin','supplier tax','registration','reg no','fiscal'])
             if vendor_tin in ['0','none','null','-','n/a']: vendor_tin = "" 
-            try:
-                amount = float(amount_str.replace(',','') or 0)
-            except:
-                amount = 0
+            # Parse amounts — handle grand total vs subtotal
+            def pa(s):
+                if not s: return 0.0
+                try:
+                    import re as _re
+                    c = _re.sub(r'[A-Z]{3}','',str(s)).replace(',','').replace('$','').replace('€','').replace('£','').strip()
+                    if c.startswith('(') and c.endswith(')'): c = '-'+c[1:-1]
+                    return float(c or 0)
+                except: return 0.0
+
+            amount     = pa(amount_str)   # grand total incl tax
+            tax_amt_b  = pa(tax_str)
+            # Derive subtotal
+            if amount > 0 and tax_amt_b > 0:
+                subtotal_b = amount - tax_amt_b
+            else:
+                subtotal_b = amount
             if amount <= 0:
                 continue
             inv_date = date.today()
@@ -6322,21 +6335,27 @@ def api_bills_import_csv():
                 invoice_number=inv_num,
                 doc_type=doc_type.upper() if doc_type.upper() in ['BILL','EXPENSE','RECEIPT'] else 'BILL',
                 total_amount=amount,
-                tax_amount=tax_amt,
-                subtotal=amount - tax_amt,
+                tax_amount=tax_amt_b,
+                subtotal=subtotal_b,
                 invoice_date=inv_date,
                 payment_status='UNPAID'
             )
             db.session.add(doc)
             # Post journal
+            bill_je_lines = [
+                {"account_code":"5400","debit":subtotal_b,"credit":0,
+                 "description":f"Expense: {vendor}"},
+                {"account_code":"2000","debit":0,"credit":amount,
+                 "description":f"AP: {vendor}"},
+            ]
+            if tax_amt_b > 0:
+                bill_je_lines.append(
+                    {"account_code":"2200","debit":tax_amt_b,"credit":0,
+                     "description":f"Input tax: {vendor}"}
+                )
             post_journal(business.id, user.id,
                         f"Bill: {vendor} {inv_num}",
-                        inv_num or f"CSV-{i+1}", "EXPENSE", [
-                {"account_code":"5400","debit":amount,"credit":0,
-                 "description":f"Bill import: {vendor}"},
-                {"account_code":"2000","debit":0,"credit":amount,
-                 "description":f"AP: {vendor}"}
-            ])
+                        inv_num or f"CSV-{i+1}", "EXPENSE", bill_je_lines)
             imported += 1
         except Exception as e:
             errors.append(f"Row {i+2}: {str(e)}")
@@ -6419,8 +6438,10 @@ def api_invoices_import_csv():
             inv_num       = col(row,'invoice number','invoice #','invoice no','inv no','num','number','ref','transaction no','no.','invoice num')
             date_str      = col(row,'date','invoice date','issue date','txn date','transaction date')
             due_str       = col(row,'due date','due','payment due','payment date')
-            amount_str    = col(row,'total','amount','total amount','invoice total','grand total','amt','gross')
-            subtotal_str  = col(row,'subtotal','sub total','net amount','net','taxable amount','excl tax')
+            # Grand total (incl tax): try 'amount' first (QBO), then 'total incl','grand total'
+            amount_str    = col(row,'amount','total amount','grand total','total incl','total inc tax','invoice total','gross','total incl. tax')
+            # Subtotal (excl tax): 'total' in QBO = pre-tax amount
+            subtotal_str  = col(row,'subtotal','sub total','net amount','net','taxable amount','excl tax','total excl','total','total excl. tax')
             tax_str       = col(row,'tax','vat','gst','tax amount','vat amount','gst amount')
             status_str    = col(row,'status','payment status','invoice status').upper()
             open_balance  = col(row,'open balance','balance','outstanding','remaining','balance due')
@@ -6448,18 +6469,32 @@ def api_invoices_import_csv():
                     return float(cleaned or 0)
                 except: return 0.0
 
-            total    = parse_amount(amount_str)
-            tax_amt  = parse_amount(tax_str)
-            subtotal_raw = parse_amount(subtotal_str)
-            # If subtotal not in CSV, derive it from total - tax
-            # This ensures: debit(AR) = credit(revenue) + credit(tax)
-            if subtotal_raw > 0 and subtotal_raw < total:
+            total        = parse_amount(amount_str)   # grand total incl tax
+            tax_amt      = parse_amount(tax_str)
+            subtotal_raw = parse_amount(subtotal_str)  # excl tax
+            paid_amt     = parse_amount(paid_str)
+
+            # Derive missing values
+            if total > 0 and subtotal_raw > 0:
+                # Both present — use as-is
                 subtotal = subtotal_raw
-            elif tax_amt > 0:
-                subtotal = total - tax_amt   # tax-exclusive revenue
+                if tax_amt == 0: tax_amt = total - subtotal
+            elif total > 0 and tax_amt > 0:
+                # Have grand total + tax — derive subtotal
+                subtotal = total - tax_amt
+            elif subtotal_raw > 0 and tax_amt > 0:
+                # Have subtotal + tax — derive grand total
+                subtotal = subtotal_raw
+                total    = subtotal + tax_amt
+            elif total > 0:
+                # Only total — no tax
+                subtotal = total
+            elif subtotal_raw > 0:
+                # Only subtotal — use as total
+                total    = subtotal_raw
+                subtotal = subtotal_raw
             else:
-                subtotal = total             # no tax, subtotal = total
-            paid_amt = parse_amount(paid_str)
+                subtotal = 0
 
             if total <= 0 and subtotal <= 0:
                 skipped += 1
