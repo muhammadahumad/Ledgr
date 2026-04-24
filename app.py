@@ -6498,6 +6498,11 @@ def api_bills_import_csv():
                     imported += 1; continue
 
             # Create Document
+            # Build description from line items
+            line_desc = ' | '.join(
+                li['description'] for li in line_items if li['description']
+            )[:500] if line_items else f"Imported bill from {vendor}"
+
             doc = Document(
                 business_id=business.id,
                 user_id=user.id,
@@ -6511,7 +6516,7 @@ def api_bills_import_csv():
                 currency=currency,
                 invoice_date=inv_date,
                 due_date=due_date_val,
-                line_items=json.dumps(line_items),
+                raw_ai_data=json.dumps({"line_items": line_items, "source": "csv_import"}),
                 payment_status='UNPAID'
             )
             db.session.add(doc)
@@ -7411,6 +7416,10 @@ def api_journals_import_csv():
     import csv, io, re as _re
     from collections import OrderedDict
     imported = 0; errors = []
+    
+    # Detect format: standard journal CSV vs QBO spend money export
+    # QBO spend money has: ID, Name, Date, Number, Description, Amount, Tax amount
+    # Standard journal has: Date, Account Code, Debit, Credit, Description
 
     lines = csv_text.strip().split('\n')
     header_keywords = ['date','account','debit','credit','description','ref','journal',
@@ -7450,12 +7459,24 @@ def api_journals_import_csv():
     all_rows = list(reader)
     journal_groups = OrderedDict()
 
+    # Detect if this is a standard journal or QBO spend money format
+    first_row = all_rows[0] if all_rows else {}
+    has_account_col = any(
+        any(k.lower() in str(f).lower() for k in ['account code','account','gl code','debit','credit','dr','cr'])
+        for f in first_row if f
+    )
+    is_qbo_format = not has_account_col and any(
+        any(k.lower() in str(f).lower() for k in ['transaction id','name','amount'])
+        for f in first_row if f
+    )
+
     for row in all_rows:
-        ref   = get(row, ['reference','ref','journal ref','entry no','journal no','voucher'])
+        ref   = get(row, ['reference','ref','journal ref','entry no','journal no','voucher',
+                           'transaction id','id'])
         desc  = get(row, ['description','narration','memo','particulars','details'])
         date_s = get(row, ['date','journal date','entry date','transaction date'])
         if not (ref or desc or date_s): continue
-        group_key = f"{ref or date_s}|{desc[:30]}" if ref else f"{date_s}|{desc[:30]}"
+        group_key = f"TXN_{ref}" if (ref and ref.isdigit()) else f"{ref or date_s}|{desc[:30]}"
         if group_key not in journal_groups:
             journal_groups[group_key] = []
         journal_groups[group_key].append(row)
@@ -7463,9 +7484,11 @@ def api_journals_import_csv():
     for group_key, group_rows in journal_groups.items():
         try:
             first = group_rows[0]
-            ref   = get(first, ['reference','ref','journal ref','entry no','journal no','voucher'])
-            desc  = get(first, ['description','narration','memo','particulars','details'])
+            ref    = get(first, ['reference','ref','journal ref','entry no','journal no',
+                                  'voucher','transaction id','id'])
+            desc   = get(first, ['description','narration','memo','particulars','details'])
             date_s = get(first, ['date','journal date','entry date','transaction date'])
+            vendor = get(first, ['name','vendor','supplier','payee'])
             entry_type = get(first, ['type','entry type','journal type']) or 'MANUAL'
 
             # Parse date
@@ -7476,28 +7499,77 @@ def api_journals_import_csv():
                     except: continue
 
             je_lines = []
-            for row in group_rows:
-                acc_code = get(row, ['account code','account','code','gl code','ledger'])
-                debit    = pa(get(row, ['debit','dr','debit amount']))
-                credit   = pa(get(row, ['credit','cr','credit amount']))
-                line_desc = get(row, ['description','narration','memo','particulars']) or desc
 
-                if debit == 0 and credit == 0: continue
-                if not acc_code: continue
+            if is_qbo_format:
+                # QBO spend money / salary format:
+                # Each row = one expense. Build DR Expense / CR AP or Salary Payable
+                for row in group_rows:
+                    row_desc  = get(row, ['description','memo','narration','particulars'])
+                    amt_str   = get(row, ['amount','foreign amount','total'])
+                    tax_str   = get(row, ['tax amount','foreign tax amount','tax'])
+                    acc_code  = get(row, ['account code','account','gl code'])
+                    row_name  = get(row, ['name','vendor','supplier']) or vendor
 
-                # Validate account exists
-                acc = Account.query.filter_by(
-                    business_id=business.id, code=acc_code).first()
-                if not acc:
-                    errors.append(f"Account {acc_code} not found — row skipped")
-                    continue
+                    gross = pa(amt_str)
+                    tax   = pa(tax_str)
+                    if gross <= 0: continue
+                    sub = gross - tax if tax > 0 else gross
 
-                je_lines.append({
-                    "account_code": acc_code,
-                    "debit": round(debit, 2),
-                    "credit": round(credit, 2),
-                    "description": line_desc
-                })
+                    # Resolve expense account
+                    exp_acc = resolve_account(business, 'expense',
+                        description=row_desc or row_name or desc,
+                        explicit_code=acc_code)
+
+                    # Detect salary/payroll
+                    combined = (row_desc + row_name + desc).lower()
+                    if any(k in combined for k in ['salary','salaries','payroll','wage','staff pay']):
+                        exp_acc = '5100'  # Salaries & Wages
+                        cr_acc  = '2300'  # Salaries Payable
+                    elif any(k in combined for k in ['medical','clinic','hospital','doctor']):
+                        exp_acc = '5600'  # Professional Services
+                        cr_acc  = '2000'  # AP
+                    elif any(k in combined for k in ['accommodation','hotel','rent','housing']):
+                        exp_acc = '5200'  # Rent
+                        cr_acc  = '2000'
+                    elif any(k in combined for k in ['hire','transport','pickup','vehicle']):
+                        exp_acc = '5700'  # Travel
+                        cr_acc  = '2000'
+                    else:
+                        cr_acc  = '2000'  # Default AP
+
+                    je_lines.append({"account_code": exp_acc, "debit": round(sub,2),
+                                     "credit": 0, "description": row_desc or row_name})
+                    if tax > 0:
+                        je_lines.append({"account_code": "2210", "debit": round(tax,2),
+                                         "credit": 0, "description": f"Input GST"})
+                    je_lines.append({"account_code": cr_acc, "debit": 0,
+                                     "credit": round(gross,2), "description": row_desc or row_name})
+
+            else:
+                # Standard journal CSV format
+                for row in group_rows:
+                    acc_code  = get(row, ['account code','account','code','gl code','ledger'])
+                    debit     = pa(get(row, ['debit','dr','debit amount']))
+                    credit    = pa(get(row, ['credit','cr','credit amount']))
+                    line_desc = get(row, ['description','narration','memo','particulars']) or desc
+
+                    if debit == 0 and credit == 0: continue
+                    if not acc_code:
+                        errors.append(f"Row missing account code — skipped")
+                        continue
+
+                    acc = Account.query.filter_by(
+                        business_id=business.id, code=acc_code).first()
+                    if not acc:
+                        errors.append(f"Account '{acc_code}' not found in chart of accounts")
+                        continue
+
+                    je_lines.append({
+                        "account_code": acc_code,
+                        "debit": round(debit, 2),
+                        "credit": round(credit, 2),
+                        "description": line_desc
+                    })
 
             if not je_lines: continue
 
@@ -7505,14 +7577,13 @@ def api_journals_import_csv():
             total_dr = sum(l['debit'] for l in je_lines)
             total_cr = sum(l['credit'] for l in je_lines)
             if abs(total_dr - total_cr) > 0.02:
-                errors.append(f"{group_key}: Unbalanced DR={total_dr:.2f} CR={total_cr:.2f}")
+                errors.append(f"{desc or ref}: Unbalanced DR={total_dr:.2f} CR={total_cr:.2f}")
                 continue
 
             post_journal(business.id, user.id,
-                desc or ref or "Imported Journal",
+                desc or vendor or ref or "Imported Journal",
                 ref or group_key[:30],
-                entry_type.upper() if entry_type.upper() in
-                    ['MANUAL','PAYROLL','SALARY','EXPENSE','REVENUE','OPENING_BALANCE']
+                'PAYROLL' if any(k in (desc+vendor).lower() for k in ['salary','payroll','wage'])
                     else 'MANUAL',
                 je_lines, entry_date=entry_date)
             imported += 1
