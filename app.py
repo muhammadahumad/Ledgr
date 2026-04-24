@@ -1357,10 +1357,14 @@ def post_journal(business_id, user_id, description, reference, entry_type, lines
     total_c = sum(float(l.get('credit',0)) for l in lines)
     if abs(total_d - total_c) > 0.02:
         raise ValueError(f'Unbalanced: debits={total_d:.2f} credits={total_c:.2f}')
+    # Convert entry_date to datetime if provided
+    if entry_date and hasattr(entry_date, 'year'):
+        entry_datetime = datetime.combine(entry_date, datetime.min.time())
+    else:
+        entry_datetime = datetime.utcnow()
     entry = JournalEntry(business_id=business_id, description=description, reference=reference,
-                         entry_type=entry_type, document_id=document_id, created_by=user_id)
-    if entry_date:
-        entry.date = datetime.combine(entry_date, datetime.min.time()) if hasattr(entry_date, 'year') else entry.date
+                         entry_type=entry_type, document_id=document_id, created_by=user_id,
+                         date=entry_datetime)
     db.session.add(entry)
     db.session.flush()
     for l in lines:
@@ -7521,7 +7525,7 @@ def api_journals_import_csv():
                         explicit_code=acc_code)
 
                     # Detect salary/payroll
-                    combined = (row_desc + row_name + desc).lower()
+                    combined = ((row_desc or '') + (row_name or '') + (desc or '')).lower()
                     if any(k in combined for k in ['salary','salaries','payroll','wage','staff pay']):
                         exp_acc = '5100'  # Salaries & Wages
                         cr_acc  = '2300'  # Salaries Payable
@@ -7583,14 +7587,15 @@ def api_journals_import_csv():
             post_journal(business.id, user.id,
                 desc or vendor or ref or "Imported Journal",
                 ref or group_key[:30],
-                'PAYROLL' if any(k in (desc+vendor).lower() for k in ['salary','payroll','wage'])
+                'PAYROLL' if any(k in ((desc or '')+(vendor or '')).lower() for k in ['salary','payroll','wage'])
                     else 'MANUAL',
                 je_lines, entry_date=entry_date)
             imported += 1
 
         except Exception as e:
             db.session.rollback()
-            errors.append(f"{group_key}: {str(e)[:120]}")
+            import traceback
+            errors.append(f"{group_key} ({desc or vendor}): {str(e)[:200]}")
             continue
 
     try:
