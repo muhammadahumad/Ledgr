@@ -3490,6 +3490,7 @@ def api_import_customers_csv():
         company_idx = find_col(['company name', 'company'], headers)
         email_idx = find_col(['email', 'e-mail'], headers)
         phone_idx = find_col(['phone', 'mobile', 'telephone'], headers)
+        tin_idx     = find_col(['tin','tax id','tax_id','trn','gst no','gst num','vat no','vat num','reg no','tax number','registration','fiscal','tax id number','tax reg no'], headers)
         balance_idx = find_col(['balance', 'open balance', 'amount due', 'outstanding'], headers)
 
         # Name column priority: Display Name > Customer > First+Last > Company
@@ -3541,20 +3542,9 @@ def api_import_customers_csv():
                         balance = abs(float(bal_str))
                 except: pass
 
-            # Find TIN/tax_id column — flexible matching (contains, not exact)
-            tin_val = ""
-            tin_keywords = ['tin','tax id','tax_id','trn','gst no','gst num',
-                            'vat no','vat num','reg no','reg num','tax reg',
-                            'tax number','registration','tax id number','fiscal']
-            for col in row:
-                col_lower = col.strip().lower()
-                for kw in tin_keywords:
-                    if kw in col_lower:
-                        v = str(row[col] or '').strip()
-                        if v and v not in ['0','none','null','-','n/a']:
-                            tin_val = v
-                            break
-                if tin_val: break
+            # TIN — use pre-found index (same as email/phone)
+            tin_val = get(tin_idx) if tin_idx is not None else ""
+            if tin_val in ['0','none','null','-','n/a']: tin_val = ""  
 
             c = Customer(
                 business_id=business.id,
@@ -3647,6 +3637,7 @@ def api_import_suppliers_csv():
         company_idx = find_col(['company name','company'], headers)
         email_idx = find_col(['email','e-mail'], headers)
         phone_idx = find_col(['phone','mobile','telephone'], headers)
+        tin_idx   = find_col(['tin','tax id','tax_id','trn','gst no','gst num','vat no','vat num','reg no','tax number','registration','fiscal','tax id number','tax reg no'], headers)
         name_idx = display_idx if display_idx is not None else vendor_idx
 
         imported = 0; skipped = 0
@@ -3664,11 +3655,19 @@ def api_import_suppliers_csv():
             if name.lower() in ['vendor','supplier','display name','name','total',
                                   'vendor contact list','']: continue
             existing = Supplier.query.filter_by(business_id=business.id, name=name).first()
-            if existing: skipped += 1; continue
+            if existing:
+                tin_val = get(tin_idx) if tin_idx is not None else ""
+                if tin_val and not existing.tax_id:
+                    existing.tax_id = tin_val
+                skipped += 1
+                continue
+            tin_val = get(tin_idx) if tin_idx is not None else ""
+            if tin_val in ['0','none','null','-','n/a']: tin_val = ""
             db.session.add(Supplier(
                 business_id=business.id, name=name,
                 email=get(email_idx) if email_idx is not None else "",
-                phone=get(phone_idx) if phone_idx is not None else ""
+                phone=get(phone_idx) if phone_idx is not None else "",
+                tax_id=tin_val or None
             ))
             imported += 1
         db.session.commit()
@@ -6284,11 +6283,15 @@ def api_bills_import_csv():
                         if k.lower() in field.lower():
                             return str(row[field] or '').strip()
                 return default
-            vendor = get(['vendor','supplier','from','name','vendor/supplier'])
-            inv_num = get(['invoice','bill','ref','number','no','num','ref no','bill no'])
-            amount_str = get(['amount','total','value','total amount','amt'])
-            date_str = get(['date','invoice_date','bill_date','txn date','transaction date'])
-            doc_type = get(['type','doc_type','transaction type']) or 'BILL'
+            vendor      = get(['vendor','supplier','from','name','vendor/supplier'])
+            inv_num     = get(['invoice','bill','ref','number','no','num','ref no','bill no'])
+            amount_str  = get(['amount','total','value','total amount','amt'])
+            tax_str     = get(['tax','vat','gst','tax amount','vat amount','gst amount'])
+            date_str    = get(['date','invoice_date','bill_date','txn date','transaction date'])
+            doc_type    = get(['type','doc_type','transaction type']) or 'BILL'
+            vendor_tin  = get(['tin','tax id','trn','vendor tin','vendor tax','vendor trn',
+                               'supplier tin','supplier tax','registration','reg no','fiscal'])
+            if vendor_tin in ['0','none','null','-','n/a']: vendor_tin = "" 
             try:
                 amount = float(amount_str.replace(',','') or 0)
             except:
@@ -6302,13 +6305,20 @@ def api_bills_import_csv():
                     break
                 except:
                     continue
+            tax_amt = 0
+            if tax_str:
+                try: tax_amt = float(str(tax_str).replace(',','') or 0)
+                except: tax_amt = 0
             doc = Document(
                 business_id=business.id,
                 user_id=user.id,
                 vendor_name=vendor,
+                vendor_tax_id=vendor_tin or None,
                 invoice_number=inv_num,
                 doc_type=doc_type.upper() if doc_type.upper() in ['BILL','EXPENSE','RECEIPT'] else 'BILL',
                 total_amount=amount,
+                tax_amount=tax_amt,
+                subtotal=amount - tax_amt,
                 invoice_date=inv_date,
                 payment_status='UNPAID'
             )
@@ -6397,6 +6407,8 @@ def api_invoices_import_csv():
             paid_str      = col(row,'amount paid','paid','payment received')
             currency      = col(row,'currency','cur') or business.base_currency or 'MVR'
             notes         = col(row,'notes','description','memo','remarks','memo/description')
+            buyer_trn     = col(row,'buyer tin','buyer trn','customer tin','customer trn',
+                                'customer tax id','buyer tax id','trn','tax id')
 
             # Parse amount
             def parse_amount(s):
@@ -6492,7 +6504,8 @@ def api_invoices_import_csv():
                 status       = status,
                 notes        = notes or 'Migrated from previous system',
                 items        = '[]',
-                buyer_legal_name = customer_name
+                buyer_legal_name = customer_name,
+                buyer_trn_vat_number = buyer_trn or None
             )
             db.session.add(inv)
             db.session.flush()
