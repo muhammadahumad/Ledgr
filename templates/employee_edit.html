@@ -1,75 +1,183 @@
-{% extends "base.html" %}{% block title %}Edit — {{ employee.full_name }}{% endblock %}{% block content %}
+{% extends "base.html" %}
+{% block title %}Edit Employee — {{ employee.full_name }}{% endblock %}
+{% block content %}
 <div class="topbar">
-  <div><div class="page-title">Edit Employee</div><div class="page-sub">{{ employee.full_name }}</div></div>
-  <a href="/hr/employee/{{ employee.id }}" class="btn">← Cancel</a>
-</div>
-<div class="content">
-<form method="POST">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
-
-    <div class="card">
-      <div class="card-title">Personal Information</div>
-      <div class="field-row"><div><div class="field-label">Full Name *</div><input class="field-input" name="full_name" value="{{ employee.full_name }}" required></div>
-      <div><div class="field-label">Employee ID</div><input class="field-input" name="employee_id" value="{{ employee.employee_id or '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Position</div><input class="field-input" name="position" value="{{ employee.position or '' }}"></div>
-      <div><div class="field-label">Department</div><input class="field-input" name="department" value="{{ employee.department or '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Nationality</div><input class="field-input" name="nationality" value="{{ employee.nationality or '' }}"></div>
-      <div><div class="field-label">ID Card No.</div><input class="field-input" name="id_card_number" value="{{ employee.id_card_number or '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Phone</div><input class="field-input" name="phone" value="{{ employee.phone or '' }}"></div>
-      <div><div class="field-label">Email</div><input class="field-input" name="email" value="{{ employee.email or '' }}"></div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Employment</div>
-      <div class="field-row">
-        <div><div class="field-label">Employment Type</div>
-          <select class="select-input" name="employment_type">
-            <option value="local" {% if employee.employment_type=='local' %}selected{% endif %}>Local</option>
-            <option value="foreign" {% if employee.employment_type=='foreign' %}selected{% endif %}>Foreign / Expatriate</option>
-          </select></div>
-        <div><div class="field-label">Contract Type</div>
-          <select class="select-input" name="contract_type">
-            <option value="permanent" {% if employee.contract_type=='permanent' %}selected{% endif %}>Permanent</option>
-            <option value="fixed" {% if employee.contract_type=='fixed' %}selected{% endif %}>Fixed Term</option>
-            <option value="part_time" {% if employee.contract_type=='part_time' %}selected{% endif %}>Part Time</option>
-            <option value="probation" {% if employee.contract_type=='probation' %}selected{% endif %}>Probation</option>
-          </select></div>
-      </div>
-      <div class="field-row"><div><div class="field-label">Start Date</div><input class="field-input" type="date" name="start_date" value="{{ employee.start_date.strftime('%Y-%m-%d') if employee.start_date else '' }}"></div>
-      <div><div class="field-label">End Date</div><input class="field-input" type="date" name="end_date" value="{{ employee.end_date.strftime('%Y-%m-%d') if employee.end_date else '' }}"></div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Salary & Benefits</div>
-      <div class="field-row"><div><div class="field-label">Monthly Salary</div><input class="field-input" type="number" step="0.01" name="monthly_salary" value="{{ employee.monthly_salary or 0 }}"></div>
-      <div><div class="field-label">Allowances</div><input class="field-input" type="number" step="0.01" name="allowances" value="{{ employee.allowances or 0 }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Housing Allowance</div><input class="field-input" type="number" step="0.01" name="housing_allowance" value="{{ employee.housing_allowance or 0 }}"></div>
-      <div><div class="field-label">Transport Allowance</div><input class="field-input" type="number" step="0.01" name="transport_allowance" value="{{ employee.transport_allowance or 0 }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Bank Name</div><input class="field-input" name="bank_name" value="{{ employee.bank_name or '' }}"></div>
-      <div><div class="field-label">Bank Account</div><input class="field-input" name="bank_account" value="{{ employee.bank_account or '' }}"></div></div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">Compliance Documents</div>
-      <div class="field-row"><div><div class="field-label">Passport No.</div><input class="field-input" name="passport_number" value="{{ employee.passport_number or '' }}"></div>
-      <div><div class="field-label">Passport Expiry</div><input class="field-input" type="date" name="passport_expiry" value="{{ employee.passport_expiry.strftime('%Y-%m-%d') if employee.passport_expiry else '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Visa No.</div><input class="field-input" name="visa_number" value="{{ employee.visa_number or '' }}"></div>
-      <div><div class="field-label">Visa Expiry</div><input class="field-input" type="date" name="visa_expiry" value="{{ employee.visa_expiry.strftime('%Y-%m-%d') if employee.visa_expiry else '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Work Permit No.</div><input class="field-input" name="work_permit_number" value="{{ employee.work_permit_number or '' }}"></div>
-      <div><div class="field-label">Permit Expiry</div><input class="field-input" type="date" name="work_permit_expiry" value="{{ employee.work_permit_expiry.strftime('%Y-%m-%d') if employee.work_permit_expiry else '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Medical Expiry</div><input class="field-input" type="date" name="medical_expiry" value="{{ employee.medical_expiry.strftime('%Y-%m-%d') if employee.medical_expiry else '' }}"></div>
-      <div><div class="field-label">Insurance Expiry</div><input class="field-input" type="date" name="insurance_expiry" value="{{ employee.insurance_expiry.strftime('%Y-%m-%d') if employee.insurance_expiry else '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Quota Slot No.</div><input class="field-input" name="quota_slot_number" value="{{ employee.quota_slot_number or '' }}"></div>
-      <div><div class="field-label">Insurance Provider</div><input class="field-input" name="insurance_provider" value="{{ employee.insurance_provider or '' }}"></div></div>
-      <div class="field-row"><div><div class="field-label">Quota Fee Paid</div><input class="field-input" type="number" step="0.01" name="quota_fee_paid" value="{{ employee.quota_fee_paid or 0 }}"></div>
-      <div><div class="field-label">Security Deposit</div><input class="field-input" type="number" step="0.01" name="security_deposit" value="{{ employee.security_deposit or 0 }}"></div></div>
-    </div>
-
+  <div>
+    <div class="page-title">Edit Employee</div>
+    <div class="page-sub">{{ employee.full_name }} · {{ employee.position or 'No position' }}</div>
   </div>
-  <div class="card" style="margin-top:14px">
+  <div style="display:flex;gap:8px">
+    <a href="/hr/employee/{{ employee.id }}" class="btn">← Back</a>
+  </div>
+</div>
+<div class="content" style="max-width:760px">
+<form method="POST">
+
+  <!-- Basic Info -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title">Basic Information</div>
+    <div class="field-row">
+      <div><div class="field-label">Full Name *</div>
+        <input class="field-input" name="full_name" value="{{ employee.full_name or '' }}" required></div>
+      <div><div class="field-label">Employee ID</div>
+        <input class="field-input" name="employee_id" value="{{ employee.employee_id or '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Position / Title</div>
+        <input class="field-input" name="position" value="{{ employee.position or '' }}"></div>
+      <div><div class="field-label">Department</div>
+        <input class="field-input" name="department" value="{{ employee.department or '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Nationality</div>
+        <input class="field-input" name="nationality" value="{{ employee.nationality or '' }}"></div>
+      <div><div class="field-label">ID Card Number</div>
+        <input class="field-input" name="id_card_number" value="{{ employee.id_card_number or '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Phone</div>
+        <input class="field-input" name="phone" value="{{ employee.phone or '' }}"></div>
+      <div><div class="field-label">Email</div>
+        <input class="field-input" type="email" name="email" value="{{ employee.email or '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Employment Type</div>
+        <select class="select-input" name="employment_type">
+          <option value="full_time" {% if employee.employment_type=='full_time' %}selected{% endif %}>Full Time</option>
+          <option value="part_time" {% if employee.employment_type=='part_time' %}selected{% endif %}>Part Time</option>
+          <option value="contract"  {% if employee.employment_type=='contract'  %}selected{% endif %}>Contract</option>
+        </select></div>
+      <div><div class="field-label">Contract Type</div>
+        <select class="select-input" name="contract_type">
+          <option value="permanent"  {% if employee.contract_type=='permanent'  %}selected{% endif %}>Permanent</option>
+          <option value="fixed"      {% if employee.contract_type=='fixed'      %}selected{% endif %}>Fixed Term</option>
+          <option value="part_time"  {% if employee.contract_type=='part_time'  %}selected{% endif %}>Part Time</option>
+          <option value="probation"  {% if employee.contract_type=='probation'  %}selected{% endif %}>Probation</option>
+        </select></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Start Date</div>
+        <input class="field-input" type="date" name="start_date"
+          value="{{ employee.start_date.strftime('%Y-%m-%d') if employee.start_date else '' }}"></div>
+      <div><div class="field-label">End Date</div>
+        <input class="field-input" type="date" name="end_date"
+          value="{{ employee.end_date.strftime('%Y-%m-%d') if employee.end_date else '' }}"></div>
+    </div>
+  </div>
+
+  <!-- Salary & Benefits -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title">Salary & Benefits</div>
+    <div class="field-row">
+      <div><div class="field-label">Monthly Salary</div>
+        <input class="field-input" type="number" step="0.01" name="monthly_salary"
+          value="{{ employee.monthly_salary or 0 }}"></div>
+      <div><div class="field-label">Allowances</div>
+        <input class="field-input" type="number" step="0.01" name="allowances"
+          value="{{ employee.allowances or 0 }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Housing Allowance</div>
+        <input class="field-input" type="number" step="0.01" name="housing_allowance"
+          value="{{ employee.housing_allowance or 0 }}"></div>
+      <div><div class="field-label">Transport Allowance</div>
+        <input class="field-input" type="number" step="0.01" name="transport_allowance"
+          value="{{ employee.transport_allowance or 0 }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Bank Name</div>
+        <input class="field-input" name="bank_name" value="{{ employee.bank_name or '' }}"></div>
+      <div><div class="field-label">Bank Account Number</div>
+        <input class="field-input" name="bank_account" value="{{ employee.bank_account or '' }}"></div>
+    </div>
+  </div>
+
+  <!-- Pension & Social Insurance -->
+  <div class="card" style="margin-bottom:14px;border-color:rgba(245,158,11,.3)">
+    <div class="card-title">Pension & Social Insurance</div>
+    <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+      Enter percentage values (e.g. 7 for 7%). Set to <strong>0</strong> to disable.
+      Changes apply from next payroll run.
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Employee Pension (%)</div>
+        <input class="field-input" type="number" step="0.01" min="0" max="100"
+          name="pension_employee" id="pe-emp"
+          value="{{ employee.pension_employee or 0 }}"></div>
+      <div><div class="field-label">Employer Pension (%)</div>
+        <input class="field-input" type="number" step="0.01" min="0" max="100"
+          name="pension_employer" id="pe-er"
+          value="{{ employee.pension_employer or 0 }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Social Insurance (%)</div>
+        <input class="field-input" type="number" step="0.01" min="0" max="100"
+          name="social_insurance" id="pe-si"
+          value="{{ employee.social_insurance or 0 }}"></div>
+      <div style="display:flex;align-items:flex-end;padding-bottom:6px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+          <input type="checkbox" id="pension-zero-cb" style="width:16px;height:16px;cursor:pointer">
+          <span style="color:var(--amber)">⚠ Set all pension to 0 (disable)</span>
+        </label>
+      </div>
+    </div>
+    <input type="hidden" name="pension_enabled" id="pension-enabled-val" value="true">
+  </div>
+
+  <!-- Compliance Documents -->
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title">Compliance Documents</div>
+    <div class="field-row">
+      <div><div class="field-label">Passport No.</div>
+        <input class="field-input" name="passport_number" value="{{ employee.passport_number or '' }}"></div>
+      <div><div class="field-label">Passport Expiry</div>
+        <input class="field-input" type="date" name="passport_expiry"
+          value="{{ employee.passport_expiry.strftime('%Y-%m-%d') if employee.passport_expiry else '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Visa No.</div>
+        <input class="field-input" name="visa_number" value="{{ employee.visa_number or '' }}"></div>
+      <div><div class="field-label">Visa Expiry</div>
+        <input class="field-input" type="date" name="visa_expiry"
+          value="{{ employee.visa_expiry.strftime('%Y-%m-%d') if employee.visa_expiry else '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Work Permit No.</div>
+        <input class="field-input" name="work_permit_number" value="{{ employee.work_permit_number or '' }}"></div>
+      <div><div class="field-label">Permit Expiry</div>
+        <input class="field-input" type="date" name="work_permit_expiry"
+          value="{{ employee.work_permit_expiry.strftime('%Y-%m-%d') if employee.work_permit_expiry else '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Medical Expiry</div>
+        <input class="field-input" type="date" name="medical_expiry"
+          value="{{ employee.medical_expiry.strftime('%Y-%m-%d') if employee.medical_expiry else '' }}"></div>
+      <div><div class="field-label">Insurance Expiry</div>
+        <input class="field-input" type="date" name="insurance_expiry"
+          value="{{ employee.insurance_expiry.strftime('%Y-%m-%d') if employee.insurance_expiry else '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Quota Slot No.</div>
+        <input class="field-input" name="quota_slot_number" value="{{ employee.quota_slot_number or '' }}"></div>
+      <div><div class="field-label">Insurance Provider</div>
+        <input class="field-input" name="insurance_provider" value="{{ employee.insurance_provider or '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Quota Fee Paid</div>
+        <input class="field-input" type="number" step="0.01" name="quota_fee_paid"
+          value="{{ employee.quota_fee_paid or 0 }}"></div>
+      <div><div class="field-label">Security Deposit</div>
+        <input class="field-input" type="number" step="0.01" name="security_deposit"
+          value="{{ employee.security_deposit or 0 }}"></div>
+    </div>
+  </div>
+
+  <!-- Notes -->
+  <div class="card" style="margin-bottom:14px">
     <div class="card-title">Notes</div>
     <textarea class="field-input" name="notes" rows="3" style="width:100%">{{ employee.notes or '' }}</textarea>
   </div>
+
   <div style="display:flex;gap:8px;margin-top:14px">
     <button type="submit" class="btn btn-primary">Save Changes</button>
     <a href="/hr/employee/{{ employee.id }}" class="btn">Cancel</a>
@@ -77,3 +185,18 @@
 </form>
 </div>
 {% endblock %}
+
+{% block scripts %}<script>
+document.getElementById('pension-zero-cb').addEventListener('change', function() {
+  if (this.checked) {
+    document.getElementById('pe-emp').value = 0;
+    document.getElementById('pe-er').value  = 0;
+    document.getElementById('pe-si').value  = 0;
+    document.getElementById('pension-enabled-val').value = 'false';
+    this.parentElement.querySelector('span').textContent = '✓ All pension set to 0';
+  } else {
+    document.getElementById('pension-enabled-val').value = 'true';
+    this.parentElement.querySelector('span').textContent = '⚠ Set all pension to 0 (disable)';
+  }
+});
+</script>{% endblock %}
