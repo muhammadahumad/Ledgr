@@ -6388,11 +6388,21 @@ def api_invoices_import_csv():
     detected_headers = clean_csv.split('\n')[0] if clean_csv else 'NO HEADERS FOUND'
 
     def col(row, *keys, default=''):
-        """Flexible column lookup — case-insensitive, handles None values"""
+        """Flexible column lookup — exact then partial match, handles None"""
+        # Pass 1: exact match
         for k in keys:
             for field in row:
                 if field is None: continue
                 if str(field).strip().lower() == k.lower():
+                    v = row[field]
+                    if v is None: continue
+                    v = str(v).strip()
+                    if v: return v
+        # Pass 2: partial/contains match
+        for k in keys:
+            for field in row:
+                if field is None: continue
+                if k.lower() in str(field).strip().lower():
                     v = row[field]
                     if v is None: continue
                     v = str(v).strip()
@@ -6420,11 +6430,18 @@ def api_invoices_import_csv():
             def parse_amount(s):
                 if s is None: return 0.0
                 try:
-                    cleaned = str(s).replace(',','').replace(' ','').strip()
-                    # Remove currency symbols/codes
-                    for cur in ['MVR','USD','AED','MYR','SAR','GBP','EUR','$','€','£']:
-                        cleaned = cleaned.replace(cur,'')
-                    return float(cleaned.strip() or 0)
+                    cleaned = str(s).strip()
+                    if not cleaned or cleaned in ['-','—','n/a','nil']: return 0.0
+                    # Handle negative in parentheses: (1,234.56) -> -1234.56
+                    negative = cleaned.startswith('(') and cleaned.endswith(')')
+                    if negative: cleaned = '-' + cleaned[1:-1]
+                    # Remove currency codes and symbols
+                    import re as _re
+                    cleaned = _re.sub(r'[A-Z]{3}', '', cleaned)  # remove 3-letter codes
+                    for sym in ['$','€','£','¥','₹','﷼','Rp']:
+                        cleaned = cleaned.replace(sym,'')
+                    cleaned = cleaned.replace(',','').replace(' ','').strip()
+                    return float(cleaned or 0)
                 except: return 0.0
 
             total    = parse_amount(amount_str)
@@ -6433,6 +6450,9 @@ def api_invoices_import_csv():
             paid_amt = parse_amount(paid_str)
 
             if total <= 0 and subtotal <= 0:
+                # Debug: capture what was found
+                raw_amt = col(row,'total','amount','total amount','amt','grand total','gross')
+                errors.append(f"Row {i+2} skipped (zero amount) — raw value: '{raw_amt}' | columns: {list(row.keys())[:8]}")
                 skipped += 1
                 continue
 
