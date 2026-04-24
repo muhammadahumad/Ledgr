@@ -3541,14 +3541,19 @@ def api_import_customers_csv():
                         balance = abs(float(bal_str))
                 except: pass
 
-            # Find TIN/tax_id column
+            # Find TIN/tax_id column — flexible matching (contains, not exact)
             tin_val = ""
-            for tin_key in ['tin','tax id','tax_id','trn','gst number','gst no',
-                            'vat number','vat no','registration no','reg no','tax reg']:
-                for col in row:
-                    if col.strip().lower() == tin_key:
-                        tin_val = str(row[col] or '').strip()
-                        break
+            tin_keywords = ['tin','tax id','tax_id','trn','gst no','gst num',
+                            'vat no','vat num','reg no','reg num','tax reg',
+                            'tax number','registration','tax id number','fiscal']
+            for col in row:
+                col_lower = col.strip().lower()
+                for kw in tin_keywords:
+                    if kw in col_lower:
+                        v = str(row[col] or '').strip()
+                        if v and v not in ['0','none','null','-','n/a']:
+                            tin_val = v
+                            break
                 if tin_val: break
 
             c = Customer(
