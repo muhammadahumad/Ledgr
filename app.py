@@ -3541,12 +3541,23 @@ def api_import_customers_csv():
                         balance = abs(float(bal_str))
                 except: pass
 
+            # Find TIN/tax_id column
+            tin_val = ""
+            for tin_key in ['tin','tax id','tax_id','trn','gst number','gst no',
+                            'vat number','vat no','registration no','reg no','tax reg']:
+                for col in row:
+                    if col.strip().lower() == tin_key:
+                        tin_val = str(row[col] or '').strip()
+                        break
+                if tin_val: break
+
             c = Customer(
                 business_id=business.id,
                 name=name,
                 email=get(email_idx) if email_idx is not None else "",
                 phone=get(phone_idx) if phone_idx is not None else "",
-                outstanding_balance=balance
+                outstanding_balance=balance,
+                tax_id=tin_val or None
             )
             db.session.add(c)
             imported += 1
@@ -3951,10 +3962,30 @@ def employee_edit(emp_id):
     if not employee: return redirect(url_for("hr_dashboard"))
     if request.method == "POST":
         data = request.form
+        # Text/string fields
         for field in ["full_name","position","department","nationality","phone","email",
                      "notes","employee_id","quota_slot_number","insurance_provider",
                      "visa_number","work_permit_number","passport_number","bank_name","bank_account"]:
             if field in data: setattr(employee, field, data[field])
+        # Numeric fields including pension/salary
+        for num_field in ["monthly_salary","allowances","housing_allowance","transport_allowance",
+                          "pension_employee","pension_employer","social_insurance",
+                          "insurance_cost","security_deposit","gratuity_accrued"]:
+            if num_field in data:
+                try: setattr(employee, num_field, float(data[num_field]) if data[num_field] else 0)
+                except: pass
+        # Pension disable checkbox — zero out all pension fields
+        if data.get("pension_enabled") == "false" or request.form.get("pension_enabled") == "false":
+            employee.pension_employee = 0
+            employee.pension_employer = 0
+            employee.social_insurance = 0
+        # Boolean pension toggle — allow resetting to 0
+        if "pension_enabled" in data:
+            enabled = data["pension_enabled"] in ["true","1","on","yes"]
+            if not enabled:
+                employee.pension_employee = 0
+                employee.pension_employer = 0
+                employee.social_insurance = 0
         for date_field in ["start_date","end_date","visa_expiry","work_permit_expiry",
                           "medical_expiry","insurance_expiry","passport_expiry"]:
             val = data.get(date_field)
@@ -6226,7 +6257,19 @@ def api_bills_import_csv():
     import csv, io
     imported = 0
     errors = []
-    reader = csv.DictReader(io.StringIO(csv_text))
+
+    # Skip metadata rows (QBO report title, date range etc)
+    lines = csv_text.strip().split('\n')
+    header_keywords = ['vendor','supplier','date','amount','total','bill','ref','name','type','num']
+    start_line = 0
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
+        matches = sum(1 for kw in header_keywords if kw in line_lower)
+        if matches >= 2:
+            start_line = i
+            break
+    clean_csv = '\n'.join(lines[start_line:])
+    reader = csv.DictReader(io.StringIO(clean_csv))
     for i, row in enumerate(reader):
         try:
             # Flexible header mapping
@@ -6236,11 +6279,11 @@ def api_bills_import_csv():
                         if k.lower() in field.lower():
                             return str(row[field] or '').strip()
                 return default
-            vendor = get(['vendor','supplier','from','name'])
-            inv_num = get(['invoice','bill','ref','number','no'])
-            amount_str = get(['amount','total','value'])
-            date_str = get(['date','invoice_date','bill_date'])
-            doc_type = get(['type','doc_type']) or 'BILL'
+            vendor = get(['vendor','supplier','from','name','vendor/supplier'])
+            inv_num = get(['invoice','bill','ref','number','no','num','ref no','bill no'])
+            amount_str = get(['amount','total','value','total amount','amt'])
+            date_str = get(['date','invoice_date','bill_date','txn date','transaction date'])
+            doc_type = get(['type','doc_type','transaction type']) or 'BILL'
             try:
                 amount = float(amount_str.replace(',','') or 0)
             except:
@@ -6308,7 +6351,22 @@ def api_invoices_import_csv():
     imported = 0
     skipped = 0
     errors = []
-    reader = csv.DictReader(io.StringIO(csv_text))
+
+    # Skip QBO/Xero metadata rows at top (report title, date range, blank lines)
+    # Find the actual header row — first row with recognizable column names
+    lines = csv_text.strip().split('\n')
+    header_keywords = ['invoice','date','customer','amount','total','status','balance',
+                       'vendor','supplier','bill','ref','num','due','name','type']
+    start_line = 0
+    for i, line in enumerate(lines):
+        line_lower = line.lower()
+        matches = sum(1 for kw in header_keywords if kw in line_lower)
+        if matches >= 2:  # at least 2 keyword matches = real header row
+            start_line = i
+            break
+
+    clean_csv = '\n'.join(lines[start_line:])
+    reader = csv.DictReader(io.StringIO(clean_csv))
 
     def col(row, *keys, default=''):
         """Flexible column lookup — case-insensitive, strip spaces"""
@@ -6322,16 +6380,18 @@ def api_invoices_import_csv():
     for i, row in enumerate(reader):
         try:
             customer_name = col(row,'customer','client','customer name','bill to','name')
-            inv_num       = col(row,'invoice number','invoice #','invoice no','inv no','number','ref')
-            date_str      = col(row,'date','invoice date','issue date')
+            inv_num       = col(row,'invoice number','invoice #','invoice no','inv no','num','number','ref','transaction no','no.')
+            date_str      = col(row,'date','invoice date','issue date','txn date')
             due_str       = col(row,'due date','due','payment due')
-            amount_str    = col(row,'total','amount','total amount','invoice total','grand total')
+            amount_str    = col(row,'total','amount','total amount','invoice total','grand total','amt')
             subtotal_str  = col(row,'subtotal','sub total','net amount','net')
             tax_str       = col(row,'tax','vat','gst','tax amount','vat amount')
             status_str    = col(row,'status','payment status').upper()
+            # QBO: 'Open Balance' = remaining unpaid amount
+            open_balance  = col(row,'open balance','balance','outstanding','remaining')
             paid_str      = col(row,'amount paid','paid','payment received')
             currency      = col(row,'currency','cur') or business.base_currency or 'MVR'
-            notes         = col(row,'notes','description','memo','remarks')
+            notes         = col(row,'notes','description','memo','remarks','memo/description')
 
             # Parse amount
             def parse_amount(s):
@@ -6362,17 +6422,34 @@ def api_invoices_import_csv():
                     except: continue
 
             # Determine status
-            if status_str in ['PAID','PAID IN FULL','CLEARED','SETTLED']:
+            # Handle QBO status values + standard values
+            if status_str in ['PAID','PAID IN FULL','CLEARED','SETTLED','CLOSED']:
                 status = 'PAID'
                 if paid_amt == 0: paid_amt = total
             elif status_str in ['PARTIAL','PARTIALLY PAID','PART PAID']:
                 status = 'PARTIAL'
             elif status_str in ['VOID','VOIDED','CANCELLED','CANCELED']:
                 status = 'VOID'
-            elif due_date_val and due_date_val < date.today() and paid_amt < total:
-                status = 'OVERDUE'
             else:
-                status = 'SENT'
+                # QBO uses 'Open' for unpaid invoices
+                # Calculate paid from open balance if available
+                if open_balance and total > 0:
+                    try:
+                        ob = float(str(open_balance).replace(',','') or 0)
+                        if ob == 0:
+                            status = 'PAID'
+                            paid_amt = total
+                        elif ob < total:
+                            status = 'PARTIAL'
+                            paid_amt = total - ob
+                        else:
+                            status = 'SENT'
+                    except:
+                        status = 'SENT'
+                elif due_date_val and due_date_val < date.today() and paid_amt < total:
+                    status = 'OVERDUE'
+                else:
+                    status = 'SENT'
 
             # Auto-create customer if not exists
             customer = None
