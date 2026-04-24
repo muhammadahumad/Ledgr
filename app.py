@@ -326,18 +326,25 @@ DEFAULT_COA = {
     'ASSET':    [('1000','Cash on Hand'),('1010','Bank Account - Primary'),('1020','Bank Account - Secondary'),
                  ('1100','Accounts Receivable'),('1110','Customer Tabs (Credit Sales)'),
                  ('1200','Inventory'),('1300','Prepaid Expenses'),
-                 ('1500','Fixed Assets'),('1510','Equipment'),('1520','Furniture & Fittings')],
+                 ('1500','Fixed Assets'),('1510','Equipment'),('1520','Furniture & Fittings'),
+                 ('1530','Tools & Machinery'),('1540','Motor Vehicles'),
+                 ('1550','Computer Equipment'),('1560','Leasehold Improvements'),
+                 ('1570','Capital Work in Progress')],
     'LIABILITY':[('2000','Accounts Payable'),('2100','Accrued Expenses'),
                  ('2210','GST/VAT Payable'),('2300','Salaries Payable'),
                  ('2400','Short-term Loans'),('2500','Long-term Loans')],
     'EQUITY':   [('3000','Owner Capital'),('3100','Retained Earnings'),
                  ('3200','Current Year Profit/Loss'),('3300','Owner Drawings')],
-    'REVENUE':  [('4000','Sales Revenue'),('4010','Service Revenue'),('4020','Other Income')],
-    'EXPENSE':  [('5000','Cost of Goods Sold'),('5100','Salaries & Wages'),('5110','Allowances'),
-                 ('5200','Rent'),('5300','Utilities'),('5400','Office Supplies'),
+    'REVENUE':  [('4000','Sales Revenue'),('4010','Service Revenue'),
+                 ('4100','Income - Projects'),('4110','Income - Project A'),
+                 ('4120','Income - Project B'),('4020','Other Income')],
+    'EXPENSE':  [('5000','Cost of Sales'),('5010','Cost of Sales - Projects'),
+                 ('5100','Salaries & Wages'),('5110','Allowances'),
+                 ('5200','Rent'),('5300','Utilities'),('5400','Office & Admin Expenses'),
                  ('5500','Marketing'),('5600','Professional Services'),
                  ('5700','Travel'),('5800','Meals & Entertainment'),
-                 ('5900','Bank Charges'),('6000','Depreciation'),('6200','Tax Expense'),('6900','Miscellaneous')],
+                 ('5900','Bank Charges'),('6000','Depreciation'),
+                 ('6200','Tax Expense'),('6900','Miscellaneous')],
 }
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -397,6 +404,10 @@ class Business(db.Model):
     gst_sector_type = db.Column(db.String(50))
     ayrshare_api_key = db.Column(db.String(200))
     smtp_host = db.Column(db.String(200))
+    # Import default accounts — used by CSV importers
+    default_revenue_account = db.Column(db.String(10), default='4100')  # Income - Projects
+    default_cogs_account    = db.Column(db.String(10), default='5010')  # Cost of Sales - Projects
+    default_expense_account = db.Column(db.String(10), default='5400')  # Office & Admin
     smtp_port = db.Column(db.Integer, default=587)
     smtp_user = db.Column(db.String(200))
     smtp_pass = db.Column(db.String(200))
@@ -1136,6 +1147,80 @@ def get_object_or_403(model, object_id, business_id):
     except Exception:
         return None
 
+
+# ── UNIVERSAL ACCOUNT RESOLVER ────────────────────────────────────────────
+# Resolves which account to post to based on:
+# 1. Explicit account_code in CSV row
+# 2. Business default settings
+# 3. Smart detection (capital assets, project income, etc.)
+# 4. Hardcoded fallback
+
+CAPITAL_ASSET_KEYWORDS = [
+    'machinery','machine','equipment','vehicle','car','truck','van','boat',
+    'furniture','fitting','fixture','computer','laptop','server','printer',
+    'renovation','leasehold','improvement','construction','building',
+    'tools','tool','plant','motor','generator','ac','air condition',
+    'forklift','crane','camera','projector','solar','ups','inverter'
+]
+
+def resolve_account(business, direction, description=None, explicit_code=None):
+    """
+    Universal account resolver for imports and postings.
+    
+    direction: 'revenue' | 'cogs' | 'expense' | 'asset'
+    description: item description for smart detection
+    explicit_code: account code from CSV (overrides everything)
+    
+    Returns account_code string
+    """
+    # 1. Explicit code from CSV — validate it exists
+    if explicit_code:
+        acc = Account.query.filter_by(
+            business_id=business.id,
+            code=str(explicit_code).strip()
+        ).first()
+        if acc: return acc.code
+
+    # 2. Smart detection for capital assets
+    if description and direction in ('expense','cogs'):
+        desc_lower = str(description).lower()
+        if any(kw in desc_lower for kw in CAPITAL_ASSET_KEYWORDS):
+            # Check if fixed asset account exists
+            fa_acc = Account.query.filter_by(
+                business_id=business.id, code='1500').first()
+            if fa_acc:
+                return '1510'  # Equipment as default fixed asset sub-account
+
+    # 3. Business default accounts
+    if direction == 'revenue':
+        code = getattr(business, 'default_revenue_account', None) or '4100'
+    elif direction == 'cogs':
+        code = getattr(business, 'default_cogs_account', None) or '5010'
+    elif direction == 'expense':
+        code = getattr(business, 'default_expense_account', None) or '5400'
+    elif direction == 'asset':
+        code = '1510'  # Equipment
+    else:
+        code = '5400'
+
+    # 4. Validate the account exists, fallback to generic if not
+    acc = Account.query.filter_by(business_id=business.id, code=code).first()
+    if not acc:
+        # Fallback to any revenue/expense account
+        fallbacks = {
+            'revenue': ['4100','4000','4010'],
+            'cogs':    ['5010','5000','5400'],
+            'expense': ['5400','5000','6900'],
+            'asset':   ['1510','1500'],
+        }
+        for fb in fallbacks.get(direction, ['5400']):
+            fb_acc = Account.query.filter_by(
+                business_id=business.id, code=fb).first()
+            if fb_acc: return fb
+    return code
+
+
+@app.context_processor
 @app.context_processor
 def inject_globals():
     """Inject today's date and current business into all templates"""
@@ -4140,7 +4225,7 @@ def api_settings_update():
                   "tax_registration_number","gst_sector","gst_sector_type",
                   "bank_name","bank_account_name","bank_account_number","bank_swift",
                   "bank_iban","pension_portal","base_currency","invoice_prefix",
-                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_user","smtp_pass","smtp_from","stripe_secret_key","stripe_publishable_key","stripe_webhook_secret","myinvois_client_id","myinvois_client_secret","myinvois_tin"]
+                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_user","smtp_pass","smtp_from","stripe_secret_key","stripe_publishable_key","stripe_webhook_secret","myinvois_client_id","myinvois_client_secret","myinvois_tin","default_revenue_account","default_cogs_account","default_expense_account"]
     for f in str_fields:
         if f in data and hasattr(business, f):
             setattr(business, f, str(data[f]).strip() if data[f] else "")
@@ -6296,7 +6381,9 @@ def api_bills_import_csv():
             doc_type    = get(['type','doc_type','transaction type']) or 'BILL'
             vendor_tin  = get(['tin','tax id','trn','vendor tin','vendor tax','vendor trn',
                                'supplier tin','supplier tax','registration','reg no','fiscal'])
-            if vendor_tin in ['0','none','null','-','n/a']: vendor_tin = "" 
+            if vendor_tin in ['0','none','null','-','n/a']: vendor_tin = ""
+            account_code_b = get(['account code','account','gl code','gl account',
+                                  'expense account','cost account','ledger code','asset account'])
             # Parse amounts — handle grand total vs subtotal
             def pa(s):
                 if not s: return 0.0
@@ -6342,11 +6429,15 @@ def api_bills_import_csv():
             )
             db.session.add(doc)
             # Post journal
+            # Resolve expense/asset account — smart capital asset detection
+            exp_account = resolve_account(business, 'cogs',
+                description=f"{vendor} {inv_num}",
+                explicit_code=account_code_b)
             bill_je_lines = [
-                {"account_code":"5400","debit":subtotal_b,"credit":0,
-                 "description":f"Expense: {vendor}"},
-                {"account_code":"2000","debit":0,"credit":amount,
-                 "description":f"AP: {vendor}"},
+                {"account_code": exp_account, "debit": subtotal_b, "credit": 0,
+                 "description": f"Cost: {vendor}"},
+                {"account_code": "2000", "debit": 0, "credit": amount,
+                 "description": f"AP: {vendor}"},
             ]
             if tax_amt_b > 0:
                 bill_je_lines.append(
@@ -6450,6 +6541,8 @@ def api_invoices_import_csv():
             notes         = col(row,'notes','description','memo','remarks','memo/description','narration')
             buyer_trn     = col(row,'buyer tin','buyer trn','customer tin','customer trn',
                                 'customer tax id','buyer tax id','trn','tax id','tin')
+            account_code  = col(row,'account code','account','gl code','gl account',
+                                'revenue account','income account','ledger code')
 
             # Parse amount
             def parse_amount(s):
@@ -6588,10 +6681,13 @@ def api_invoices_import_csv():
             db.session.flush()
 
             # Post journal entry (AR debit, Revenue credit)
+            # Resolve revenue account — project income by default
+            rev_account = resolve_account(business, 'revenue',
+                description=notes, explicit_code=account_code)
             je_lines = [
                 {"account_code": "1100", "debit": float(total),
                  "credit": 0, "description": f"AR: {inv_num}"},
-                {"account_code": "4000", "debit": 0,
+                {"account_code": rev_account, "debit": 0,
                  "credit": float(subtotal),
                  "description": f"Revenue: {inv_num}"},
             ]
