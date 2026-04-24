@@ -212,9 +212,20 @@ function importInvoices() {
     body: JSON.stringify({csv_text: csv})
   }).then(r=>r.json()).then(res=>{
     if (res.ok) {
-      showMsg('inv-msg', true, '✓ ' + res.message + (res.errors.length ? ' | ' + res.errors.length + ' warning(s)' : '') +
-        '<br><a href="/invoices" style="color:var(--mint);font-size:11px">View imported invoices →</a>');
-      // Don't auto-reload — let user read the result
+      var errHtml = '';
+      if (res.detected_headers) {
+        errHtml += '<div style="margin-top:6px;font-size:11px;color:var(--text3)">Detected columns: <code style=background:var(--bg);padding:2px 4px>' + res.detected_headers + '</code></div>';
+      }
+      if (res.errors && res.errors.length) {
+        errHtml += '<div style="margin-top:8px;font-size:11px;color:var(--red)">' +
+          '<strong>Errors (' + res.errors.length + '):</strong><br>' +
+          res.errors.slice(0,10).join('<br>') +
+          (res.errors.length > 10 ? '<br>...and ' + (res.errors.length-10) + ' more' : '') +
+          '</div>';
+      }
+      showMsg('inv-msg', res.imported > 0, '✓ ' + res.message +
+        '<br><a href="/invoices" style="color:var(--mint);font-size:11px">View imported invoices →</a>' +
+        errHtml);
       document.getElementById('inv-import-btn').textContent = '✓ Done — Import More';
     } else {
       showMsg('inv-msg', false, 'Error: ' + res.error);
