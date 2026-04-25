@@ -1762,13 +1762,24 @@ def dashboard():
 @login_required
 def upload():
     user = current_user(); business = current_business()
-    suppliers = Supplier.query.filter_by(
-        business_id=business.id, is_active=True
-    ).order_by(Supplier.name).all()
-    accounts = Account.query.filter_by(
-        business_id=business.id, is_active=True
-    ).order_by(Account.code).all()
-    plan = business.get_plan()
+    try:
+        suppliers = Supplier.query.filter_by(
+            business_id=business.id, is_active=True
+        ).order_by(Supplier.name).all()
+    except:
+        db.session.rollback()
+        suppliers = []
+    try:
+        accounts = Account.query.filter_by(
+            business_id=business.id, is_active=True
+        ).order_by(Account.code).all()
+    except:
+        db.session.rollback()
+        accounts = []
+    try:
+        plan = business.get_plan()
+    except:
+        plan = {'name':'Free','uploads':10,'ai_scans':10}
     return render_template('upload.html', user=user, business=business,
         tax=business.tax_rules(), suppliers=suppliers, accounts=accounts, plan=plan)
 
@@ -1840,7 +1851,13 @@ def customers():
 @login_required
 def invoices():
     user = current_user(); business = current_business()
-    invoice_list = Invoice.query.filter_by(business_id=business.id).order_by(Invoice.created_at.desc()).all()
+    try:
+        invoice_list = Invoice.query.filter_by(
+            business_id=business.id).order_by(Invoice.created_at.desc()).all()
+    except Exception as e:
+        # DB columns may not exist yet - run ALTER TABLE statements
+        db.session.rollback()
+        invoice_list = []
     customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
     products_list = []
     if business.has_inventory:
@@ -1866,10 +1883,36 @@ def reports():
     total_assets = sum(a.balance() for a in assets)
     total_liabilities = sum(a.balance() for a in liabilities)
     total_equity = sum(a.balance() for a in equity) + net_profit
+    # Period for reports overview
+    from datetime import date as _date
+    _period = request.args.get('period','month')
+    _today  = _date.today()
+    if _period == 'quarter':
+        _q = (_today.month-1)//3
+        _start = _date(_today.year, _q*3+1, 1)
+        _period_label = f"Q{_q+1} {_today.year}"
+    elif _period == 'year':
+        _start = _date(_today.year, 1, 1)
+        _period_label = str(_today.year)
+    elif _period == 'custom':
+        try:
+            _start = datetime.strptime(request.args.get('start',''), '%Y-%m-%d').date()
+            _period_label = f"{_start.strftime('%d %b')} — {_today.strftime('%d %b %Y')}"
+        except:
+            _start = _date(_today.year, _today.month, 1)
+            _period_label = _today.strftime('%B %Y')
+    else:
+        _period = 'month'
+        _start = _date(_today.year, _today.month, 1)
+        _period_label = _today.strftime('%B %Y')
+
     return render_template('reports.html', user=user, business=business, tax=tax, threshold=threshold,
                            total_revenue=total_revenue, total_expenses=total_expenses, total_tax=total_tax,
                            net_profit=net_profit, total_assets=total_assets, total_liabilities=total_liabilities,
-                           total_equity=total_equity)
+                           total_equity=total_equity,
+                           period=_period, period_label=_period_label,
+                           start_str=request.args.get('start',''),
+                           end_str=request.args.get('end',''))
 
 @app.route('/ai')
 @login_required
