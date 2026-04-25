@@ -1,218 +1,357 @@
-{% extends "base.html" %}{% block title %}Invoices — LEDGR{% endblock %}{% block content %}
-<div class="topbar"><div><div class="page-title">Invoices</div><div class="page-sub">Create, send and track invoices</div></div><button class="btn btn-primary" onclick="openModal('create-inv-modal')">+ Create Invoice</button></div>
-<div class="content">
-<div class="card">
-  <div class="card-title">Invoices</div>
-  {% if invoices %}
-  <table class="table"><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>
-  {% for inv in invoices %}<tr>
-    <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
-    <td style="color:var(--text)">{{ inv.customer_name if inv.customer_name else (inv.customer.name if inv.customer else 'Unknown') }}</td>
-    <td style="color:var(--text3);font-size:11px">{{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
-    <td style="color:var(--text3);font-size:11px">{{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
-    <td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text)">{{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
-    <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='SENT' %}blue{% else %}gray{% endif %}">{{ inv.status }}</span></td>
-    <td style="display:flex;gap:4px;flex-wrap:wrap">
-      <a href="/invoice/{{ inv.id }}/pdf" target="_blank" class="btn btn-sm">📄 View</a>
-      <button class="btn btn-sm" data-action="setrecur" data-id="{{ inv.id }}" data-recur="{{ 'true' if inv.is_recurring else 'false' }}" data-interval="{{ inv.recur_interval or 'monthly' }}" style="{% if inv.is_recurring %}color:var(--mint);border-color:var(--mint){% endif %}">🔄{% if inv.is_recurring %} {{ inv.recur_interval|title }}{% else %} Recur{% endif %}</button>
-      <button class="btn btn-sm" data-action="paylink" data-id="{{ inv.id }}" style="color:var(--mint);border-color:var(--mint)">💳 Pay Link</button>
-      {% if inv.status != 'PAID' %}
-      <button class="btn btn-sm btn-primary"
-        data-action="markpaid" data-id="{{ inv.id }}">✓ Paid</button>
-      <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)"
-        data-action="delinv" data-id="{{ inv.id }}" data-num="{{ inv.invoice_number }}">Delete</button>
-      {% else %}
-      <button class="btn btn-sm" style="color:var(--amber);border-color:var(--amber)"
-        data-action="creditnote" data-id="{{ inv.id }}" data-amount="{{ inv.total_amount|float }}" data-num="{{ inv.invoice_number }}">Credit Note</button>
-      <button class="btn btn-sm" style="color:var(--blue);border-color:var(--blue)"
-        data-action="debitnote" data-id="{{ inv.id }}" data-num="{{ inv.invoice_number }}">Debit Note</button>
-      {% endif %}
-      <button class="btn btn-sm"
-        data-action="emailinv" data-id="{{ inv.id }}" data-email="{{ inv.customer.email if inv.customer and inv.customer.email else '' }}">✉ Email</button>
-    </td>
-  </tr>{% endfor %}
-  </tbody></table>
-  {% else %}
-  <div style="text-align:center;padding:40px 0;color:var(--text3)"><div style="font-size:28px;margin-bottom:10px">◻</div><div style="font-weight:500;color:var(--text2);margin-bottom:14px">No invoices yet</div><button class="btn btn-primary" onclick="openModal('create-inv-modal')">Create first invoice</button></div>
-  {% endif %}
-</div>
-</div>
-
-<div id="create-inv-modal" class="modal-overlay">
-  <div class="modal" style="max-width:600px">
-    <div class="modal-title">Create Invoice <button class="modal-close" onclick="closeModal('create-inv-modal')">×</button></div>
-    <div class="field-row">
-      <div><div class="field-label">Customer</div>
-        <select class="select-input" id="inv-cust">
-          <option value="">Walk-in / No customer</option>
-          {% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div><div class="field-label">Invoice Date</div><input class="field-input" type="date" id="inv-date" value="{{ today }}"></div>
-      </div>
-      <div class="field-row">
-      <div><div class="field-label">Due Date</div><input class="field-input" type="date" id="inv-due"></div>
-    </div>
-    <div class="field-label" style="margin-bottom:6px">Line Items</div>
-    <div id="inv-items"></div>
-    <button class="btn btn-sm" onclick="addInvItem()" style="margin-bottom:12px">+ Add item</button>
-    <div class="field-group"><div class="field-label">Notes</div><input class="field-input" id="inv-notes" placeholder="Payment terms, delivery details..."></div>
-    <div id="inv-total" style="text-align:right;font-size:15px;font-weight:600;color:var(--mint);margin-bottom:12px;font-family:var(--mono)"></div>
-    <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="createInvoice()">Create & Send</button><button class="btn" onclick="closeModal('create-inv-modal')">Cancel</button></div>
-    <div id="inv-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+{% extends "base.html" %}{% block title %}Invoices — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <div class="page-title">Invoices</div>
+    <div class="page-sub">{{ invoices|length }} invoice(s)</div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="openModal('new-invoice-modal')">+ New Invoice</button>
+    <a href="/migration" class="btn">📥 Import</a>
   </div>
 </div>
+
+<div class="content">
+  <!-- Summary cards -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+    {% set total_val = invoices|sum(attribute='total_amount') %}
+    {% set paid_val  = invoices|selectattr('status','equalto','PAID')|sum(attribute='total_amount') %}
+    {% set overdue   = invoices|selectattr('status','equalto','OVERDUE')|list|length %}
+    <div class="card" style="padding:12px;text-align:center">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Total Invoiced</div>
+      <div style="font-weight:700;font-size:15px;color:var(--mint);font-family:var(--mono)">
+        MVR {{ "%.0f"|format(total_val) }}</div>
+    </div>
+    <div class="card" style="padding:12px;text-align:center">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Collected</div>
+      <div style="font-weight:700;font-size:15px;color:var(--mint);font-family:var(--mono)">
+        MVR {{ "%.0f"|format(paid_val) }}</div>
+    </div>
+    <div class="card" style="padding:12px;text-align:center">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Outstanding</div>
+      <div style="font-weight:700;font-size:15px;color:var(--amber);font-family:var(--mono)">
+        MVR {{ "%.0f"|format(total_val - paid_val) }}</div>
+    </div>
+    <div class="card" style="padding:12px;text-align:center">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Overdue</div>
+      <div style="font-weight:700;font-size:15px;color:var(--red)">{{ overdue }}</div>
+    </div>
+  </div>
+
+  <!-- Filter bar -->
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+    <button class="btn btn-sm btn-primary" onclick="filterInv('ALL')" id="f-ALL">All</button>
+    <button class="btn btn-sm" onclick="filterInv('OVERDUE')" id="f-OVERDUE">Overdue</button>
+    <button class="btn btn-sm" onclick="filterInv('SENT')" id="f-SENT">Sent</button>
+    <button class="btn btn-sm" onclick="filterInv('PAID')" id="f-PAID">Paid</button>
+    <button class="btn btn-sm" onclick="filterInv('VOID')" id="f-VOID">Void</button>
+    <input type="text" class="field-input" placeholder="Search..." 
+      oninput="searchInv(this.value)"
+      style="margin-left:auto;width:200px;height:32px;padding:4px 10px;font-size:12px">
+  </div>
+
+  <div class="card" style="padding:0">
+    <table class="table" id="inv-table">
+      <thead><tr>
+        <th>Invoice #</th>
+        <th>Customer</th>
+        <th>Date</th>
+        <th>Due</th>
+        <th style="text-align:right">Subtotal</th>
+        <th style="text-align:right">GST</th>
+        <th style="text-align:right">Total</th>
+        <th>Status</th>
+        <th style="min-width:160px">Actions</th>
+      </tr></thead>
+      <tbody>
+      {% for inv in invoices %}
+      <tr class="inv-row" data-status="{{ inv.status }}"
+          data-search="{{ inv.invoice_number }} {{ inv.customer_name }}">
+        <td style="font-family:var(--mono);color:var(--mint);font-size:11px">
+          {{ inv.invoice_number }}</td>
+        <td style="font-weight:500;color:var(--text)">
+          {{ inv.customer_name }}</td>
+        <td style="color:var(--text3);font-size:11px">
+          {{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
+        <td style="color:var(--text3);font-size:11px">
+          {{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px">
+          {{ inv.currency }} {{ "%.2f"|format(inv.subtotal) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">
+          {{ "%.2f"|format(inv.tax_amount) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700">
+          {{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
+        <td>
+          <span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='VOID' %}red{% elif inv.status=='OVERDUE' %}red{% else %}amber{% endif %}">
+            {{ inv.status }}</span>
+        </td>
+        <td>
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn btn-sm" onclick="editInv({{ inv.id }}, '{{ inv.invoice_number }}', '{{ inv.customer_name }}', '{{ inv.status }}', {{ inv.total_amount }}, {{ inv.tax_amount }}, {{ inv.subtotal }}, '{{ inv.invoice_date }}', {{ inv.customer_id or 'null' }})">
+              ✏ Edit</button>
+            {% if inv.status != 'PAID' %}
+            <button class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)"
+              onclick="markPaid({{ inv.id }})">Paid</button>
+            {% endif %}
+            {% if inv.status != 'VOID' %}
+            <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)"
+              onclick="voidInv({{ inv.id }})">Void</button>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not invoices %}
+      <tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text3)">
+        No invoices found. <a href="/migration" style="color:var(--mint)">Import from CSV →</a>
+      </td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Edit Invoice Modal -->
+<div id="edit-inv-modal" class="modal-overlay">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-title">Edit Invoice
+      <button class="modal-close" onclick="closeModal('edit-inv-modal')">×</button>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Invoice Number</div>
+        <input class="field-input" id="ei-num" placeholder="INV-001"></div>
+      <div><div class="field-label">Invoice Date</div>
+        <input class="field-input" type="date" id="ei-date"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Customer</div>
+        <select class="select-input" id="ei-customer">
+          <option value="">— Select Customer —</option>
+          {% for c in customers %}
+          <option value="{{ c.id }}">{{ c.name }}</option>
+          {% endfor %}
+        </select></div>
+      <div><div class="field-label">Status</div>
+        <select class="select-input" id="ei-status">
+          <option value="SENT">Sent</option>
+          <option value="PAID">Paid</option>
+          <option value="OVERDUE">Overdue</option>
+          <option value="VOID">Void</option>
+          <option value="PARTIAL">Partial</option>
+        </select></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Subtotal (excl GST)</div>
+        <input class="field-input" type="number" step="0.01" id="ei-sub"
+          oninput="calcTotal()"></div>
+      <div><div class="field-label">GST Amount</div>
+        <input class="field-input" type="number" step="0.01" id="ei-tax"
+          oninput="calcTotal()"></div>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Total (incl GST)</div>
+      <input class="field-input" type="number" step="0.01" id="ei-total" readonly
+        style="background:var(--bg);font-weight:700">
+    </div>
+    <input type="hidden" id="ei-inv-id">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="saveInv()">Save Changes</button>
+      <button class="btn" onclick="closeModal('edit-inv-modal')">Cancel</button>
+    </div>
+    <div id="ei-msg" style="display:none;margin-top:8px;font-size:12px;padding:8px;border-radius:6px"></div>
+  </div>
+</div>
+
+<!-- New Invoice Modal -->
+<div id="new-invoice-modal" class="modal-overlay">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-title">New Invoice
+      <button class="modal-close" onclick="closeModal('new-invoice-modal')">×</button>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Customer *</div>
+        <select class="select-input" id="ni-customer">
+          <option value="">— Select Customer —</option>
+          {% for c in customers %}
+          <option value="{{ c.id }}" data-name="{{ c.name }}">{{ c.name }}</option>
+          {% endfor %}
+        </select></div>
+      <div><div class="field-label">Invoice Date</div>
+        <input class="field-input" type="date" id="ni-date"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Invoice Number</div>
+        <input class="field-input" id="ni-num" placeholder="AK-25-XXXX"></div>
+      <div><div class="field-label">Due Date</div>
+        <input class="field-input" type="date" id="ni-due"></div>
+    </div>
+    <div id="ni-lines" style="margin:10px 0"></div>
+    <button class="btn btn-sm" onclick="addLine()" style="margin-bottom:10px">+ Add Line</button>
+    <div style="text-align:right;padding:8px 0;border-top:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text3)">Total: </span>
+      <span id="ni-total-display" style="font-weight:700;font-family:var(--mono);font-size:15px;color:var(--mint)">MVR 0.00</span>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Notes</div>
+      <textarea class="field-input" id="ni-notes" rows="2"></textarea>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="createInvoice()">Create Invoice</button>
+      <button class="btn" onclick="closeModal('new-invoice-modal')">Cancel</button>
+    </div>
+    <div id="ni-msg" style="display:none;margin-top:8px;font-size:12px;padding:8px;border-radius:6px"></div>
+  </div>
+</div>
+
 {% endblock %}
 {% block scripts %}<script>
-// ── EVENT DELEGATION: handles all button clicks safely on mobile ──
-document.addEventListener('click', function(e) {
-  var btn = e.target.closest('[data-action]');
-  if (!btn) return;
-  var action = btn.dataset.action;
-  var id = btn.dataset.id;
-  var num = btn.dataset.num || '';
-  var amount = parseFloat(btn.dataset.amount) || 0;
-  var email = btn.dataset.email || '';
-  if (action === 'markpaid') { markPaid(id); }
-  else if (action === 'paylink') { generatePayLink(id); }
-  else if (action === 'setrecur') {
-    var isRecur = btn.dataset.recur === 'true';
-    if (isRecur) {
-      if (confirm('Stop recurring for this invoice?')) {
-        fetch('/api/invoice/'+id+'/stop-recurring', {method:'POST'})
-          .then(r=>r.json()).then(res=>{if(res.ok)location.reload();else alert(res.error);});
-      }
-    } else {
-      var interval = prompt('Recurring interval:\nweekly / monthly / quarterly / yearly', 'monthly');
-      if (!interval) return;
-      fetch('/api/invoice/'+id+'/set-recurring', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({interval: interval.toLowerCase()})
-      }).then(r=>r.json()).then(res=>{
-        if(res.ok){alert('✓ '+res.message);location.reload();}
-        else alert('Error: '+res.error);
-      });
-    }
-  }
-  else if (action === 'delinv') { deleteInv(id, num); }
-  else if (action === 'creditnote') { issueCreditNote(id, amount, num); }
-  else if (action === 'debitnote') { issueDebitNote(id, num); }
-  else if (action === 'emailinv') { emailInvModal(id, email); }
-});
+var TAX_RATE = {{ tax.tax_rate | float }};
+var CCY = "{{ tax.currency }}";
 
-var invItems=[];
-// Build product options for invoice lines
-var PRODUCTS = [{% for p in products %}{id:'{{ p.id }}',name:'{{ p.name|replace("'","\'") }}',price:{{ p.unit_price }}}{% if not loop.last %},{% endif %}{% endfor %}];
-function addInvItem(productId, productName, productPrice){
-  var i=invItems.length;
-  invItems.push({desc:productName||'',qty:1,price:productPrice||0,total:productPrice||0});
-  var div=document.createElement('div');
-  div.id='inv-item-'+i;
-  div.style.cssText='display:grid;grid-template-columns:2fr 80px 100px 100px 30px;gap:6px;margin-bottom:6px;align-items:center';
-  var prodSelect='';
-  if(PRODUCTS.length>0){
-    prodSelect='<select onchange="pickProduct('+i+',this)" style="font-size:10px;padding:2px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text3);margin-bottom:2px;width:100%"><option value="">Pick product or type...</option>'+PRODUCTS.map(function(p){return '<option value="'+p.id+'" data-price="'+p.price+'">'+p.name+'</option>';}).join('')+'</select>';
-  }
-  div.innerHTML=prodSelect+'<input class="field-input" placeholder="Description" value="'+(productName||'')+'" oninput="updateItem('+i+',\'desc\',this.value)" style="font-size:11px"><input class="field-input" type="number" value="1" min="1" oninput="updateItem('+i+',\'qty\',this.value)" style="font-size:11px"><input class="field-input" type="number" step="0.01" placeholder="Price" value="'+(productPrice||'')+'" oninput="updateItem('+i+',\'price\',this.value)" style="font-size:11px"><span id="inv-line-'+i+'" style="font-family:var(--mono);font-size:12px;color:var(--mint);text-align:right">'+(productPrice||0).toFixed(2)+'</span><button onclick="removeItem('+i+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:16px">×</button>';
-  document.getElementById('inv-items').appendChild(div);
-  updateTotal();
+// ── Filter & search ────────────────────────────────────────────────────
+var currentFilter = 'ALL';
+function filterInv(status) {
+  currentFilter = status;
+  document.querySelectorAll('[id^="f-"]').forEach(function(b) {
+    b.className = 'btn btn-sm' + (b.id === 'f-' + status ? ' btn-primary' : '');
+  });
+  applyFilter();
 }
-function pickProduct(i,sel){
-  var opt=sel.options[sel.selectedIndex];
-  var price=parseFloat(opt.dataset.price||0);
-  var name=opt.text;
-  if(!opt.value)return;
-  updateItem(i,'desc',name);
-  updateItem(i,'price',price);
-  // Update visible inputs
-  var row=document.getElementById('inv-item-'+i);
-  if(row){
-    var inputs=row.querySelectorAll('input');
-    inputs[0].value=name;
-    inputs[1].value=price;
-  }
+function searchInv(q) {
+  applyFilter(q);
 }
-function removeItem(i){invItems[i]=null;var el=document.getElementById('inv-item-'+i);if(el)el.remove();updateTotal();}
-function updateItem(i,k,v){if(!invItems[i])return;invItems[i][k]=k==='desc'?v:parseFloat(v)||0;invItems[i].total=invItems[i].qty*invItems[i].price;var el=document.getElementById('inv-line-'+i);if(el)el.textContent=fmt(invItems[i].total);updateTotal();}
-function updateTotal(){var t=invItems.filter(Boolean).reduce((s,i)=>s+i.total,0);document.getElementById('inv-total').textContent='Total: '+t.toFixed(2);}
-function createInvoice(){var items=invItems.filter(Boolean).filter(i=>i.desc);if(!items.length){alert('Add at least one item');return;}fetch('/api/invoice/create',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({customer_id:document.getElementById('inv-cust').value||null,invoice_date:document.getElementById('inv-date').value,due_date:document.getElementById('inv-due').value,notes:document.getElementById('inv-notes').value,items:items})}).then(r=>r.json()).then(res=>{if(res.ok){var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--mint)';msg.textContent='✓ Invoice '+res.invoice_number+' created — Total: '+res.total.toFixed(2);window._lastWaUrl=res.wa_url;setTimeout(()=>{if(confirm('Share invoice on WhatsApp?'))window.open(res.wa_url,'_blank');closeModal('create-inv-modal');location.reload();},500);}else{var msg=document.getElementById('inv-msg');msg.style.display='block';msg.style.color='var(--red)';msg.textContent='Error: '+res.error;}});}
-function markPaid(id){if(confirm('Mark this invoice as paid?'))fetch('/api/invoice/'+id+'/mark-paid',{method:'POST'}).then(r=>r.json()).then(res=>{if(res.ok)location.reload();});}
-function emailInvModal(id, defaultEmail) {
-  var email = prompt('Send invoice to email address:', defaultEmail||'');
-  if(!email) return;
-  fetch('/api/invoice/'+id+'/email',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({email:email})
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok){alert('✓ '+res.message);}
-    else if(res.invoice_url){
-      alert('SMTP not configured.\n\nShare this link manually:\n'+res.invoice_url);
+function applyFilter(q) {
+  var search = (q || document.querySelector('input[placeholder="Search..."]').value || '').toLowerCase();
+  document.querySelectorAll('.inv-row').forEach(function(row) {
+    var statusOk = currentFilter === 'ALL' || row.dataset.status === currentFilter;
+    var searchOk = !search || row.dataset.search.toLowerCase().includes(search);
+    row.style.display = (statusOk && searchOk) ? '' : 'none';
+  });
+}
+
+// ── Edit invoice ──────────────────────────────────────────────────────
+function editInv(id, num, cust, status, total, tax, sub, date, custId) {
+  document.getElementById('ei-inv-id').value = id;
+  document.getElementById('ei-num').value = num;
+  document.getElementById('ei-date').value = date ? date.split('T')[0] : '';
+  document.getElementById('ei-status').value = status;
+  document.getElementById('ei-sub').value = parseFloat(sub).toFixed(2);
+  document.getElementById('ei-tax').value = parseFloat(tax).toFixed(2);
+  document.getElementById('ei-total').value = parseFloat(total).toFixed(2);
+  if (custId) document.getElementById('ei-customer').value = custId;
+  document.getElementById('ei-msg').style.display = 'none';
+  openModal('edit-inv-modal');
+}
+
+function calcTotal() {
+  var sub = parseFloat(document.getElementById('ei-sub').value) || 0;
+  var tax = parseFloat(document.getElementById('ei-tax').value) || 0;
+  document.getElementById('ei-total').value = (sub + tax).toFixed(2);
+}
+
+function saveInv() {
+  var id = document.getElementById('ei-inv-id').value;
+  var msg = document.getElementById('ei-msg');
+  fetch('/api/invoice/' + id + '/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      invoice_number: document.getElementById('ei-num').value,
+      invoice_date:   document.getElementById('ei-date').value,
+      customer_id:    document.getElementById('ei-customer').value || null,
+      status:         document.getElementById('ei-status').value,
+      subtotal:       parseFloat(document.getElementById('ei-sub').value),
+      tax_amount:     parseFloat(document.getElementById('ei-tax').value),
+      total_amount:   parseFloat(document.getElementById('ei-total').value)
+    })
+  }).then(r => r.json()).then(res => {
+    msg.style.display = 'block';
+    if (res.ok) {
+      msg.style.background = 'rgba(16,185,129,.1)';
+      msg.style.color = 'var(--mint)';
+      msg.textContent = '✓ Saved. Reloading...';
+      setTimeout(function() { location.reload(); }, 1000);
     } else {
-      alert('Error: '+res.error);
+      msg.style.background = 'rgba(239,68,68,.1)';
+      msg.style.color = 'var(--red)';
+      msg.textContent = 'Error: ' + res.error;
     }
   });
 }
 
-function generatePayLink(id) {
-  var btn = event.target; btn.disabled = true; btn.textContent = '...';
-  fetch('/api/invoice/'+id+'/payment-link', {method:'POST'})
-    .then(r=>r.json()).then(res=>{
-      btn.disabled = false; btn.textContent = '💳 Pay Link';
-      if(res.ok) {
-        if(navigator.clipboard) {
-          navigator.clipboard.writeText(res.url).then(function(){
-            alert('✓ Payment link copied!\n\n' + res.url + '\n\nMethod: ' + res.method);
-          });
-        } else {
-          alert('Payment link:\n\n' + res.url);
-        }
-      } else {
-        alert('Error: ' + res.error);
-      }
+function markPaid(id) {
+  if (!confirm('Mark this invoice as PAID?')) return;
+  fetch('/api/invoice/' + id + '/mark-paid', {method: 'POST'})
+    .then(r => r.json()).then(res => {
+      if (res.ok) location.reload();
+      else alert('Error: ' + res.error);
     });
 }
 
-function deleteInv(id, num) {
-  if(!confirm('Delete invoice '+num+'?\n\nThis will permanently remove the invoice and any linked journal entries.')) return;
-  fetch('/api/invoice/'+id+'/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({force:false})})
-    .then(r=>r.json()).then(res=>{
-      if(res.ok){ location.reload(); }
-      else if(res.can_force) {
-        if(confirm('⚠ ' + res.error + '\n\nForce delete anyway? (This cannot be undone)')) {
-          fetch('/api/invoice/'+id+'/delete', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({force:true})})
-            .then(r=>r.json()).then(res2=>{
-              if(res2.ok) location.reload();
-              else alert('Error: '+res2.error);
-            });
-        }
-      } else { alert('Cannot delete: '+res.error); }
+function voidInv(id) {
+  if (!confirm('Void this invoice? This cannot be undone.')) return;
+  fetch('/api/invoice/' + id + '/void', {method: 'POST'})
+    .then(r => r.json()).then(res => {
+      if (res.ok) location.reload();
+      else alert('Error: ' + res.error);
     });
 }
-function issueDebitNote(id, num) {
-  var reason = prompt('Debit note for invoice '+num+'\nReason for additional charge:','');
-  if(!reason) return;
-  var amt = parseFloat(prompt('Additional amount to charge?',''));
-  if(!amt || amt <= 0) { alert('Invalid amount'); return; }
-  fetch('/api/invoice/'+id+'/debit-note', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({amount:amt, reason:reason})
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok) { alert('✓ '+res.message); location.reload(); }
-    else alert('Error: '+res.error);
+
+// ── New invoice ────────────────────────────────────────────────────────
+var niLines = [];
+function addLine(desc, qty, price) {
+  var i = niLines.length;
+  niLines.push({desc: desc||'', qty: qty||1, price: price||0});
+  var div = document.createElement('div');
+  div.id = 'nl-' + i;
+  div.style.cssText = 'display:grid;grid-template-columns:2fr 60px 120px 30px;gap:6px;margin-bottom:6px';
+  div.innerHTML = '<input class="field-input" placeholder="Description" value="' + (desc||'') + '" style="font-size:11px" oninput="niLines['+i+'].desc=this.value">'
+    + '<input class="field-input" type="number" value="' + (qty||1) + '" placeholder="Qty" style="font-size:11px" oninput="niLines['+i+'].qty=parseFloat(this.value)||1;niCalc()">'
+    + '<input class="field-input" type="number" step="0.01" value="' + (price||'') + '" placeholder="Unit price" style="font-size:11px" oninput="niLines['+i+'].price=parseFloat(this.value)||0;niCalc()">'
+    + '<button onclick="document.getElementById(\'nl-'+i+'\').remove();niLines['+i+']=null;niCalc()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">×</button>';
+  document.getElementById('ni-lines').appendChild(div);
+  niCalc();
+}
+function niCalc() {
+  var total = niLines.filter(Boolean).reduce(function(s,l){ return s + (l.qty * l.price); }, 0);
+  var withTax = total * (1 + TAX_RATE);
+  document.getElementById('ni-total-display').textContent = CCY + ' ' + withTax.toFixed(2);
+}
+function createInvoice() {
+  var custId = document.getElementById('ni-customer').value;
+  if (!custId) { alert('Select a customer'); return; }
+  var lines = niLines.filter(Boolean).filter(function(l){ return l.price > 0; });
+  if (!lines.length) { alert('Add at least one line item'); return; }
+  var sub = lines.reduce(function(s,l){ return s + l.qty * l.price; }, 0);
+  var tax = parseFloat((sub * TAX_RATE).toFixed(2));
+  var total = parseFloat((sub + tax).toFixed(2));
+  var msg = document.getElementById('ni-msg');
+  fetch('/api/invoice/create', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      customer_id:    custId,
+      invoice_number: document.getElementById('ni-num').value,
+      invoice_date:   document.getElementById('ni-date').value,
+      due_date:       document.getElementById('ni-due').value,
+      items: lines.map(function(l){ return {desc:l.desc, qty:l.qty, price:l.price, total:l.qty*l.price}; }),
+      subtotal: sub, tax_amount: tax, total_amount: total,
+      notes: document.getElementById('ni-notes').value
+    })
+  }).then(r => r.json()).then(res => {
+    msg.style.display = 'block';
+    if (res.ok) {
+      msg.style.background = 'rgba(16,185,129,.1)'; msg.style.color = 'var(--mint)';
+      msg.textContent = '✓ Invoice created! Reloading...';
+      setTimeout(function(){ location.reload(); }, 1000);
+    } else {
+      msg.style.background = 'rgba(239,68,68,.1)'; msg.style.color = 'var(--red)';
+      msg.textContent = 'Error: ' + res.error;
+    }
   });
 }
 
-function issueCreditNote(id, amount, num) {
-  var reason = prompt('Credit note for invoice '+num+'\nEnter reason:','Credit adjustment');
-  if(!reason) return;
-  var creditAmt = parseFloat(prompt('Credit amount (max '+amount.toFixed(2)+')?', amount.toFixed(2)));
-  if(!creditAmt || creditAmt <= 0) return;
-  fetch('/api/invoice/'+id+'/credit-note', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({amount:creditAmt, reason:reason})
-  }).then(r=>r.json()).then(res=>{
-    if(res.ok) { alert('✓ '+res.message); location.reload(); }
-    else alert('Error: '+res.error);
-  });
-}
+// Set today as default date
+document.getElementById('ni-date').value = new Date().toISOString().split('T')[0];
+addLine(); // start with one empty line
 </script>{% endblock %}
