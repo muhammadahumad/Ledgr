@@ -9,6 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 
 app = Flask(__name__)
+app.config['LEDGR_VERSION'] = 'v2025-04-25-tx-fix'  # deployment marker
 
 
 @app.after_request
@@ -1882,9 +1883,10 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
         cust_map = {}
         if cust_ids:
             try:
+                id_list = ",".join(str(int(i)) for i in cust_ids)
                 cust_result = db.session.execute(db.text(
-                    "SELECT id, name FROM customers WHERE id IN :ids"
-                ), {"ids": tuple(cust_ids)})
+                    f"SELECT id, name FROM customers WHERE id IN ({id_list})"
+                ))
                 cust_map = {r[0]: r[1] for r in cust_result.fetchall()}
             except:
                 db.session.rollback()
@@ -7982,7 +7984,7 @@ def api_debug_counts():
     except Exception as e:
         counts['sample_invoices'] = f"ERROR: {str(e)[:100]}"
     
-    return jsonify({"ok": True, "business_id": bid, "counts": counts})
+    return jsonify({"ok": True, "business_id": bid, "version": app.config.get("LEDGR_VERSION","unknown"), "counts": counts})
 
 @app.route('/admin')
 @login_required
