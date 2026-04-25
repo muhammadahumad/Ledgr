@@ -7620,27 +7620,32 @@ def api_project_delete(pid):
 def api_document_delete(doc_id):
     business, err = api_business_guard()
     if err: return err
+    db.session.rollback()
     doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
-    if not doc: return jsonify({"ok":False,"error":"Document not found"})
-    data = request.get_json() or {}
-    force = data.get("force", False)
-    if not force and doc.payment_status == "PAID":
-        return jsonify({"ok":False,
-            "error":"This bill is marked as paid. Force delete?",
-            "can_force":True})
+    if not doc:
+        return jsonify({"ok": False, "error": "Document not found"})
     try:
-        # Remove linked journal entries
-        linked = JournalEntry.query.filter_by(
-            business_id=business.id, document_id=doc.id).all()
-        for je in linked:
-            JournalLine.query.filter_by(journal_entry_id=je.id).delete()
-            db.session.delete(je)
+        # 1. Delete journal lines first (FK constraint)
+        je_ids = [je.id for je in JournalEntry.query.filter_by(document_id=doc.id).all()]
+        if je_ids:
+            ids_str = ",".join(str(i) for i in je_ids)
+            db.session.execute(db.text(
+                f"DELETE FROM journal_lines WHERE journal_entry_id IN ({ids_str})"
+            ))
+            db.session.execute(db.text(
+                f"DELETE FROM journal_entries WHERE id IN ({ids_str})"
+            ))
+        # 2. Delete ledger entries
+        db.session.execute(db.text(
+            "DELETE FROM ledger_entries WHERE document_id = :did"
+        ), {"did": doc.id})
+        # 3. Delete the document
         db.session.delete(doc)
         db.session.commit()
-        return jsonify({"ok":True,"message":"Document deleted"})
+        return jsonify({"ok": True, "message": "Bill deleted and journal entries reversed."})
     except Exception as e:
         db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
+        return jsonify({"ok": False, "error": f"Delete failed: {str(e)[:200]}"})
 
 
 @app.route("/api/journal/<int:je_id>/delete", methods=["POST"])
@@ -9248,6 +9253,23 @@ def api_document_update(doc_id):
 def api_document_manual():
     user = current_user(); business = current_business()
     data = request.get_json()
+    # Soft duplicate check - warn but don't block
+    inv_num_check = data.get("invoice_number","").strip()
+    if inv_num_check:
+        existing = Document.query.filter_by(
+            business_id=business.id,
+            invoice_number=inv_num_check
+        ).first()
+        if existing:
+            # Return warning but still allow save if force=True
+            if not data.get("force_duplicate"):
+                return jsonify({
+                    "ok": False,
+                    "duplicate": True,
+                    "error": f"Invoice #{inv_num_check} already exists (from {existing.vendor_name}). Save anyway?",
+                    "existing_id": existing.id
+                })
+
     inv_date = due_date = None
     try:
         if data.get("invoice_date"): inv_date = datetime.strptime(data["invoice_date"],"%Y-%m-%d").date()
