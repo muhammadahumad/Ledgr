@@ -1897,9 +1897,22 @@ def reports():
     user = current_user(); business = current_business()
     tax = business.tax_rules()
     threshold = check_threshold(business)
-    total_revenue = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(business_id=business.id,entry_type='REVENUE').scalar() or 0)
-    total_expenses = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter_by(business_id=business.id,entry_type='EXPENSE').scalar() or 0)
-    total_tax = float(db.session.query(db.func.sum(LedgerEntry.tax_amount)).filter_by(business_id=business.id).scalar() or 0)
+    # Revenue = sum of credits on 4xxx accounts
+    revenue_accounts = Account.query.filter_by(
+        business_id=business.id, account_type='REVENUE', is_active=True).all()
+    total_revenue = sum(float(a.balance()) for a in revenue_accounts)
+
+    # Expenses = sum of debits on 5xxx/6xxx accounts
+    expense_accounts = Account.query.filter_by(
+        business_id=business.id, account_type='EXPENSE', is_active=True).all()
+    total_expenses = sum(float(a.balance()) for a in expense_accounts)
+
+    # Tax = from output tax accounts
+    tax_accounts = Account.query.filter(
+        Account.business_id==business.id,
+        Account.code.in_(['2200','2210','2211'])).all()
+    total_tax = sum(float(a.balance()) for a in tax_accounts)
+
     net_profit = total_revenue - total_expenses
     assets = Account.query.filter_by(business_id=business.id, account_type='ASSET', is_active=True).all()
     liabilities = Account.query.filter_by(business_id=business.id, account_type='LIABILITY', is_active=True).all()
@@ -4541,32 +4554,133 @@ def report_gst_return():
     from datetime import date
     start, end, period_label, period = resolve_period(request.args)
     today = date.today()
-    total_supplies = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
-        LedgerEntry.business_id==business.id,
-        LedgerEntry.entry_type=="REVENUE",
-        LedgerEntry.timestamp >= datetime.combine(start, datetime.min.time()),
-        LedgerEntry.timestamp <= datetime.combine(end, datetime.max.time())
-    ).scalar() or 0)
+        # ── GST Calculations from Journal Lines (double-entry) ──────────────────
+    # Revenue accounts start with '4' - sum of credits on these accounts
+    # This reads from the actual posted journal entries, not LedgerEntry
 
-    # Box 2: Exempt / zero-rated (not implemented yet — 0)
+    start_dt = datetime.combine(start, datetime.min.time())
+    end_dt   = datetime.combine(end,   datetime.max.time())
+
+    # Box 1: Total supplies = credits on revenue accounts (4xxx)
+    # Join JournalLine -> Account -> JournalEntry for date filter
+    revenue_q = db.session.query(
+        db.func.sum(JournalLine.credit)
+    ).join(Account, JournalLine.account_id == Account.id
+    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
+    ).filter(
+        Account.business_id == business.id,
+        Account.account_type == 'REVENUE',
+        JournalEntry.business_id == business.id,
+        JournalEntry.date >= start_dt,
+        JournalEntry.date <= end_dt
+    ).scalar()
+    total_supplies = float(revenue_q or 0)
+
+    # Also include direct invoice totals (tax-exclusive) for any not in journal
+    # Get from Invoice table directly for the period
+    try:
+        inv_revenue = db.session.query(
+            db.func.sum(Invoice.subtotal)
+        ).filter(
+            Invoice.business_id == business.id,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+            Invoice.status.notin_(['VOID','DRAFT'])
+        ).scalar()
+        inv_revenue = float(inv_revenue or 0)
+        # Use whichever is higher (journal entries or direct invoice sum)
+        if inv_revenue > total_supplies:
+            total_supplies = inv_revenue
+    except:
+        db.session.rollback()
+
+    # Box 2: Exempt / zero-rated
     exempt_supplies = 0.0
 
     # Box 3: Taxable supplies
     taxable_supplies = total_supplies - exempt_supplies
 
     # Box 4: Output tax
-    output_tax = round(taxable_supplies * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)  # tax-inclusive
+    # First try: sum credits on output tax account (2200)
+    output_tax_q = db.session.query(
+        db.func.sum(JournalLine.credit)
+    ).join(Account, JournalLine.account_id == Account.id
+    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
+    ).filter(
+        Account.business_id == business.id,
+        Account.code.in_(['2200','2201','2202']),
+        JournalEntry.business_id == business.id,
+        JournalEntry.date >= start_dt,
+        JournalEntry.date <= end_dt
+    ).scalar()
+    output_tax_journal = float(output_tax_q or 0)
 
-    # Box 5: Total purchases (AP documents)
-    total_purchases = float(db.session.query(db.func.sum(Document.total_amount)).filter(
-        Document.business_id==business.id,
+    # Also calculate from invoice tax_amount directly
+    try:
+        inv_tax = db.session.query(
+            db.func.sum(Invoice.tax_amount)
+        ).filter(
+            Invoice.business_id == business.id,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+            Invoice.status.notin_(['VOID','DRAFT'])
+        ).scalar()
+        inv_tax = float(inv_tax or 0)
+    except:
+        db.session.rollback()
+        inv_tax = 0
+
+    # Use invoice tax if available and higher, otherwise calculate from revenue
+    if inv_tax > 0:
+        output_tax = round(inv_tax, 2)
+    elif output_tax_journal > 0:
+        output_tax = round(output_tax_journal, 2)
+    else:
+        output_tax = round(taxable_supplies * tax["tax_rate"], 2)
+
+    # Box 5: Total purchases — from Document table
+    total_purchases = float(db.session.query(
+        db.func.sum(Document.total_amount)
+    ).filter(
+        Document.business_id == business.id,
         Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
         Document.invoice_date >= start,
         Document.invoice_date <= end
     ).scalar() or 0)
 
-    # Box 6: Input tax (purchases from GST-registered suppliers)
-    input_tax = round(total_purchases * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
+    # Box 6: Input tax — from Document tax_amount directly
+    input_tax_direct = float(db.session.query(
+        db.func.sum(Document.tax_amount)
+    ).filter(
+        Document.business_id == business.id,
+        Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
+        Document.invoice_date >= start,
+        Document.invoice_date <= end,
+        Document.tax_amount > 0
+    ).scalar() or 0)
+
+    # Also try from journal lines (debit on input tax account 2210)
+    input_tax_q = db.session.query(
+        db.func.sum(JournalLine.debit)
+    ).join(Account, JournalLine.account_id == Account.id
+    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
+    ).filter(
+        Account.business_id == business.id,
+        Account.code.in_(['2210','2211']),
+        JournalEntry.business_id == business.id,
+        JournalEntry.date >= start_dt,
+        JournalEntry.date <= end_dt
+    ).scalar()
+    input_tax_journal = float(input_tax_q or 0)
+
+    # Use whichever gives a result
+    if input_tax_direct > 0:
+        input_tax = round(input_tax_direct, 2)
+    elif input_tax_journal > 0:
+        input_tax = round(input_tax_journal, 2)
+    else:
+        input_tax = round(total_purchases * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
+
 
     # Box 7: Net tax payable
     net_tax = round(output_tax - input_tax, 2)
