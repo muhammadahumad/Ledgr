@@ -8010,6 +8010,34 @@ def api_debug_counts():
     except Exception as e:
         counts['invoice_date_range'] = f"ERROR: {str(e)[:100]}"
     
+    # Show all invoices with customer details
+    try:
+        db.session.rollback()
+        inv_detail = db.session.execute(db.text(
+            "SELECT i.invoice_number, i.invoice_date, i.total_amount, i.tax_amount, "
+            "i.subtotal, i.status, i.buyer_legal_name, i.customer_id, "
+            "c.name as cust_name, c.tax_id as cust_tin "
+            "FROM invoices i "
+            "LEFT JOIN customers c ON i.customer_id = c.id "
+            "WHERE i.business_id = :bid ORDER BY i.invoice_date"
+        ), {"bid": bid}).fetchall()
+        counts["invoice_detail"] = [
+            {"num": r[0], "date": str(r[1]), "total": str(r[2]),
+             "tax": str(r[3]), "sub": str(r[4]), "status": r[5],
+             "buyer_name": r[6], "cust_id": r[7],
+             "cust_name": r[8], "cust_tin": r[9]}
+            for r in inv_detail
+        ]
+        # Total check
+        counts["invoice_totals"] = {
+            "total_gross": str(sum(float(r[2] or 0) for r in inv_detail)),
+            "total_tax":   str(sum(float(r[3] or 0) for r in inv_detail)),
+            "total_sub":   str(sum(float(r[4] or 0) for r in inv_detail)),
+        }
+    except Exception as e:
+        db.session.rollback()
+        counts["invoice_detail"] = f"ERROR: {str(e)[:150]}"
+
     return jsonify({"ok": True, "business_id": bid, "version": app.config.get("LEDGR_VERSION","unknown"), "counts": counts})
 
 @app.route('/admin')
