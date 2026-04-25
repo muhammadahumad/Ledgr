@@ -4057,11 +4057,14 @@ def report_pl():
     """Profit & Loss Statement — QB/Xero format"""
     user = current_user(); business = current_business()
     tax = business.tax_rules()
-    # Universal period - default to year (not month)
+    # Universal period - default to last complete year (2025) not current year
+    from datetime import date as _dt_now
+    _this_year = _dt_now.today().year
+    _default_year = str(_this_year - 1)  # Last complete year
     if 'period' not in request.args:
-        from datetime import date as _d2
         class _FA2:
-            def get(self, k, d=''): return {'period':'year'}.get(k, d)
+            def get(self, k, d=''): 
+                return {'period':'specific_year','year':_default_year}.get(k, d)
         start, end, period_label, period = resolve_period(_FA2())
     else:
         start, end, period_label, period = resolve_period(request.args)
@@ -4672,18 +4675,14 @@ def report_gst_return():
     user = current_user(); business = current_business()
     tax = business.tax_rules()
     from datetime import date
-    # Default GST to current year (not month) as GST is filed quarterly/annually
-    from flask import request as _req
-    if 'period' not in _req.args:
-        # No period selected - default to year
-        from datetime import date as _d
-        _args = _req.args.to_dict()
-        _args['period'] = 'year'
-        class _FakeArgs:
-            def get(self, k, d=''): return _args.get(k, d)
-            def to_dict(self): return _args
-        _old_args = _req.args
-        start, end, period_label, period = resolve_period(_FakeArgs())
+    # Default GST to last complete year for filing purposes
+    from datetime import date as _gdt
+    _gst_default_year = str(_gdt.today().year - 1)
+    if 'period' not in request.args:
+        class _GFA:
+            def get(self, k, d=''):
+                return {'period':'specific_year','year':_gst_default_year}.get(k, d)
+        start, end, period_label, period = resolve_period(_GFA())
     else:
         start, end, period_label, period = resolve_period(request.args)
     today = date.today()
