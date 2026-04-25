@@ -559,14 +559,29 @@ class User(db.Model):
             except: pass
     def can_upload(self):
         try:
-            plan = self.get_plan()
-            # paid_client always can upload
-            if plan.get('unlimited_scans') or plan.get('uploads', 0) >= 99999:
+            # Check user plan first
+            user_plan = self.get_plan()
+            if user_plan.get('unlimited_scans') or user_plan.get('uploads', 0) >= 99999:
                 return True
+            # Also check business plan - if any business is paid, allow uploads
+            try:
+                from sqlalchemy import text as _text
+                result = db.session.execute(_text(
+                    "SELECT plan FROM businesses b "
+                    "JOIN user_businesses ub ON b.id = ub.business_id "
+                    "WHERE ub.user_id = :uid LIMIT 5"
+                ), {"uid": self.id}).fetchall()
+                for row in result:
+                    biz_plan = PLANS.get(row[0] or 'free', PLANS['free'])
+                    if biz_plan.get('unlimited_scans') or biz_plan.get('uploads', 0) >= 99999:
+                        return True
+            except:
+                pass
+            # Fall back to user upload count
             self._reset_uploads()
-            return (self.uploads_this_month or 0) < plan['uploads']
+            return (self.uploads_this_month or 0) < user_plan.get('uploads', 10)
         except:
-            return True  # fail open - never block on plan check error
+            return True  # fail open - never block uploads on error
     def uploads_remaining(self):
         self._reset_uploads()
         p = self.get_plan()
