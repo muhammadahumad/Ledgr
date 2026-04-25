@@ -8670,10 +8670,23 @@ def api_upload():
             doc.status = 'PROCESSED'
         doc.ledger_posted = True
         db.session.commit()
-        return jsonify({'ok':True,'document_id':doc.id,'extracted':extracted,
-                        'uploads_remaining':user.uploads_remaining(),
-                        'has_inventory':business.has_inventory,
-                        'message':f"Document processed. {extracted.get('confidence','').upper()} confidence."})
+        return jsonify({
+                        'ok': True,
+                        'document_id': doc.id,
+                        'extracted': extracted,
+                        # Flat fields for template compatibility
+                        'vendor_name':    extracted.get('vendor_name',''),
+                        'vendor_tax_id':  extracted.get('vendor_tax_id',''),
+                        'invoice_number': extracted.get('invoice_number',''),
+                        'invoice_date':   extracted.get('invoice_date',''),
+                        'subtotal':       float(extracted.get('subtotal') or 0),
+                        'tax_amount':     float(extracted.get('tax_amount') or 0),
+                        'total_amount':   float(extracted.get('total_amount') or 0),
+                        'currency':       extracted.get('currency', tax.get('currency','MVR')),
+                        'line_items':     extracted.get('line_items', []),
+                        'uploads_remaining': user.uploads_remaining(),
+                        'message': f"Extracted successfully. Review and save.",
+                    })
     except Exception as e:
         return jsonify({'ok':False,'error':str(e)})
 
