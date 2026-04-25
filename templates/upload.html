@@ -1,78 +1,77 @@
-{% extends "base.html" %}{% block title %}Upload Bill — LEDGR{% endblock %}
+{% extends "base.html" %}{% block title %}Bills & Expenses — LEDGR{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
     <div class="page-title">Bills & Expenses</div>
-    <div class="page-sub">Scan, upload, or manually enter bills</div>
+    <div class="page-sub">Scan, upload or manually enter bills</div>
   </div>
   <div style="display:flex;gap:8px">
     <a href="/documents" class="btn">📋 View All Bills</a>
   </div>
 </div>
 
-<div class="content" style="max-width:860px">
+<div class="content" style="max-width:900px">
 
-  <!-- Entry Method Tabs -->
-  <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+  <!-- Tab switcher -->
+  <div style="display:flex;gap:0;margin-bottom:16px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
     <button onclick="setTab('scan')" id="tab-scan"
-      style="flex:1;padding:11px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;cursor:pointer">
+      style="flex:1;padding:12px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;cursor:pointer;transition:.2s">
       📷 Scan / Upload
     </button>
     <button onclick="setTab('manual')" id="tab-manual"
-      style="flex:1;padding:11px;border:none;background:transparent;color:var(--text3);font-weight:600;font-size:13px;cursor:pointer;border-left:1px solid var(--border)">
+      style="flex:1;padding:12px;border:none;background:transparent;color:var(--text3);font-weight:600;font-size:13px;cursor:pointer;border-left:1px solid var(--border);transition:.2s">
       ✏️ Manual Entry
     </button>
   </div>
 
-  <!-- ── SCAN TAB ───────────────────────────────────────────────────── -->
+  <!-- ══ SCAN TAB ══════════════════════════════════════════════════════════ -->
   <div id="section-scan">
     <div class="card" style="margin-bottom:14px">
       <div class="card-title">AI Document Scanner</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.7">
-        Upload a photo or PDF of any bill, receipt, or invoice. LEDGR AI will extract vendor name,
-        tax ID, invoice number, dates, line items, GST amount, and post automatically to the ledger.
-      </div>
-      
-      {% if plan.unlimited_scans is defined and plan.unlimited_scans or (plan.ai_scans is defined and plan.ai_scans|int > 10) %}
+      <p style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.7">
+        Upload a photo or PDF of any bill, receipt or invoice. LEDGR AI extracts vendor,
+        tax ID, invoice number, dates, line items and GST — then posts to the ledger automatically.
+      </p>
+      {% if plan and plan.get('unlimited_scans') %}
       <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:7px;padding:8px 12px;font-size:11px;color:var(--mint);margin-bottom:14px">
         ✓ Unlimited AI scans enabled
       </div>
       {% endif %}
 
-      <div id="drop-zone" onclick="document.getElementById('file-input').click()"
-        style="border:2px dashed var(--border);border-radius:10px;padding:40px 20px;text-align:center;cursor:pointer;transition:.2s"
+      <div id="drop-zone"
+        onclick="document.getElementById('file-input').click()"
         ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
         ondragleave="this.style.borderColor='var(--border)'"
-        ondrop="handleDrop(event)">
-        <div style="font-size:36px;margin-bottom:8px">📄</div>
+        ondrop="handleDrop(event)"
+        style="border:2px dashed var(--border);border-radius:10px;padding:48px 20px;
+               text-align:center;cursor:pointer;transition:.2s">
+        <div style="font-size:40px;margin-bottom:8px">📄</div>
         <div style="font-weight:600;color:var(--text);margin-bottom:4px">Drop file here or click to browse</div>
-        <div style="font-size:11px;color:var(--text3)">PDF, JPG, PNG — Max 8MB</div>
+        <div style="font-size:11px;color:var(--text3)">PDF, JPG, PNG, WEBP — Max 8MB</div>
       </div>
-      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none"
-        onchange="handleFile(this.files[0])">
+      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png,.webp"
+        style="display:none" onchange="handleFile(this.files[0])">
 
       <div id="preview-area" style="display:none;margin-top:14px">
-        <img id="preview-img" style="max-width:100%;border-radius:8px;border:1px solid var(--border);display:none">
-        <div id="preview-pdf" style="display:none;padding:16px;background:var(--bg);border-radius:8px;text-align:center;color:var(--text3)">
-          📄 PDF ready to scan
-        </div>
-        <button class="btn btn-primary" onclick="runScan()" style="margin-top:10px;width:100%">
+        <img id="preview-img" style="max-width:100%;border-radius:8px;
+             border:1px solid var(--border);display:none">
+        <div id="preview-pdf" style="display:none;padding:16px;background:var(--bg);
+             border-radius:8px;text-align:center;color:var(--text3)">📄 PDF ready</div>
+        <button class="btn btn-primary" onclick="runScan()"
+          style="margin-top:10px;width:100%;padding:12px">
           🔍 Extract with AI
         </button>
       </div>
-
-      <div id="scan-status" style="display:none;margin-top:12px;text-align:center">
-        <div style="font-size:13px;color:var(--text3)">⏳ Scanning with AI...</div>
-      </div>
+      <div id="scan-status" style="display:none;margin-top:12px;text-align:center;
+           font-size:13px;color:var(--text3)">⏳ Scanning with AI…</div>
     </div>
 
-    <!-- Scan Results -->
     <div id="scan-results" style="display:none">
       <div class="card">
-        <div class="card-title">✓ Extracted Data — Review & Save</div>
-        <div id="scan-result-form"><!-- filled by JS --></div>
+        <div class="card-title">✓ Extracted — Review & Save</div>
+        <div id="scan-result-form"></div>
         <div style="display:flex;gap:8px;margin-top:14px">
-          <button class="btn btn-primary" onclick="saveScanResult()">💾 Save to Bills</button>
+          <button class="btn btn-primary" onclick="saveScanResult()">💾 Save Bill</button>
           <button class="btn" onclick="document.getElementById('scan-results').style.display='none'">Discard</button>
         </div>
         <div id="scan-save-msg" style="display:none;margin-top:8px;font-size:12px"></div>
@@ -80,60 +79,56 @@
     </div>
   </div>
 
-  <!-- ── MANUAL ENTRY TAB ───────────────────────────────────────────── -->
+  <!-- ══ MANUAL ENTRY TAB ══════════════════════════════════════════════════ -->
   <div id="section-manual" style="display:none">
     <div class="card">
       <div class="card-title">Manual Bill Entry</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:16px">
-        Enter bill details manually. All fields post directly to double-entry ledger.
-      </div>
 
       <!-- Supplier -->
-      <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
-        <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:10px">Supplier Information</div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+        <div style="font-weight:600;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Supplier</div>
         <div class="field-row">
           <div style="flex:2">
             <div class="field-label">Supplier *
               <button type="button" onclick="toggleAddSupplier()"
-                style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;margin-left:8px">
-                + Add New
-              </button>
+                style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;margin-left:8px">+ Add New</button>
             </div>
-            <select class="select-input" id="mb-supplier-select" onchange="onSupplierSelect(this.value)" style="width:100%">
+            <select class="select-input" id="mb-supplier" onchange="onSupplierSelect(this)" style="width:100%">
               <option value="">— Select Supplier —</option>
               {% for s in suppliers %}
-              <option value="{{ s.id }}" data-name="{{ s.name }}" data-tin="{{ s.tax_id or '' }}"
-                data-phone="{{ s.phone or '' }}">
-                {{ s.name }}{% if s.tax_id %} (TIN: {{ s.tax_id }}){% endif %}
+              <option value="{{ s.id }}" data-name="{{ s.name }}"
+                data-tin="{{ s.tax_id or '' }}" data-registered="{{ 'true' if s.tax_id else 'false' }}">
+                {{ s.name }}{% if s.tax_id %} · {{ s.tax_id }}{% endif %}
               </option>
               {% endfor %}
-              <option value="__manual__">✏️ Type manually...</option>
+              <option value="__new__">✏ Type manually…</option>
             </select>
           </div>
-          <div style="flex:1">
-            <div class="field-label">Vendor TIN / Tax ID</div>
-            <input class="field-input" id="mb-vendor-tin" placeholder="Tax ID (for GST input)">
+          <div>
+            <div class="field-label">Tax ID / TIN</div>
+            <input class="field-input" id="mb-tin" placeholder="Auto-filled from supplier">
           </div>
         </div>
-        <div id="mb-vendor-name-row" style="display:none;margin-top:8px">
-          <div class="field-label">Vendor Name (manual)</div>
-          <input class="field-input" id="mb-vendor" placeholder="e.g. Island Supplies Co.">
+        <div id="mb-manual-name-row" style="display:none;margin-top:8px">
+          <div class="field-label">Vendor Name</div>
+          <input class="field-input" id="mb-vendor" placeholder="Vendor name">
         </div>
 
         <!-- Add New Supplier inline -->
-        <div id="add-supplier-panel" style="display:none;margin-top:12px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid rgba(99,102,241,.2)">
+        <div id="add-supplier-panel" style="display:none;margin-top:12px;padding:12px;
+             background:rgba(99,102,241,.06);border:1px solid rgba(99,102,241,.2);border-radius:8px">
           <div style="font-weight:600;font-size:11px;color:var(--accent);margin-bottom:8px">New Supplier</div>
           <div class="field-row">
             <div><div class="field-label">Name *</div>
               <input class="field-input" id="ns-name" placeholder="Supplier name"></div>
-            <div><div class="field-label">TIN / Tax ID</div>
-              <input class="field-input" id="ns-tin" placeholder="Tax registration no."></div>
+            <div><div class="field-label">Tax ID / TIN</div>
+              <input class="field-input" id="ns-tin" placeholder="GST/VAT number"></div>
           </div>
           <div class="field-row">
             <div><div class="field-label">Phone</div>
-              <input class="field-input" id="ns-phone" placeholder="+960..."></div>
+              <input class="field-input" id="ns-phone" placeholder="+960…"></div>
             <div><div class="field-label">Email</div>
-              <input class="field-input" id="ns-email" placeholder="accounts@supplier.com"></div>
+              <input class="field-input" id="ns-email" placeholder="email@supplier.com"></div>
           </div>
           <div style="display:flex;gap:8px;margin-top:8px">
             <button class="btn btn-primary btn-sm" onclick="saveNewSupplier()">Save Supplier</button>
@@ -144,10 +139,10 @@
       </div>
 
       <!-- Bill Details -->
-      <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
-        <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:10px">Bill Details</div>
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+        <div style="font-weight:600;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px">Bill Details</div>
         <div class="field-row">
-          <div><div class="field-label">Invoice / Ref Number</div>
+          <div><div class="field-label">Reference / Invoice #</div>
             <input class="field-input" id="mb-invnum" placeholder="INV-001"></div>
           <div><div class="field-label">Document Type</div>
             <select class="select-input" id="mb-doctype">
@@ -165,107 +160,143 @@
       </div>
 
       <!-- Line Items -->
-      <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+      <div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div style="font-weight:600;font-size:12px;color:var(--text)">Line Items</div>
-          <button type="button" onclick="addLineItem()"
-            class="btn btn-sm" style="font-size:11px">+ Add Line</button>
+          <div style="font-weight:600;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Line Items</div>
+          <button type="button" class="btn btn-sm" onclick="addLineItem()">+ Add Line</button>
         </div>
-        <table style="width:100%;font-size:11px;border-collapse:collapse" id="line-items-table">
-          <thead>
-            <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
-              <th style="text-align:left;padding:4px 6px;font-weight:600">Description</th>
-              <th style="text-align:left;padding:4px 6px;font-weight:600">Account</th>
-              <th style="text-align:right;padding:4px 6px;font-weight:600">Subtotal</th>
-              <th style="text-align:right;padding:4px 6px;font-weight:600">GST</th>
-              <th style="text-align:right;padding:4px 6px;font-weight:600">Total</th>
-              <th style="width:30px"></th>
-            </tr>
-          </thead>
-          <tbody id="line-items-body">
-            <!-- rows added by JS -->
-          </tbody>
-        </table>
+
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px" id="line-table">
+            <thead>
+              <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
+                <th style="text-align:left;padding:6px 8px;font-weight:600;min-width:180px">Description</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600;min-width:140px">Account</th>
+                <th style="text-align:left;padding:6px 8px;font-weight:600;min-width:120px">Tax Treatment</th>
+                <th style="text-align:right;padding:6px 8px;font-weight:600;min-width:100px">Net Amount</th>
+                <th style="text-align:right;padding:6px 8px;font-weight:600;min-width:90px">Tax</th>
+                <th style="text-align:right;padding:6px 8px;font-weight:600;min-width:100px">Gross</th>
+                <th style="width:28px"></th>
+              </tr>
+            </thead>
+            <tbody id="line-body"></tbody>
+          </table>
+        </div>
+
         <!-- Totals -->
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-            <span style="color:var(--text3)">Subtotal (excl. GST)</span>
-            <span id="total-sub" style="font-family:var(--mono)">MVR 0.00</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-            <span style="color:var(--amber)">GST (8%)</span>
-            <span id="total-tax" style="font-family:var(--mono);color:var(--amber)">MVR 0.00</span>
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700">
-            <span>Total</span>
-            <span id="total-grand" style="font-family:var(--mono);color:var(--mint)">MVR 0.00</span>
+          <div style="display:flex;justify-content:flex-end">
+            <table style="font-size:12px;border-collapse:collapse;min-width:300px">
+              <tr>
+                <td style="padding:3px 12px;color:var(--text3)">Subtotal (net)</td>
+                <td style="padding:3px 0;text-align:right;font-family:var(--mono)" id="t-sub">MVR 0.00</td>
+              </tr>
+              <tr>
+                <td style="padding:3px 12px;color:var(--amber)" id="t-tax-label">Tax</td>
+                <td style="padding:3px 0;text-align:right;font-family:var(--mono);color:var(--amber)" id="t-tax">MVR 0.00</td>
+              </tr>
+              <tr style="font-weight:700;font-size:14px;border-top:1px solid var(--border)">
+                <td style="padding:6px 12px">Total</td>
+                <td style="padding:6px 0;text-align:right;font-family:var(--mono);color:var(--mint)" id="t-gross">MVR 0.00</td>
+              </tr>
+            </table>
           </div>
         </div>
       </div>
 
-      <!-- Currency & Notes -->
-      <div class="field-row" style="margin-bottom:14px">
+      <!-- Footer -->
+      <div class="field-row" style="margin-bottom:12px">
         <div><div class="field-label">Currency</div>
           <select class="select-input" id="mb-currency">
             <option value="{{ tax.currency }}">{{ tax.currency }}</option>
-            <option value="USD">USD — US Dollar</option>
-            <option value="AED">AED — UAE Dirham</option>
-            <option value="MYR">MYR — Malaysian Ringgit</option>
-            <option value="GBP">GBP — British Pound</option>
-            <option value="EUR">EUR — Euro</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="AED">AED</option>
+            <option value="GBP">GBP</option>
           </select></div>
         <div><div class="field-label">Notes</div>
           <input class="field-input" id="mb-notes" placeholder="Optional notes"></div>
       </div>
 
-      <button class="btn btn-primary" onclick="submitManual()" id="mb-submit" style="width:100%;padding:12px;font-size:14px">
+      <button class="btn btn-primary" id="mb-submit" onclick="submitManual()"
+        style="width:100%;padding:13px;font-size:14px;font-weight:700">
         💾 Save Bill & Post to Ledger
       </button>
       <div id="mb-msg" style="display:none;margin-top:10px;font-size:12px;padding:10px 14px;border-radius:7px"></div>
     </div>
   </div>
-
 </div>
-
-<!-- Account options for line items (hidden) -->
-<datalist id="account-list">
-  {% for a in accounts %}
-  <option value="{{ a.code }}">{{ a.code }} — {{ a.name }}</option>
-  {% endfor %}
-</datalist>
 
 {% endblock %}
 {% block scripts %}<script>
-var TAX_RATE = {{ tax.tax_rate }};
-var CCY = "{{ tax.currency }}";
-var supplierSelected = null;
+// ── Global state ─────────────────────────────────────────────────────────
+var TAX_RATE    = {{ tax.tax_rate | float }};
+var TAX_NAME    = "{{ tax.tax_name }}";
+var CCY         = "{{ tax.currency }}";
+var REGION      = "{{ business.region or 'MV' }}";
+var taxCodes    = [];  // loaded from API
+var lineItems   = [];
+var currentFile = null;
+var supplierId  = null;
+
+// ── Load tax codes for this business region ───────────────────────────────
+fetch('/api/tax-codes')
+  .then(r => r.json())
+  .then(res => {
+    if (res.ok) {
+      taxCodes = res.codes;
+      TAX_NAME = res.tax_name;
+      document.getElementById('t-tax-label').textContent = TAX_NAME;
+      // Add first line after codes are loaded
+      addLineItem();
+    }
+  });
+
+// Account options
+var ACCOUNTS = [
+  {% for a in accounts %}
+  {code:"{{ a.code }}", name:"{{ a.name }}", type:"{{ a.account_type }}"},
+  {% endfor %}
+];
+var EXPENSE_ACCTS = ACCOUNTS.filter(function(a){
+  return a.type==='EXPENSE' || a.code.startsWith('5') || a.code.startsWith('6');
+});
 
 // ── Tab switching ─────────────────────────────────────────────────────────
 function setTab(tab) {
   ['scan','manual'].forEach(function(t) {
-    document.getElementById('section-'+t).style.display = t===tab?'block':'none';
+    document.getElementById('section-'+t).style.display = t===tab ? 'block' : 'none';
     var btn = document.getElementById('tab-'+t);
-    btn.style.background = t===tab?'var(--accent)':'transparent';
-    btn.style.color = t===tab?'#fff':'var(--text3)';
+    btn.style.background = t===tab ? 'var(--accent)' : 'transparent';
+    btn.style.color       = t===tab ? '#fff' : 'var(--text3)';
   });
 }
 
-// ── Supplier selection ────────────────────────────────────────────────────
-function onSupplierSelect(val) {
-  var tinField = document.getElementById('mb-vendor-tin');
-  var nameRow  = document.getElementById('mb-vendor-name-row');
-  if (val === '__manual__') {
-    nameRow.style.display = 'block';
-    tinField.value = '';
-    supplierSelected = null;
+// ── Supplier ──────────────────────────────────────────────────────────────
+function onSupplierSelect(sel) {
+  var val = sel.value;
+  var opt = sel.options[sel.selectedIndex];
+  if (val === '__new__') {
+    document.getElementById('mb-manual-name-row').style.display = 'block';
+    document.getElementById('mb-tin').value = '';
+    supplierId = null;
     return;
   }
-  nameRow.style.display = 'none';
-  if (!val) { supplierSelected = null; return; }
-  var opt = document.querySelector('#mb-supplier-select option[value="'+val+'"]');
-  if (opt) {
-    tinField.value = opt.dataset.tin || '';
-    supplierSelected = {id: val, name: opt.dataset.name, tin: opt.dataset.tin};
+  document.getElementById('mb-manual-name-row').style.display = 'none';
+  if (!val) { supplierId = null; return; }
+  supplierId = val;
+  document.getElementById('mb-tin').value = opt.dataset.tin || '';
+  // Auto-set tax treatment based on whether supplier is GST registered
+  var registered = opt.dataset.registered === 'true';
+  if (lineItems.length > 0) {
+    lineItems.forEach(function(li, i) {
+      if (!li) return;
+      var sel = document.getElementById('li-tax-'+i);
+      if (sel && !registered) {
+        sel.value = 'NT';
+        updateLineTax(i);
+      }
+    });
   }
 }
 
@@ -277,280 +308,311 @@ function toggleAddSupplier() {
 function saveNewSupplier() {
   var name = document.getElementById('ns-name').value.trim();
   if (!name) { alert('Supplier name required'); return; }
-  var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
+  var msg = document.getElementById('ns-msg');
   fetch('/api/supplier/quick-add', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
-      name: name,
+      name:   name,
       tax_id: document.getElementById('ns-tin').value.trim(),
       phone:  document.getElementById('ns-phone').value.trim(),
       email:  document.getElementById('ns-email').value.trim()
     })
-  }).then(r=>r.json()).then(res=>{
+  }).then(r=>r.json()).then(res => {
     if (res.ok) {
       var s = res.supplier;
-      // Add to dropdown
-      var sel = document.getElementById('mb-supplier-select');
+      var sel = document.getElementById('mb-supplier');
       var opt = document.createElement('option');
-      opt.value = s.id; opt.textContent = s.name + (s.tax_id?' (TIN: '+s.tax_id+')':'');
-      opt.dataset.name = s.name; opt.dataset.tin = s.tax_id || '';
+      opt.value = s.id;
+      opt.dataset.name = s.name;
+      opt.dataset.tin  = s.tax_id || '';
+      opt.dataset.registered = s.tax_id ? 'true' : 'false';
+      opt.textContent = s.name + (s.tax_id ? ' · '+s.tax_id : '');
       sel.insertBefore(opt, sel.lastElementChild);
       sel.value = s.id;
-      onSupplierSelect(s.id);
+      onSupplierSelect(sel);
       document.getElementById('add-supplier-panel').style.display = 'none';
-      // Clear fields
       ['ns-name','ns-tin','ns-phone','ns-email'].forEach(function(id){
         document.getElementById(id).value='';
       });
     } else {
-      var m = document.getElementById('ns-msg');
-      m.style.display='block'; m.style.color='var(--red)';
-      m.textContent = res.error;
+      msg.style.display='block'; msg.style.color='var(--red)';
+      msg.textContent = res.error;
     }
-    btn.disabled=false; btn.textContent='Save Supplier';
   });
 }
 
-// ── Line items ────────────────────────────────────────────────────────────
-var lineItems = [];
-var accounts = [
-  {% for a in accounts %}
-  {code:"{{ a.code }}", name:"{{ a.name }}", type:"{{ a.account_type }}"},
-  {% endfor %}
-];
-var expenseAccounts = accounts.filter(function(a){return a.type==='EXPENSE'||a.type==='ASSET';});
-
-function addLineItem(desc, sub, tax, acc) {
+// ── Line Items ────────────────────────────────────────────────────────────
+function addLineItem() {
   var i = lineItems.length;
-  lineItems.push({desc:desc||'',sub:sub||0,tax:tax||0,acc:acc||'5010'});
-  var tbody = document.getElementById('line-items-body');
-  var tr = document.createElement('tr');
-  tr.id = 'li-row-'+i;
-  tr.style.borderBottom = '1px solid var(--border)';
+  lineItems.push({desc:'', acc:'5010', tax_code:'STD', net:0, tax:0, gross:0});
 
-  var accOpts = expenseAccounts.map(function(a){
-    return '<option value="'+a.code+'"'+(a.code===(acc||'5010')?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
+  // Build tax code dropdown
+  var taxOpts = taxCodes.map(function(tc) {
+    return '<option value="'+tc.code+'">'+tc.label_full+'</option>';
   }).join('');
-
-  tr.innerHTML = '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px" '+
-    'value="'+(desc||'')+'" placeholder="Description" oninput="updateLine('+i+',\'desc\',this.value)"></td>'+
-    '<td style="padding:4px"><select class="select-input" style="font-size:11px;padding:4px 6px" '+
-    'onchange="updateLine('+i+',\'acc\',this.value)">'+accOpts+'</select></td>'+
-    '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px;text-align:right" '+
-    'type="number" step="0.01" value="'+(sub||'')+'" placeholder="0.00" oninput="updateLine('+i+',\'sub\',this.value)"></td>'+
-    '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px;text-align:right" '+
-    'type="number" step="0.01" value="'+(tax||'')+'" placeholder="0.00" oninput="updateLine('+i+',\'tax\',this.value)"></td>'+
-    '<td style="padding:4px;text-align:right;font-family:monospace;font-size:11px" id="li-total-'+i+'">0.00</td>'+
-    '<td style="padding:4px;text-align:center"><button onclick="removeLineItem('+i+')" '+
-    'style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">×</button></td>';
-  tbody.appendChild(tr);
-  recalcTotals();
-}
-
-function updateLine(i, field, val) {
-  lineItems[i][field] = field==='desc'||field==='acc' ? val : parseFloat(val)||0;
-  if (field!=='desc'&&field!=='acc') {
-    var tot = (lineItems[i].sub||0) + (lineItems[i].tax||0);
-    var td = document.getElementById('li-total-'+i);
-    if (td) td.textContent = tot.toFixed(2);
+  if (!taxOpts) {
+    // Fallback if API not loaded yet
+    taxOpts = '<option value="STD">'+TAX_NAME+' (8%)</option>'
+            + '<option value="ZR">Zero Rated</option>'
+            + '<option value="EX">Exempt</option>'
+            + '<option value="NT">No Tax</option>';
   }
+
+  // Build account dropdown
+  var accOpts = EXPENSE_ACCTS.map(function(a) {
+    return '<option value="'+a.code+'"'+(a.code==='5010'?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
+  }).join('');
+  if (!accOpts) accOpts = '<option value="5010">5010 — Cost of Sales</option>';
+
+  var tr = document.createElement('tr');
+  tr.id = 'li-'+i;
+  tr.style.borderBottom = '1px solid var(--border)';
+  tr.innerHTML =
+    '<td style="padding:4px 8px">'+
+      '<input class="field-input" style="font-size:11px;min-width:160px" placeholder="Description" '+
+      'oninput="lineItems['+i+'].desc=this.value">'+
+    '</td>'+
+    '<td style="padding:4px 8px">'+
+      '<select class="select-input" id="li-acc-'+i+'" style="font-size:11px;min-width:120px" '+
+      'onchange="lineItems['+i+'].acc=this.value">'+accOpts+'</select>'+
+    '</td>'+
+    '<td style="padding:4px 8px">'+
+      '<select class="select-input" id="li-tax-'+i+'" style="font-size:11px;min-width:110px" '+
+      'onchange="lineItems['+i+'].tax_code=this.value;updateLineTax('+i+')">'+taxOpts+'</select>'+
+    '</td>'+
+    '<td style="padding:4px 8px">'+
+      '<input class="field-input" id="li-net-'+i+'" type="number" step="0.01" placeholder="0.00" '+
+      'style="font-size:11px;text-align:right;min-width:90px" '+
+      'oninput="lineItems['+i+'].net=parseFloat(this.value)||0;updateLineTax('+i+')">'+
+    '</td>'+
+    '<td style="padding:4px 8px">'+
+      '<input class="field-input" id="li-taxamt-'+i+'" type="number" step="0.01" placeholder="auto" '+
+      'style="font-size:11px;text-align:right;min-width:80px;background:rgba(0,0,0,.03)" '+
+      'oninput="lineItems['+i+'].tax=parseFloat(this.value)||0;recalcTotals()">'+
+    '</td>'+
+    '<td style="padding:4px 8px;text-align:right;font-family:var(--mono);font-size:11px;font-weight:600" '+
+      'id="li-gross-'+i+'">0.00</td>'+
+    '<td style="padding:4px 8px;text-align:center">'+
+      '<button onclick="removeLine('+i+')" '+
+      'style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;line-height:1">×</button>'+
+    '</td>';
+  document.getElementById('line-body').appendChild(tr);
   recalcTotals();
 }
 
-function removeLineItem(i) {
-  var row = document.getElementById('li-row-'+i);
+function updateLineTax(i) {
+  var li = lineItems[i];
+  if (!li) return;
+  var tc = taxCodes.find(function(c){ return c.code === li.tax_code; });
+  var rate = tc ? (tc.rate || 0) : TAX_RATE;
+
+  if (li.tax_code === 'STD' && !tc) rate = TAX_RATE;
+  if (li.tax_code === 'NT' || li.tax_code === 'EX' || li.tax_code === 'ZR' || li.tax_code === 'OS') {
+    rate = 0;
+  }
+  if (li.tax_code === 'TOUR') rate = {{ tax.tax_rate_tourism | default(0.17) | float }};
+
+  li.tax  = li.net > 0 ? Math.round(li.net * rate * 100) / 100 : 0;
+  li.gross = li.net + li.tax;
+
+  var taxEl   = document.getElementById('li-taxamt-'+i);
+  var grossEl = document.getElementById('li-gross-'+i);
+  if (taxEl)   taxEl.value = li.tax > 0 ? li.tax.toFixed(2) : '';
+  if (grossEl) grossEl.textContent = CCY+' '+li.gross.toFixed(2);
+  recalcTotals();
+}
+
+function removeLine(i) {
+  var row = document.getElementById('li-'+i);
   if (row) row.remove();
   lineItems[i] = null;
   recalcTotals();
 }
 
 function recalcTotals() {
-  var totalSub=0, totalTax=0;
-  lineItems.forEach(function(li){
-    if (!li) return;
-    totalSub += li.sub||0;
-    totalTax += li.tax||0;
-  });
-  document.getElementById('total-sub').textContent = CCY+' '+(totalSub).toFixed(2);
-  document.getElementById('total-tax').textContent = CCY+' '+(totalTax).toFixed(2);
-  document.getElementById('total-grand').textContent = CCY+' '+(totalSub+totalTax).toFixed(2);
+  var active = lineItems.filter(Boolean);
+  var totalNet   = active.reduce(function(s,l){ return s+l.net; }, 0);
+  var totalTax   = active.reduce(function(s,l){ return s+l.tax; }, 0);
+  var totalGross = active.reduce(function(s,l){ return s+l.gross; }, 0);
+  document.getElementById('t-sub').textContent   = CCY+' '+totalNet.toFixed(2);
+  document.getElementById('t-tax').textContent   = CCY+' '+totalTax.toFixed(2);
+  document.getElementById('t-gross').textContent = CCY+' '+totalGross.toFixed(2);
 }
 
-// Add initial empty line
-addLineItem();
-
-// ── Submit manual entry ───────────────────────────────────────────────────
+// ── Submit manual bill ────────────────────────────────────────────────────
 function submitManual() {
-  var btn = document.getElementById('mb-submit');
-  var msg = document.getElementById('mb-msg');
-  var selVal = document.getElementById('mb-supplier-select').value;
-  var vendorName = '';
-  var supplierId = null;
+  var msg  = document.getElementById('mb-msg');
+  var btn  = document.getElementById('mb-submit');
+  var date = document.getElementById('mb-date').value;
+  if (!date) { alert('Invoice date required'); return; }
 
-  if (selVal && selVal !== '__manual__') {
-    supplierId = selVal;
-    var opt = document.querySelector('#mb-supplier-select option[value="'+selVal+'"]');
-    vendorName = opt ? opt.dataset.name : '';
+  var selEl  = document.getElementById('mb-supplier');
+  var selVal = selEl.value;
+  var vendorName = '';
+  var sid = null;
+  if (selVal && selVal !== '__new__') {
+    sid = selVal;
+    vendorName = selEl.options[selEl.selectedIndex].dataset.name;
   } else {
     vendorName = document.getElementById('mb-vendor').value.trim();
   }
   if (!vendorName) { alert('Supplier name required'); return; }
 
-  var date = document.getElementById('mb-date').value;
-  if (!date) { alert('Invoice date required'); return; }
+  var active = lineItems.filter(Boolean).filter(function(l){ return l.net > 0; });
+  if (!active.length) { alert('Add at least one line item with an amount'); return; }
 
-  var validLines = lineItems.filter(function(li){ return li && ((li.sub||0)+(li.tax||0))>0; });
-  if (!validLines.length) { alert('Add at least one line item with an amount'); return; }
+  var totalNet   = active.reduce(function(s,l){ return s+l.net; }, 0);
+  var totalTax   = active.reduce(function(s,l){ return s+l.tax; }, 0);
+  var totalGross = totalNet + totalTax;
 
-  var totalSub = validLines.reduce(function(s,li){return s+(li.sub||0);},0);
-  var totalTax = validLines.reduce(function(s,li){return s+(li.tax||0);},0);
-  var totalGrand = totalSub + totalTax;
+  // Build claimable input tax (only STD and RC lines)
+  var claimableTax = active.filter(function(l){
+    return ['STD','RC','TOUR','RED'].includes(l.tax_code);
+  }).reduce(function(s,l){ return s+l.tax; }, 0);
 
-  btn.disabled=true; btn.textContent='Saving...';
-
+  btn.disabled=true; btn.textContent='Saving…';
   fetch('/api/document/manual', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
       vendor_name:    vendorName,
-      vendor_tax_id:  document.getElementById('mb-vendor-tin').value.trim(),
-      supplier_id:    supplierId,
+      vendor_tax_id:  document.getElementById('mb-tin').value.trim(),
+      supplier_id:    sid,
       invoice_number: document.getElementById('mb-invnum').value.trim(),
       doc_type:       document.getElementById('mb-doctype').value,
       invoice_date:   date,
       due_date:       document.getElementById('mb-due').value,
-      subtotal:       totalSub,
-      tax_amount:     totalTax,
-      total_amount:   totalGrand,
       currency:       document.getElementById('mb-currency').value,
       notes:          document.getElementById('mb-notes').value.trim(),
-      line_items:     validLines,
-      account_code:   validLines[0] ? validLines[0].acc : ''
+      subtotal:       totalNet,
+      tax_amount:     claimableTax,
+      total_amount:   totalGross,
+      line_items:     active,
+      account_code:   active[0] ? active[0].acc : '5010'
     })
-  }).then(r=>r.json()).then(res=>{
+  }).then(r=>r.json()).then(res => {
     msg.style.display='block';
     if (res.ok) {
-      msg.style.background='rgba(16,185,129,.1)';
-      msg.style.border='1px solid rgba(16,185,129,.3)';
-      msg.style.color='var(--mint)';
-      msg.innerHTML='✓ Bill saved & posted to ledger. '+
-        '<a href="/documents/'+res.document_id+'" style="color:var(--mint)">View bill →</a>';
-      // Reset form
+      msg.style.cssText='display:block;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--mint);padding:10px 14px;border-radius:7px;font-size:12px';
+      msg.innerHTML='✓ Bill saved & posted to ledger. <a href="/documents" style="color:var(--mint)">View bills →</a>';
+      // Reset
       setTimeout(function(){
         lineItems=[];
-        document.getElementById('line-items-body').innerHTML='';
-        document.getElementById('mb-supplier-select').value='';
-        ['mb-vendor','mb-vendor-tin','mb-invnum','mb-due','mb-notes'].forEach(function(id){
-          var el=document.getElementById(id); if(el) el.value='';
-        });
+        document.getElementById('line-body').innerHTML='';
+        document.getElementById('mb-supplier').value='';
+        document.getElementById('mb-tin').value='';
+        document.getElementById('mb-invnum').value='';
         document.getElementById('mb-date').value='';
-        addLineItem();
+        document.getElementById('mb-due').value='';
+        document.getElementById('mb-notes').value='';
         recalcTotals();
+        addLineItem();
         msg.style.display='none';
       }, 3000);
     } else {
-      msg.style.background='rgba(239,68,68,.1)';
-      msg.style.border='1px solid rgba(239,68,68,.3)';
-      msg.style.color='var(--red)';
-      msg.textContent='Error: ' + res.error;
+      msg.style.cssText='display:block;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red);padding:10px 14px;border-radius:7px;font-size:12px';
+      msg.textContent='Error: '+res.error;
     }
     btn.disabled=false; btn.textContent='💾 Save Bill & Post to Ledger';
   });
 }
 
-// ── File handling ─────────────────────────────────────────────────────────
-var currentFile = null;
+// ── File scan ─────────────────────────────────────────────────────────────
 function handleFile(file) {
   if (!file) return;
   currentFile = file;
   var preview = document.getElementById('preview-area');
-  var img = document.getElementById('preview-img');
-  var pdf = document.getElementById('preview-pdf');
+  var img     = document.getElementById('preview-img');
+  var pdf     = document.getElementById('preview-pdf');
   preview.style.display='block';
-  if (file.type.indexOf('pdf')>=0) {
+  if (file.type.indexOf('pdf') >= 0) {
     pdf.style.display='block'; img.style.display='none';
-    pdf.textContent='📄 '+file.name+' ready to scan';
+    pdf.textContent='📄 '+file.name;
   } else {
     img.style.display='block'; pdf.style.display='none';
-    var reader = new FileReader();
-    reader.onload=function(e){img.src=e.target.result;};
+    var reader=new FileReader();
+    reader.onload=function(e){ img.src=e.target.result; };
     reader.readAsDataURL(file);
   }
 }
+
 function handleDrop(e) {
   e.preventDefault();
   document.getElementById('drop-zone').style.borderColor='var(--border)';
   if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
 }
+
 function runScan() {
   if (!currentFile) return;
   document.getElementById('scan-status').style.display='block';
   document.getElementById('scan-results').style.display='none';
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var b64 = e.target.result.split(',')[1];
-    fetch('/api/upload', {
+  var reader=new FileReader();
+  reader.onload=function(e){
+    var b64=e.target.result.split(',')[1];
+    // Normalize mime type
+    var mimeType = currentFile.type;
+    if (mimeType === 'image/jpg') mimeType = 'image/jpeg';
+    fetch('/api/upload',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({file_data:b64, file_type:currentFile.type, file_name:currentFile.name})
+      body: JSON.stringify({file_data:b64, file_type:mimeType, file_name:currentFile.name})
     }).then(r=>r.json()).then(res=>{
       document.getElementById('scan-status').style.display='none';
       if (res.ok && res.document_id) {
         document.getElementById('scan-results').style.display='block';
         buildScanForm(res);
-      } else if (res.ok) {
-        document.getElementById('scan-results').style.display='block';
-        document.getElementById('scan-result-form').innerHTML=
-          '<div style="color:var(--amber);font-size:12px">Scan complete — document saved. <a href="/documents">View in bills →</a></div>';
       } else {
         alert('Scan error: '+(res.error||'Unknown error'));
       }
+    }).catch(function(err){
+      document.getElementById('scan-status').style.display='none';
+      alert('Network error: '+err.message);
     });
   };
   reader.readAsDataURL(currentFile);
 }
+
 function buildScanForm(res) {
-  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-  var fields = [
-    {id:'sr-vendor', label:'Vendor Name', val:res.vendor_name||''},
-    {id:'sr-tin', label:'Vendor TIN', val:res.vendor_tax_id||''},
-    {id:'sr-invno', label:'Invoice Number', val:res.invoice_number||''},
-    {id:'sr-date', label:'Invoice Date', val:res.invoice_date||'', type:'date'},
-    {id:'sr-sub', label:'Subtotal (excl GST)', val:(res.subtotal||0).toFixed(2)},
-    {id:'sr-tax', label:'GST Amount', val:(res.tax_amount||0).toFixed(2)},
-  ];
-  fields.forEach(function(f){
+  var html='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  [
+    {id:'sr-vendor',label:'Vendor',val:res.vendor_name||''},
+    {id:'sr-tin',  label:'Tax ID', val:res.vendor_tax_id||''},
+    {id:'sr-invno',label:'Invoice #',val:res.invoice_number||''},
+    {id:'sr-date', label:'Date',   val:res.invoice_date||'',type:'date'},
+    {id:'sr-sub',  label:'Net Amount',val:(res.subtotal||0).toFixed(2)},
+    {id:'sr-tax',  label:'Tax',    val:(res.tax_amount||0).toFixed(2)},
+  ].forEach(function(f){
     html+='<div><div class="field-label">'+f.label+'</div>'+
       '<input class="field-input" id="'+f.id+'" value="'+f.val+'"'+(f.type?' type="'+f.type+'"':'')+'>'+
       '</div>';
   });
-  html+='</div>';
-  html+='<input type="hidden" id="sr-doc-id" value="'+res.document_id+'">';
+  html+='</div><input type="hidden" id="sr-doc-id" value="'+res.document_id+'">';
   document.getElementById('scan-result-form').innerHTML=html;
 }
+
 function saveScanResult() {
-  var docId = document.getElementById('sr-doc-id').value;
-  var sub = parseFloat(document.getElementById('sr-sub').value)||0;
-  var tax = parseFloat(document.getElementById('sr-tax').value)||0;
-  fetch('/api/document/'+docId+'/update', {
+  var docId=document.getElementById('sr-doc-id').value;
+  var sub=parseFloat(document.getElementById('sr-sub').value)||0;
+  var tax=parseFloat(document.getElementById('sr-tax').value)||0;
+  fetch('/api/document/'+docId+'/update',{
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
-      vendor_name:   document.getElementById('sr-vendor').value,
-      vendor_tax_id: document.getElementById('sr-tin').value,
-      invoice_number:document.getElementById('sr-invno').value,
-      invoice_date:  document.getElementById('sr-date').value,
-      subtotal:      sub, tax_amount:tax, total_amount: sub+tax
+      vendor_name:    document.getElementById('sr-vendor').value,
+      vendor_tax_id:  document.getElementById('sr-tin').value,
+      invoice_number: document.getElementById('sr-invno').value,
+      invoice_date:   document.getElementById('sr-date').value,
+      subtotal:sub, tax_amount:tax, total_amount:sub+tax
     })
   }).then(r=>r.json()).then(res=>{
     var m=document.getElementById('scan-save-msg');
     m.style.display='block';
     if(res.ok){
       m.style.color='var(--mint)';
-      m.innerHTML='✓ Saved. <a href="/documents/'+docId+'" style="color:var(--mint)">View bill →</a>';
+      m.innerHTML='✓ Saved. <a href="/documents/'+docId+'" style="color:var(--mint)">View →</a>';
     } else {
       m.style.color='var(--red)'; m.textContent='Error: '+res.error;
     }
   });
 }
 
-// Set today as default date
+// Set default date to today
 document.getElementById('mb-date').value = new Date().toISOString().split('T')[0];
 </script>{% endblock %}
