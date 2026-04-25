@@ -7605,7 +7605,16 @@ def api_journals_import_csv():
         return jsonify({"ok":False,"error":str(e)})
 
     return jsonify({
-        "ok": True, "imported": imported, "errors": errors,
+        "ok": True,
+        "imported": imported,
+        "errors": errors,
+        "debug": {
+            "total_rows": len(all_rows),
+            "groups_found": len(journal_groups),
+            "is_qbo_format": is_qbo_format,
+            "has_account_col": has_account_col,
+            "first_row_keys": list(all_rows[0].keys())[:8] if all_rows else []
+        },
         "message": f"{imported} journal entr{'ies' if imported!=1 else 'y'} imported"
             + (f", {len(errors)} error(s)" if errors else "")
     })
