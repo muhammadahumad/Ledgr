@@ -7929,6 +7929,45 @@ def api_journals_import_csv():
 
 
 
+
+@app.route("/api/debug/counts")
+@login_required
+def api_debug_counts():
+    """Debug: count records in key tables"""
+    business, err = api_business_guard()
+    if err: return err
+    bid = business.id
+    counts = {}
+    for table, col in [
+        ('invoices', 'id'),
+        ('documents', 'id'), 
+        ('journal_entries', 'id'),
+        ('journal_lines', 'id'),
+        ('customers', 'id'),
+        ('suppliers', 'id'),
+        ('accounts', 'id'),
+    ]:
+        try:
+            r = db.session.execute(
+                db.text(f"SELECT COUNT(*) FROM {table} WHERE business_id=:bid"),
+                {"bid": bid}
+            ).scalar()
+            counts[table] = r
+        except Exception as e:
+            counts[table] = f"ERROR: {str(e)[:50]}"
+    
+    # Also get sample invoice
+    try:
+        sample = db.session.execute(
+            db.text("SELECT id, invoice_number, total_amount, status FROM invoices WHERE business_id=:bid LIMIT 3"),
+            {"bid": bid}
+        ).fetchall()
+        counts['sample_invoices'] = [{"id":r[0],"num":r[1],"total":str(r[2]),"status":r[3]} for r in sample]
+    except Exception as e:
+        counts['sample_invoices'] = f"ERROR: {str(e)[:100]}"
+    
+    return jsonify({"ok": True, "business_id": bid, "counts": counts})
+
 @app.route('/admin')
 @login_required
 @admin_required
