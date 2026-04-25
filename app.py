@@ -75,6 +75,88 @@ ANTHROPIC_KEY = os.environ.get('ANTHROPIC_KEY', '')
 ADMIN_EMAIL   = os.environ.get('ADMIN_EMAIL', 'muahumadhu@gmail.com')
 
 # ── Config dicts ──────────────────────────────────────────────────────────────
+
+# ── UNIVERSAL TAX CODE ENGINE ─────────────────────────────────────────────
+# Tax codes are universal - same logic applies to GST (Maldives, Australia, NZ),
+# VAT (UAE, Saudi, EU, UK), SST (Malaysia old), etc.
+# Each country configures its rates; the codes and logic are universal.
+
+TAX_CODES = {
+    # Standard taxable
+    'STD':  {'name':'Standard Rate',    'rate_key':'tax_rate',         'claimable':True,  'box_in':1,  'box_out':5},
+    # Zero rated (taxable but 0%) - different from exempt
+    'ZR':   {'name':'Zero Rated',       'rate':0.00,                   'claimable':True,  'box_in':2,  'box_out':5},
+    # Exempt - not taxable, no input credit
+    'EX':   {'name':'Exempt',           'rate':0.00,                   'claimable':False, 'box_in':2,  'box_out':5},
+    # Out of scope - not subject to tax at all
+    'OS':   {'name':'Out of Scope',     'rate':0.00,                   'claimable':False, 'box_in':None,'box_out':None},
+    # No tax / supplier not registered
+    'NT':   {'name':'No Tax',           'rate':0.00,                   'claimable':False, 'box_in':None,'box_out':5},
+    # Reverse charge (import of services - buyer accounts for VAT)
+    'RC':   {'name':'Reverse Charge',   'rate_key':'tax_rate',         'claimable':True,  'box_in':1,  'box_out':5, 'reverse':True},
+    # Tourism rate (Maldives T-GST, special hotel rates etc)
+    'TOUR': {'name':'Tourism Rate',     'rate_key':'tax_rate_tourism',  'claimable':True,  'box_in':1,  'box_out':5},
+    # Reduced rate (some EU countries have reduced VAT for food, books etc)
+    'RED':  {'name':'Reduced Rate',     'rate_key':'tax_rate_reduced',  'claimable':True,  'box_in':1,  'box_out':5},
+    # Import duties / customs (separate from VAT)
+    'IMP':  {'name':'Import/Customs',   'rate':0.00,                   'claimable':False, 'box_in':None,'box_out':None},
+}
+
+# Country-specific tax code labels (same codes, different names per country)
+TAX_CODE_LABELS = {
+    'MV': {'STD':'GST 8%',    'ZR':'Zero Rated',  'EX':'GST Exempt', 'NT':'No GST',   'TOUR':'T-GST 17%'},
+    'AE': {'STD':'VAT 5%',    'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'Out of Scope', 'RC':'Reverse Charge'},
+    'SA': {'STD':'VAT 15%',   'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'Out of Scope', 'RC':'Reverse Charge'},
+    'MY': {'STD':'SST 6%',    'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'Out of Scope'},
+    'GB': {'STD':'VAT 20%',   'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'Outside Scope', 'RED':'VAT 5%'},
+    'AU': {'STD':'GST 10%',   'ZR':'GST Free',    'EX':'Input Taxed','NT':'No GST',   'IMP':'Customs'},
+    'NZ': {'STD':'GST 15%',   'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'No GST'},
+    'IN': {'STD':'GST',       'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'Non GST',  'RC':'RCM'},
+    'SG': {'STD':'GST 9%',    'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'Out of Scope'},
+    'DEFAULT': {'STD':'Tax',  'ZR':'Zero Rated',  'EX':'Exempt',     'NT':'No Tax'},
+}
+
+def get_tax_codes_for_region(region):
+    """Get tax code options for a specific country/region"""
+    labels = TAX_CODE_LABELS.get(region, TAX_CODE_LABELS['DEFAULT'])
+    codes = []
+    for code, label in labels.items():
+        tc = TAX_CODES.get(code, {})
+        codes.append({
+            'code': code,
+            'label': label,
+            'claimable': tc.get('claimable', False),
+            'rate_key': tc.get('rate_key', ''),
+            'rate': tc.get('rate', None),
+        })
+    return codes
+
+def calculate_line_tax(amount, tax_code, tax_rules_dict):
+    """
+    Universal tax calculation for a line item.
+    Returns (tax_amount, net_amount, gross_amount, is_claimable)
+    amount = the amount entered (could be net or gross depending on context)
+    """
+    tc = TAX_CODES.get(tax_code, TAX_CODES['NT'])
+    claimable = tc.get('claimable', False)
+    
+    # Get rate
+    if 'rate' in tc and tc['rate'] is not None:
+        rate = tc['rate']
+    elif 'rate_key' in tc:
+        rate = tax_rules_dict.get(tc['rate_key'], 0)
+    else:
+        rate = 0
+    
+    if rate == 0 or not claimable:
+        return 0.0, float(amount), float(amount), claimable
+    
+    # Amount is NET (excl tax) - standard for manual entry
+    tax = round(float(amount) * rate, 2)
+    gross = round(float(amount) + tax, 2)
+    return tax, float(amount), gross, claimable
+
+
 TAX_RULES = {
     'MV': {
         'name':'Maldives','currency':'MVR','tax_name':'GST','tax_rate':0.08,
@@ -8097,6 +8179,25 @@ def api_invoice_void(inv_id):
         return jsonify({"ok": False, "error": str(e)[:200]})
 
 
+
+@app.route("/api/tax-codes")
+@login_required
+def api_tax_codes():
+    """Return tax codes for the current business region"""
+    business, err = api_business_guard()
+    if err: return err
+    tax = business.tax_rules()
+    codes = get_tax_codes_for_region(business.region or 'MV')
+    # Enrich with actual rates
+    for c in codes:
+        tc = TAX_CODES.get(c['code'], {})
+        if 'rate_key' in tc:
+            c['rate'] = tax.get(tc['rate_key'], 0)
+        c['rate_pct'] = f"{c['rate']*100:.0f}%" if c.get('rate') else '0%'
+        c['label_full'] = f"{c['label']} ({c['rate_pct']})" if c.get('rate') else c['label']
+    return jsonify({"ok": True, "codes": codes, "region": business.region,
+                    "tax_name": tax.get('tax_name','Tax')})
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -8181,8 +8282,11 @@ def api_upload():
         return jsonify({'ok':False,'error':'Upload limit reached. Upgrade your plan.','upgrade':True})
     # Input validation
     data = request.get_json() or {}
-    file_b64 = data.get('file','')
-    media_type = data.get('media_type','')
+    # Support both key naming conventions (file/file_data, media_type/file_type)
+    file_b64   = data.get('file') or data.get('file_data','')
+    media_type = data.get('media_type') or data.get('file_type','')
+    # Normalize MIME type (some browsers send 'image/jpg' not 'image/jpeg')
+    if media_type == 'image/jpg': media_type = 'image/jpeg'
     # Validate media type
     allowed_types = ['image/jpeg','image/jpg','image/png','image/gif','image/webp','application/pdf']
     if media_type not in allowed_types:
@@ -8193,7 +8297,7 @@ def api_upload():
     if not ANTHROPIC_KEY:
         return jsonify({'ok':False,'error':'AI engine not configured'})
     try:
-        extracted = extract_with_ai(data.get('file',''), data.get('media_type','image/jpeg'), business.region)
+        extracted = extract_with_ai(file_b64, media_type, business.region)
         user.increment_uploads()
         inv_date = due_date = None
         try:
