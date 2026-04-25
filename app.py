@@ -18,6 +18,12 @@ def add_security_headers(response):
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     return response
 
+
+@app.context_processor
+def inject_globals():
+    from datetime import date
+    return {"today": date.today()}
+
 # ── Field-level encryption for sensitive data ──────────────────────────
 _FIELD_KEY = os.environ.get('FIELD_ENCRYPT_KEY', '').encode()
 
@@ -1310,18 +1316,6 @@ def resolve_account(business, direction, description=None, explicit_code=None):
     return code
 
 
-@app.context_processor
-@app.context_processor
-def inject_globals():
-    """Inject today's date and current business into all templates"""
-    from datetime import date
-    ctx = {'today': date.today().strftime('%Y-%m-%d'), 'today_date': date.today()}
-    if 'user_id' in session:
-        b = current_business()
-        if b:
-            ctx['current_biz'] = b
-    return ctx
-
 def business_required(f):
     """Ensures a valid business is selected — redirects to add_business if not"""
     @wraps(f)
@@ -1459,6 +1453,18 @@ def post_journal(business_id, user_id, description, reference, entry_type, lines
     db.session.flush()
     for l in lines:
         acct = get_account(business_id, l['account_code'])
+        if not acct:
+            # Auto-create missing account so journal lines are never lost
+            code = l['account_code']
+            # Determine type from code prefix
+            atype = ('ASSET' if code[:1] in ['1'] else
+                     'LIABILITY' if code[:1] in ['2'] else
+                     'EQUITY' if code[:1] in ['3'] else
+                     'REVENUE' if code[:1] in ['4'] else 'EXPENSE')
+            acct = Account(business_id=business_id, code=code,
+                          name=f'Account {code}', account_type=atype, is_active=True)
+            db.session.add(acct)
+            db.session.flush()
         if acct:
             db.session.add(JournalLine(journal_entry_id=entry.id, account_id=acct.id,
                                        description=l.get('description', description),
@@ -4056,6 +4062,26 @@ def report_pl():
             revenue_items.append({"code":acct.code,"name":acct.name,"amount":bal})
             total_revenue += bal
 
+    # Supplement with Invoice table if journal lines show 0
+    # (handles case where accounts didn't exist when invoices were imported)
+    if total_revenue == 0:
+        try:
+            inv_q = db.session.query(
+                db.func.sum(Invoice.subtotal)
+            ).filter(
+                Invoice.business_id == business.id,
+                Invoice.invoice_date >= start,
+                Invoice.invoice_date <= end,
+                Invoice.status.notin_(['VOID','DRAFT'])
+            ).scalar()
+            inv_total = float(inv_q or 0)
+            if inv_total > 0:
+                # Group by customer for detail
+                revenue_items = [{"code":"4000","name":"Sales Revenue (from invoices)","amount":inv_total}]
+                total_revenue = inv_total
+        except:
+            db.session.rollback()
+
     expense_items = []
     total_expenses = 0
     for acct in expense_accounts:
@@ -4802,9 +4828,35 @@ def api_gst_output_details():
             Invoice.invoice_date <= end,
             Invoice.status.notin_(["VOID","DRAFT"])
         ).order_by(Invoice.invoice_date).all()
-    except:
+    except Exception:
         db.session.rollback()
-        invoices = []
+        # Fallback: raw SQL with base columns only
+        try:
+            result = db.session.execute(db.text(
+                "SELECT id, invoice_number, customer_id, invoice_date, "
+                "total_amount, tax_amount, amount_paid, status, currency, "
+                "buyer_legal_name FROM invoices "
+                "WHERE business_id = :bid AND invoice_date >= :s AND invoice_date <= :e "
+                "AND status NOT IN ('VOID','DRAFT') ORDER BY invoice_date"
+            ), {"bid": business.id, "s": str(start), "e": str(end)})
+            class FakeInv:
+                pass
+            invoices = []
+            for r in result.fetchall():
+                inv = FakeInv()
+                inv.id = r[0]; inv.invoice_number = r[1]; inv.customer_id = r[2]
+                inv.invoice_date = r[3]; inv.total_amount = r[4]; inv.tax_amount = r[5]
+                inv.amount_paid = r[6]; inv.status = r[7]; inv.currency = r[8]
+                cust = None
+                try:
+                    if r[2]: cust = Customer.query.get(r[2])
+                except: pass
+                inv.customer = cust
+                inv.buyer_legal_name = r[9]
+                invoices.append(inv)
+        except Exception:
+            db.session.rollback()
+            invoices = []
 
     rows = []
     for inv in invoices:
