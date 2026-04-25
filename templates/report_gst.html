@@ -203,10 +203,10 @@
 
 {% endblock %}
 {% block scripts %}<script>
-var GST_START = "{{ start }}";
-var GST_END   = "{{ end }}";
+var GST_START = "{{ start.strftime('%Y-%m-%d') if start else '' }}";
+var GST_END   = "{{ end.strftime('%Y-%m-%d') if end else '' }}";
 var GST_CCY   = "{{ tax.currency }}";
-var TAX_RATE  = {{ tax.tax_rate }};
+var TAX_RATE  = {{ tax.tax_rate | float }};
 var outputData = null, inputData = null;
 var excludedInvoices = [];
 var excludedBills    = [];
