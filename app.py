@@ -8586,109 +8586,180 @@ def switch_business(business_id):
 @login_required
 @rate_limit(max_calls=30, window=60)
 def api_upload():
+    """
+    Universal AI document extraction endpoint.
+    Accepts JPG/PNG/WEBP/PDF from any client (browser, mobile, desktop).
+    Extracts vendor, amounts, tax, line items. Posts to double-entry ledger.
+    Works for any country/region — uses business.region for tax rules.
+    """
     user = current_user()
     business, err = api_business_guard()
     if err: return err
+
+    # ── Plan / quota check ────────────────────────────────────────────────
     if not user.can_upload():
-        return jsonify({'ok':False,'error':'Upload limit reached. Upgrade your plan.','upgrade':True})
-    # Input validation
-    data = request.get_json() or {}
-    # Support both key naming conventions (file/file_data, media_type/file_type)
-    file_b64   = data.get('file') or data.get('file_data','')
-    media_type = data.get('media_type') or data.get('file_type','')
-    # Normalize MIME type (some browsers send 'image/jpg' not 'image/jpeg')
-    if media_type == 'image/jpg': media_type = 'image/jpeg'
-    # Validate media type
-    allowed_types = ['image/jpeg','image/jpg','image/png','image/gif','image/webp','application/pdf']
-    if media_type not in allowed_types:
-        return jsonify({'ok':False,'error':f'File type not allowed: {media_type}'})
-    # Validate file size (max 8MB base64 = ~6MB actual)
+        return jsonify({'ok': False, 'error': 'Upload limit reached. Upgrade your plan.', 'upgrade': True})
+
+    # ── Input: support all key conventions from any client ────────────────
+    data       = request.get_json() or {}
+    file_b64   = data.get('file') or data.get('file_data') or ''
+    media_type = data.get('media_type') or data.get('file_type') or ''
+    file_name  = data.get('file_name') or data.get('filename') or 'document'
+
+    # Normalize MIME types (mobile browsers vary)
+    mime_map = {
+        'image/jpg': 'image/jpeg',
+        'image/JPG': 'image/jpeg',
+        'image/JPEG': 'image/jpeg',
+        'image/PNG': 'image/png',
+    }
+    media_type = mime_map.get(media_type, media_type)
+
+    # Detect MIME from base64 header if not provided
+    if not media_type and file_b64:
+        if file_b64.startswith('/9j/'): media_type = 'image/jpeg'
+        elif file_b64.startswith('iVBOR'): media_type = 'image/png'
+        elif file_b64.startswith('JVBERi'): media_type = 'application/pdf'
+        else: media_type = 'image/jpeg'  # default for phone photos
+
+    allowed = {'image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'}
+    if media_type not in allowed:
+        return jsonify({'ok': False, 'error': f'File type not supported: {media_type}. Please use JPG, PNG or PDF.'})
+
     if len(file_b64) > 11_000_000:
-        return jsonify({'ok':False,'error':'File too large. Maximum 8MB.'})
+        return jsonify({'ok': False, 'error': 'File too large (max 8MB). Please compress the image.'})
+
     if not ANTHROPIC_KEY:
-        return jsonify({'ok':False,'error':'AI engine not configured'})
+        return jsonify({'ok': False, 'error': 'AI engine not configured. Contact support.'})
+
+    if not file_b64:
+        return jsonify({'ok': False, 'error': 'No file data received.'})
+
+    # ── Tax rules for this business region ───────────────────────────────
+    region   = business.region or 'MV'
+    tax_info = TAX_RULES.get(region, TAX_RULES['MV'])
+    currency = business.base_currency or tax_info.get('currency', 'MVR')
+
+    # ── AI Extraction ─────────────────────────────────────────────────────
     try:
-        extracted = extract_with_ai(file_b64, media_type, business.region)
-        user.increment_uploads()
-        inv_date = due_date = None
-        try:
-            if extracted.get('invoice_date'): inv_date = datetime.strptime(extracted['invoice_date'],'%Y-%m-%d').date()
-            if extracted.get('due_date'): due_date = datetime.strptime(extracted['due_date'],'%Y-%m-%d').date()
-        except: pass
-        doc = Document(business_id=business.id, user_id=user.id,
-                       doc_type=extracted.get('doc_type','BILL'),
-                       vendor_name=extracted.get('vendor_name',''),
-                       vendor_tax_id=extracted.get('vendor_tax_id'),
-                       invoice_number=extracted.get('invoice_number',''),
-                       invoice_date=inv_date, due_date=due_date,
-                       currency=extracted.get('currency', business.base_currency),
-                       subtotal=float(extracted.get('subtotal') or 0),
-                       tax_amount=float(extracted.get('tax_amount') or 0),
-                       total_amount=float(extracted.get('total_amount') or 0),
-                       compliance_data=json.dumps(extracted.get('compliance_data',{})),
-                       raw_ai_data=json.dumps(extracted), status='PROCESSED')
-        db.session.add(doc)
-        db.session.flush()
-        total = float(extracted.get('total_amount') or 0)
-        tax_amt = float(extracted.get('tax_amount') or 0)
-        cat_map = {'Office Supplies':'5400','Utilities':'5300','Travel':'5700','Meals':'5800',
-                   'Professional Services':'5600','Inventory Purchase':'1200','Payroll':'5100',
-                   'Tax Payment':'6200','Other':'6900'}
-        expense_code = cat_map.get(extracted.get('category','Other'),'6900')
-        try:
-            lines = [{'account_code':expense_code,'debit':total-tax_amt,'credit':0,'description':extracted.get('vendor_name','')},
-                     {'account_code':'2000','debit':0,'credit':total,'description':extracted.get('vendor_name','')}]
-            if tax_amt > 0: lines.insert(1,{'account_code':'2210','debit':tax_amt,'credit':0,'description':'Tax on purchase'})
-            post_journal(business.id, user.id, f"{extracted.get('doc_type','BILL')} — {extracted.get('vendor_name','')}",
-                        extracted.get('invoice_number',f'DOC-{doc.id}'), 'PURCHASE', lines, doc.id)
-        except Exception as je: print(f'Journal error: {je}')
-        db.session.add(LedgerEntry(business_id=business.id, document_id=doc.id, entry_type='EXPENSE',
-                                   amount=total, tax_amount=tax_amt, currency=extracted.get('currency',business.base_currency),
-                                   description=f"{extracted.get('doc_type','BILL')} — {extracted.get('vendor_name','')}",
-                                   category=extracted.get('category','Other')))
-        # Auto-post BILLS to Accounts Payable (2100) — not Revenue
-        # Scanned bills are LIABILITIES until paid, never Revenue
-        if doc.doc_type in ['BILL', 'RECEIPT', 'EXPENSE']:
-            try:
-                # Determine expense account from category
-                cat_map = {'Office Supplies':'5400','Utilities':'5300','Travel':'5700',
-                           'Meals':'5800','Professional Services':'5600',
-                           'Inventory Purchase':'1200','Payroll':'5100',
-                           'Tax Payment':'6200','Other':'6900'}
-                expense_code = cat_map.get(extracted.get('category','Other'),'6900')
-                expense_acct = get_account(business.id, expense_code) or get_account(business.id, '6900')
-                ap_acct = get_account(business.id, '2000')  # Accounts Payable
-                if expense_acct and ap_acct:
-                    doc.posted_to_account_id = expense_acct.id
-                    doc.posted_to_account_name = expense_acct.name
-                doc.payment_status = 'UNPAID'
-                doc.status = 'POSTED_UNPAID'
-            except Exception as e:
-                print("AP posting note: " + str(e))
-                doc.status = 'PROCESSED'
-        else:
-            doc.status = 'PROCESSED'
-        doc.ledger_posted = True
-        db.session.commit()
-        return jsonify({
-                        'ok': True,
-                        'document_id': doc.id,
-                        'extracted': extracted,
-                        # Flat fields for template compatibility
-                        'vendor_name':    extracted.get('vendor_name',''),
-                        'vendor_tax_id':  extracted.get('vendor_tax_id',''),
-                        'invoice_number': extracted.get('invoice_number',''),
-                        'invoice_date':   extracted.get('invoice_date',''),
-                        'subtotal':       float(extracted.get('subtotal') or 0),
-                        'tax_amount':     float(extracted.get('tax_amount') or 0),
-                        'total_amount':   float(extracted.get('total_amount') or 0),
-                        'currency':       extracted.get('currency', tax.get('currency','MVR')),
-                        'line_items':     extracted.get('line_items', []),
-                        'uploads_remaining': user.uploads_remaining(),
-                        'message': f"Extracted successfully. Review and save.",
-                    })
+        extracted = extract_with_ai(file_b64, media_type, region)
     except Exception as e:
-        return jsonify({'ok':False,'error':str(e)})
+        return jsonify({'ok': False, 'error': f'AI extraction failed: {str(e)[:200]}'})
+
+    # ── Parse dates ───────────────────────────────────────────────────────
+    inv_date = due_date = None
+    try:
+        if extracted.get('invoice_date'):
+            inv_date = datetime.strptime(extracted['invoice_date'], '%Y-%m-%d').date()
+    except: pass
+    try:
+        if extracted.get('due_date'):
+            due_date = datetime.strptime(extracted['due_date'], '%Y-%m-%d').date()
+    except: pass
+
+    # ── Parse amounts ─────────────────────────────────────────────────────
+    total_amt = float(extracted.get('total_amount') or 0)
+    tax_amt   = float(extracted.get('tax_amount')   or 0)
+    subtotal  = float(extracted.get('subtotal')     or 0)
+    doc_currency = extracted.get('currency') or currency
+
+    # Derive missing amounts
+    if total_amt > 0 and tax_amt > 0 and subtotal == 0:
+        subtotal = round(total_amt - tax_amt, 2)
+    if total_amt > 0 and subtotal > 0 and tax_amt == 0:
+        tax_amt = round(total_amt - subtotal, 2)
+    if subtotal > 0 and tax_amt > 0 and total_amt == 0:
+        total_amt = round(subtotal + tax_amt, 2)
+
+    # ── Save Document ─────────────────────────────────────────────────────
+    try:
+        doc = Document(
+            business_id    = business.id,
+            user_id        = user.id,
+            doc_type       = extracted.get('doc_type', 'BILL'),
+            vendor_name    = extracted.get('vendor_name', ''),
+            vendor_tax_id  = extracted.get('vendor_tax_id'),
+            invoice_number = extracted.get('invoice_number', ''),
+            invoice_date   = inv_date,
+            due_date       = due_date,
+            currency       = doc_currency,
+            subtotal       = subtotal,
+            tax_amount     = tax_amt,
+            total_amount   = total_amt,
+            raw_ai_data    = json.dumps(extracted),
+            status         = 'PROCESSED',
+        )
+        db.session.add(doc)
+        db.session.flush()  # get doc.id
+
+        # ── Double-entry journal posting ──────────────────────────────────
+        # Category -> expense account mapping (universal)
+        cat_to_account = {
+            'Office Supplies': '5400', 'Utilities': '5300',
+            'Travel': '5700',          'Meals': '5800',
+            'Professional Services': '5600', 'Inventory': '1200',
+            'Payroll': '5100',         'Tax': '6200',
+            'Rent': '5200',            'Other': '6900',
+        }
+        expense_code = cat_to_account.get(extracted.get('category', 'Other'), '6900')
+
+        # Build journal lines
+        # DR Expense (net) | DR Input Tax | CR Accounts Payable (gross)
+        journal_lines = [
+            {'account_code': expense_code, 'debit': subtotal,  'credit': 0,
+             'description': extracted.get('vendor_name', '')},
+            {'account_code': '2000',       'debit': 0,         'credit': total_amt,
+             'description': extracted.get('vendor_name', '')},
+        ]
+        if tax_amt > 0:
+            journal_lines.insert(1, {
+                'account_code': '2210', 'debit': tax_amt, 'credit': 0,
+                'description': f"{tax_info.get('tax_name','Tax')} on purchase"
+            })
+
+        try:
+            post_journal(
+                business.id, user.id,
+                f"{doc.doc_type} — {doc.vendor_name}",
+                doc.invoice_number or f"DOC-{doc.id}",
+                'PURCHASE', journal_lines, doc.id,
+                entry_date=inv_date
+            )
+        except Exception as je:
+            print(f'Journal posting error: {je}')  # non-fatal
+
+        user.increment_uploads()
+        db.session.commit()
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'ok': False, 'error': f'Save failed: {str(e)[:200]}'})
+
+    # ── Return extracted data (flat + nested for any client) ──────────────
+    return jsonify({
+        'ok':            True,
+        'document_id':   doc.id,
+        # Flat fields — for review form
+        'vendor_name':   extracted.get('vendor_name', ''),
+        'vendor_tax_id': extracted.get('vendor_tax_id', ''),
+        'invoice_number':extracted.get('invoice_number', ''),
+        'invoice_date':  extracted.get('invoice_date', ''),
+        'due_date':      extracted.get('due_date', ''),
+        'subtotal':      subtotal,
+        'tax_amount':    tax_amt,
+        'total_amount':  total_amt,
+        'currency':      doc_currency,
+        'line_items':    extracted.get('line_items', []),
+        'category':      extracted.get('category', ''),
+        'doc_type':      extracted.get('doc_type', 'BILL'),
+        'confidence':    extracted.get('confidence', ''),
+        # Also return full extracted for any advanced client use
+        'extracted':     extracted,
+        'uploads_remaining': user.uploads_remaining(),
+        'region':        region,
+        'message':       'Extracted successfully. Review and confirm.',
+    })
+
 
 @app.route('/api/ai/chat', methods=['POST'])
 @login_required
