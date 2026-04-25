@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Balance Sheet — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% from "period_selector.html" import period_selector %}{% block title %}Balance Sheet — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
   <div><div class="page-title">Balance Sheet</div><div class="page-sub">{{ business.display_name() }} · As of {{ as_of.strftime('%d %b %Y') }}</div></div>
   <div style="display:flex;gap:8px">
@@ -7,6 +7,7 @@
   </div>
 </div>
 <div class="content">
+  {{ period_selector(period, start, end) }}
   <div class="card" style="margin-bottom:14px">
     <form method="get" style="display:flex;gap:10px;align-items:flex-end">
       <div><div class="field-label">As of Date</div><input class="field-input" type="date" name="as_of" value="{{ as_of }}"></div>

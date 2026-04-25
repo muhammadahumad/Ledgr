@@ -1,424 +1,556 @@
-{% extends "base.html" %}
-{% block title %}Upload — LEDGR{% endblock %}
+{% extends "base.html" %}{% block title %}Upload Bill — LEDGR{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <div class="page-title">Upload Document</div>
-    <div class="page-sub">Bill · Receipt · Invoice · Statement</div>
+    <div class="page-title">Bills & Expenses</div>
+    <div class="page-sub">Scan, upload, or manually enter bills</div>
   </div>
-  <div style="font-size:11px;color:var(--text3)">
-    {{ plan.uploads - (user.uploads_this_month or 0) if plan.uploads < 9999 else '∞' }} scans remaining
+  <div style="display:flex;gap:8px">
+    <a href="/documents" class="btn">📋 View All Bills</a>
   </div>
 </div>
-<div class="content" style="max-width:720px">
 
-  <!-- Tab Bar -->
-  <div style="display:flex;gap:2px;margin-bottom:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:4px">
-    <button id="tab-btn-scan"   onclick="switchTab('scan')"   style="flex:1;padding:9px 4px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:var(--mint);color:#fff;transition:all .15s">📷 Scan</button>
-    <button id="tab-btn-manual" onclick="switchTab('manual')" style="flex:1;padding:9px 4px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3);transition:all .15s">✏️ Manual</button>
-    <button id="tab-btn-csv"    onclick="switchTab('csv')"    style="flex:1;padding:9px 4px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:var(--text3);transition:all .15s">📊 CSV Import</button>
+<div class="content" style="max-width:860px">
+
+  <!-- Entry Method Tabs -->
+  <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid var(--border);border-radius:10px;overflow:hidden">
+    <button onclick="setTab('scan')" id="tab-scan"
+      style="flex:1;padding:11px;border:none;background:var(--accent);color:#fff;font-weight:600;font-size:13px;cursor:pointer">
+      📷 Scan / Upload
+    </button>
+    <button onclick="setTab('manual')" id="tab-manual"
+      style="flex:1;padding:11px;border:none;background:transparent;color:var(--text3);font-weight:600;font-size:13px;cursor:pointer;border-left:1px solid var(--border)">
+      ✏️ Manual Entry
+    </button>
   </div>
 
-  <!-- ── SCAN TAB ─────────────────────────────────────── -->
-  <div id="tab-scan">
-
-    <div id="upload-section">
-      <div class="upload-zone" id="drop-zone"
-           onclick="document.getElementById('doc-file').click()"
-           ondragover="ev(event,true)" ondragleave="ev(event,false)" ondrop="dropFile(event)"
-           style="border:2px dashed var(--border2);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface)">
-        <div style="font-size:36px;margin-bottom:12px;opacity:.6">↑</div>
-        <p style="font-size:15px;font-weight:500;color:var(--text);margin-bottom:6px">Drop any financial document here</p>
-        <p style="font-size:12px;color:var(--text3);margin-bottom:14px">JPG · PNG · PDF — phone photos work perfectly</p>
-        <button class="btn btn-primary" onclick="event.stopPropagation();document.getElementById('doc-file').click()">Choose File</button>
+  <!-- ── SCAN TAB ───────────────────────────────────────────────────── -->
+  <div id="section-scan">
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">AI Document Scanner</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.7">
+        Upload a photo or PDF of any bill, receipt, or invoice. LEDGR AI will extract vendor name,
+        tax ID, invoice number, dates, line items, GST amount, and post automatically to the ledger.
       </div>
-      <input type="file" id="doc-file" accept="image/*,application/pdf" style="display:none" onchange="handleFile(this)">
+      {% set plan = plan or {} %}
+      {% if plan.get('unlimited_scans') or (plan.get('ai_scans', 0)|int > 10) %}
+      <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:7px;padding:8px 12px;font-size:11px;color:var(--mint);margin-bottom:14px">
+        ✓ Unlimited AI scans enabled
+      </div>
+      {% endif %}
 
-      <div class="card" style="margin-top:12px">
-        <div class="card-title">What LEDGR extracts automatically</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;color:var(--text2)">
-          <div>✓ Vendor name &amp; tax ID ({{ tax.authority }})</div>
-          <div>✓ Invoice number &amp; dates</div>
-          <div>✓ {{ tax.tax_name }} amount ({{ (tax.tax_rate*100)|int }}%)</div>
-          <div>✓ Line items &amp; totals</div>
-          <div>✓ Currency detection</div>
-          <div>✓ Posts to double-entry ledger</div>
+      <div id="drop-zone" onclick="document.getElementById('file-input').click()"
+        style="border:2px dashed var(--border);border-radius:10px;padding:40px 20px;text-align:center;cursor:pointer;transition:.2s"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+        ondragleave="this.style.borderColor='var(--border)'"
+        ondrop="handleDrop(event)">
+        <div style="font-size:36px;margin-bottom:8px">📄</div>
+        <div style="font-weight:600;color:var(--text);margin-bottom:4px">Drop file here or click to browse</div>
+        <div style="font-size:11px;color:var(--text3)">PDF, JPG, PNG — Max 8MB</div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,.jpg,.jpeg,.png" style="display:none"
+        onchange="handleFile(this.files[0])">
+
+      <div id="preview-area" style="display:none;margin-top:14px">
+        <img id="preview-img" style="max-width:100%;border-radius:8px;border:1px solid var(--border);display:none">
+        <div id="preview-pdf" style="display:none;padding:16px;background:var(--bg);border-radius:8px;text-align:center;color:var(--text3)">
+          📄 PDF ready to scan
         </div>
+        <button class="btn btn-primary" onclick="runScan()" style="margin-top:10px;width:100%">
+          🔍 Extract with AI
+        </button>
+      </div>
+
+      <div id="scan-status" style="display:none;margin-top:12px;text-align:center">
+        <div style="font-size:13px;color:var(--text3)">⏳ Scanning with AI...</div>
       </div>
     </div>
 
-    <div id="processing-section" style="display:none;text-align:center;padding:50px 20px">
-      <div style="font-size:40px;margin-bottom:16px">⚙</div>
-      <div id="proc-text" style="font-size:14px;color:var(--text2);margin-bottom:20px">Processing...</div>
-      <div style="display:flex;justify-content:center;gap:8px">
-        <div id="s1" style="font-size:11px;color:var(--text3)">① Read</div>
-        <div style="color:var(--text3)">→</div>
-        <div id="s2" style="font-size:11px;color:var(--text3)">② Extract</div>
-        <div style="color:var(--text3)">→</div>
-        <div id="s3" style="font-size:11px;color:var(--text3)">③ Post</div>
+    <!-- Scan Results -->
+    <div id="scan-results" style="display:none">
+      <div class="card">
+        <div class="card-title">✓ Extracted Data — Review & Save</div>
+        <div id="scan-result-form"><!-- filled by JS --></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-primary" onclick="saveScanResult()">💾 Save to Bills</button>
+          <button class="btn" onclick="document.getElementById('scan-results').style.display='none'">Discard</button>
+        </div>
+        <div id="scan-save-msg" style="display:none;margin-top:8px;font-size:12px"></div>
       </div>
-      <div id="img-preview" style="margin-top:16px"></div>
     </div>
+  </div>
 
-    <div id="result-section" style="display:none">
-      <div class="card" style="border-color:rgba(16,185,129,.3)">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div class="card-title" style="margin:0;color:var(--mint)">✓ Document Extracted</div>
-          <button class="btn btn-sm" onclick="resetUpload()">Upload Another</button>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px" id="result-grid"></div>
+  <!-- ── MANUAL ENTRY TAB ───────────────────────────────────────────── -->
+  <div id="section-manual" style="display:none">
+    <div class="card">
+      <div class="card-title">Manual Bill Entry</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:16px">
+        Enter bill details manually. All fields post directly to double-entry ledger.
       </div>
-      <div id="line-items-card" style="display:none;margin-top:10px">
-        <div class="card" style="padding:0">
-          <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:12px">Line Items</div>
-          <table class="table"><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit</th><th style="text-align:right">Total</th></tr></thead>
-          <tbody id="line-items-body"></tbody></table>
+
+      <!-- Supplier -->
+      <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:10px">Supplier Information</div>
+        <div class="field-row">
+          <div style="flex:2">
+            <div class="field-label">Supplier *
+              <button type="button" onclick="toggleAddSupplier()"
+                style="font-size:10px;color:var(--accent);background:none;border:none;cursor:pointer;margin-left:8px">
+                + Add New
+              </button>
+            </div>
+            <select class="select-input" id="mb-supplier-select" onchange="onSupplierSelect(this.value)" style="width:100%">
+              <option value="">— Select Supplier —</option>
+              {% for s in suppliers %}
+              <option value="{{ s.id }}" data-name="{{ s.name }}" data-tin="{{ s.tax_id or '' }}"
+                data-phone="{{ s.phone or '' }}">
+                {{ s.name }}{% if s.tax_id %} (TIN: {{ s.tax_id }}){% endif %}
+              </option>
+              {% endfor %}
+              <option value="__manual__">✏️ Type manually...</option>
+            </select>
+          </div>
+          <div style="flex:1">
+            <div class="field-label">Vendor TIN / Tax ID</div>
+            <input class="field-input" id="mb-vendor-tin" placeholder="Tax ID (for GST input)">
+          </div>
+        </div>
+        <div id="mb-vendor-name-row" style="display:none;margin-top:8px">
+          <div class="field-label">Vendor Name (manual)</div>
+          <input class="field-input" id="mb-vendor" placeholder="e.g. Island Supplies Co.">
+        </div>
+
+        <!-- Add New Supplier inline -->
+        <div id="add-supplier-panel" style="display:none;margin-top:12px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid rgba(99,102,241,.2)">
+          <div style="font-weight:600;font-size:11px;color:var(--accent);margin-bottom:8px">New Supplier</div>
+          <div class="field-row">
+            <div><div class="field-label">Name *</div>
+              <input class="field-input" id="ns-name" placeholder="Supplier name"></div>
+            <div><div class="field-label">TIN / Tax ID</div>
+              <input class="field-input" id="ns-tin" placeholder="Tax registration no."></div>
+          </div>
+          <div class="field-row">
+            <div><div class="field-label">Phone</div>
+              <input class="field-input" id="ns-phone" placeholder="+960..."></div>
+            <div><div class="field-label">Email</div>
+              <input class="field-input" id="ns-email" placeholder="accounts@supplier.com"></div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="btn btn-primary btn-sm" onclick="saveNewSupplier()">Save Supplier</button>
+            <button class="btn btn-sm" onclick="toggleAddSupplier()">Cancel</button>
+          </div>
+          <div id="ns-msg" style="font-size:11px;margin-top:6px;display:none"></div>
         </div>
       </div>
-      <div id="inventory-confirm" style="display:none;margin-top:10px">
-        <div class="card" style="border-color:rgba(245,158,11,.3)">
-          <div style="font-size:12px;color:var(--amber);margin-bottom:8px">⚠ Inventory items detected. Update stock levels?</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-primary" onclick="confirmInventory(true)">Yes, Update Stock</button>
-            <button class="btn" onclick="confirmInventory(false)">Skip</button>
+
+      <!-- Bill Details -->
+      <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-weight:600;font-size:12px;color:var(--text);margin-bottom:10px">Bill Details</div>
+        <div class="field-row">
+          <div><div class="field-label">Invoice / Ref Number</div>
+            <input class="field-input" id="mb-invnum" placeholder="INV-001"></div>
+          <div><div class="field-label">Document Type</div>
+            <select class="select-input" id="mb-doctype">
+              <option value="BILL">Bill (from supplier)</option>
+              <option value="EXPENSE">Expense (direct)</option>
+              <option value="RECEIPT">Receipt</option>
+            </select></div>
+        </div>
+        <div class="field-row">
+          <div><div class="field-label">Invoice Date *</div>
+            <input class="field-input" type="date" id="mb-date"></div>
+          <div><div class="field-label">Due Date</div>
+            <input class="field-input" type="date" id="mb-due"></div>
+        </div>
+      </div>
+
+      <!-- Line Items -->
+      <div style="margin-bottom:14px;padding:12px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-weight:600;font-size:12px;color:var(--text)">Line Items</div>
+          <button type="button" onclick="addLineItem()"
+            class="btn btn-sm" style="font-size:11px">+ Add Line</button>
+        </div>
+        <table style="width:100%;font-size:11px;border-collapse:collapse" id="line-items-table">
+          <thead>
+            <tr style="color:var(--text3);border-bottom:1px solid var(--border)">
+              <th style="text-align:left;padding:4px 6px;font-weight:600">Description</th>
+              <th style="text-align:left;padding:4px 6px;font-weight:600">Account</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:600">Subtotal</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:600">GST</th>
+              <th style="text-align:right;padding:4px 6px;font-weight:600">Total</th>
+              <th style="width:30px"></th>
+            </tr>
+          </thead>
+          <tbody id="line-items-body">
+            <!-- rows added by JS -->
+          </tbody>
+        </table>
+        <!-- Totals -->
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+            <span style="color:var(--text3)">Subtotal (excl. GST)</span>
+            <span id="total-sub" style="font-family:var(--mono)">MVR 0.00</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+            <span style="color:var(--amber)">GST (8%)</span>
+            <span id="total-tax" style="font-family:var(--mono);color:var(--amber)">MVR 0.00</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:15px;font-weight:700">
+            <span>Total</span>
+            <span id="total-grand" style="font-family:var(--mono);color:var(--mint)">MVR 0.00</span>
           </div>
         </div>
       </div>
-      <div style="margin-top:10px;display:flex;gap:8px">
-        <a href="/documents" class="btn">View Documents</a>
-        <a href="/journal" class="btn">View Journal</a>
-        {% if business.has_inventory %}<a href="/inventory" class="btn">View Inventory</a>{% endif %}
-      </div>
-    </div>
 
-  </div><!-- end tab-scan -->
-
-  <!-- ── MANUAL ENTRY TAB ──────────────────────────────── -->
-  <div id="tab-manual" style="display:none">
-    <div class="card">
-      <div class="card-title">✏️ Manual Bill / Expense Entry</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">No file needed — enter details directly and post to ledger</div>
-
-      <div class="field-row">
-        <div>
-          <div class="field-label">Vendor / Supplier *</div>
-          <input class="field-input" id="mb-vendor" placeholder="e.g. Island Supplies Co.">
-        </div>
-        <div>
-          <div class="field-label">Invoice / Ref Number</div>
-          <input class="field-input" id="mb-invnum" placeholder="INV-001">
-        </div>
-      </div>
-
-      <div class="field-row">
-        <div>
-          <div class="field-label">Date *</div>
-          <input class="field-input" type="date" id="mb-date">
-        </div>
-        <div>
-          <div class="field-label">Due Date</div>
-          <input class="field-input" type="date" id="mb-due">
-        </div>
-      </div>
-
-      <div class="field-row">
-        <div>
-          <div class="field-label">Total Amount *</div>
-          <input class="field-input" type="number" id="mb-amount" step="0.01" placeholder="0.00">
-        </div>
-        <div>
-          <div class="field-label">Tax Amount</div>
-          <input class="field-input" type="number" id="mb-tax" step="0.01" placeholder="0.00">
-        </div>
-      </div>
-
-      <div class="field-row">
-        <div>
-          <div class="field-label">Currency</div>
+      <!-- Currency & Notes -->
+      <div class="field-row" style="margin-bottom:14px">
+        <div><div class="field-label">Currency</div>
           <select class="select-input" id="mb-currency">
-            <option value="MVR">MVR — Maldivian Rufiyaa</option>
+            <option value="{{ tax.currency }}">{{ tax.currency }}</option>
             <option value="USD">USD — US Dollar</option>
             <option value="AED">AED — UAE Dirham</option>
             <option value="MYR">MYR — Malaysian Ringgit</option>
-            <option value="SAR">SAR — Saudi Riyal</option>
             <option value="GBP">GBP — British Pound</option>
             <option value="EUR">EUR — Euro</option>
-          </select>
-        </div>
-        <div>
-          <div class="field-label">Document Type</div>
-          <select class="select-input" id="mb-type">
-            <option value="BILL">Bill (AP — owed to supplier)</option>
-            <option value="EXPENSE">Expense (already paid)</option>
-            <option value="RECEIPT">Receipt</option>
-          </select>
-        </div>
+          </select></div>
+        <div><div class="field-label">Notes</div>
+          <input class="field-input" id="mb-notes" placeholder="Optional notes"></div>
       </div>
 
-      <div class="field-group">
-        <div class="field-label">Description / Notes</div>
-        <input class="field-input" id="mb-notes" placeholder="e.g. Office supplies for January">
-      </div>
-
-      <div style="display:flex;gap:8px;margin-top:12px">
-        <button class="btn btn-primary" id="mb-save-btn" onclick="saveManualBill()">💾 Save &amp; Post to Ledger</button>
-        <button class="btn" onclick="clearManualBill()">Clear</button>
-      </div>
-      <div id="mb-msg" style="margin-top:10px;font-size:12px;padding:8px 12px;border-radius:6px;display:none"></div>
+      <button class="btn btn-primary" onclick="submitManual()" id="mb-submit" style="width:100%;padding:12px;font-size:14px">
+        💾 Save Bill & Post to Ledger
+      </button>
+      <div id="mb-msg" style="display:none;margin-top:10px;font-size:12px;padding:10px 14px;border-radius:7px"></div>
     </div>
-  </div><!-- end tab-manual -->
+  </div>
 
-  <!-- ── CSV IMPORT TAB ────────────────────────────────── -->
-  <div id="tab-csv" style="display:none">
-    <div class="card">
-      <div class="card-title">📊 Bulk Import Bills from CSV</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.8">
-        Import multiple bills at once. Flexible column names — works with QB, Xero, Tally and Excel exports.<br>
-        <strong style="color:var(--text)">Required columns:</strong>
-        <code style="background:var(--bg);padding:2px 8px;border-radius:4px;font-size:11px;margin-left:4px">Vendor, Amount</code>
-        <span style="color:var(--text3)"> — all others optional</span>
-      </div>
-      <div class="field-group">
-        <div class="field-label">Paste CSV content below</div>
-        <textarea class="field-input" id="bills-csv" rows="9"
-          style="width:100%;font-family:monospace;font-size:11px;resize:vertical"
-          placeholder="Vendor,Invoice Number,Date,Amount,Type
-Island Supplies Ltd,INV-2024-001,2024-01-15,5000,BILL
-MWSC,MWSC-Jan-2024,2024-01-20,1200,EXPENSE
-STO Supermarket,,2024-01-22,850,EXPENSE
-Office Rental,RENT-JAN,2024-01-01,8000,BILL"></textarea>
-      </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <button class="btn btn-primary" id="csv-import-btn" onclick="importBillsCSV()">📥 Import Bills</button>
-        <button class="btn" onclick="document.getElementById('bills-csv').value=''">Clear</button>
-      </div>
-      <div id="bills-csv-msg" style="margin-top:10px;font-size:12px;padding:8px 12px;border-radius:6px;display:none"></div>
-    </div>
-    <div style="background:var(--surface2);border-radius:8px;padding:12px 14px;font-size:11px;color:var(--text3);margin-top:10px;line-height:1.7">
-      💡 For year-end closing balances and migrating from another system →
-      <a href="/setup/opening-balances" style="color:var(--mint);font-weight:600">Opening Balances →</a>
-    </div>
-  </div><!-- end tab-csv -->
+</div>
 
-</div><!-- end content -->
+<!-- Account options for line items (hidden) -->
+<datalist id="account-list">
+  {% for a in accounts %}
+  <option value="{{ a.code }}">{{ a.code }} — {{ a.name }}</option>
+  {% endfor %}
+</datalist>
+
 {% endblock %}
-
-{% block scripts %}
-<script>
-var INV_ENABLED = {{ 'true' if business.has_inventory else 'false' }};
-var currentDocId = null, currentLineItems = null;
+{% block scripts %}<script>
+var TAX_RATE = {{ tax.tax_rate }};
+var CCY = "{{ tax.currency }}";
+var supplierSelected = null;
 
 // ── Tab switching ─────────────────────────────────────────────────────────
-function switchTab(tab) {
-  ['scan','manual','csv'].forEach(function(t) {
-    document.getElementById('tab-' + t).style.display = t === tab ? 'block' : 'none';
-    var btn = document.getElementById('tab-btn-' + t);
-    btn.style.background = t === tab ? 'var(--mint)' : 'transparent';
-    btn.style.color      = t === tab ? '#fff' : 'var(--text3)';
+function setTab(tab) {
+  ['scan','manual'].forEach(function(t) {
+    document.getElementById('section-'+t).style.display = t===tab?'block':'none';
+    var btn = document.getElementById('tab-'+t);
+    btn.style.background = t===tab?'var(--accent)':'transparent';
+    btn.style.color = t===tab?'#fff':'var(--text3)';
   });
 }
 
-// ── Scan tab ──────────────────────────────────────────────────────────────
-function ev(e, on) {
-  e.preventDefault();
-  document.getElementById('drop-zone').classList.toggle('drag', on);
-}
-function dropFile(e) {
-  e.preventDefault();
-  document.getElementById('drop-zone').classList.remove('drag');
-  if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]);
-}
-function handleFile(input) { if (input.files.length) processFile(input.files[0]); }
-
-function setStep(n) {
-  var msgs = ['','Reading document...','Extracting data with AI...','Posting to Ledger...'];
-  document.getElementById('proc-text').textContent = msgs[n] || 'Processing...';
-  ['s1','s2','s3'].forEach(function(id, i) {
-    var el = document.getElementById(id);
-    el.style.color = i+1 < n ? 'var(--mint)' : i+1 === n ? 'var(--text)' : 'var(--text3)';
-    el.style.fontWeight = i+1 === n ? '700' : '400';
-  });
-}
-
-function processFile(file) {
-  document.getElementById('upload-section').style.display = 'none';
-  document.getElementById('processing-section').style.display = 'block';
-  document.getElementById('result-section').style.display = 'none';
-  if (file.type.startsWith('image/')) {
-    var r = new FileReader();
-    r.onload = function(e) {
-      document.getElementById('img-preview').innerHTML =
-        '<img src="'+e.target.result+'" style="max-width:200px;max-height:150px;border-radius:8px;opacity:.7">';
-    };
-    r.readAsDataURL(file);
+// ── Supplier selection ────────────────────────────────────────────────────
+function onSupplierSelect(val) {
+  var tinField = document.getElementById('mb-vendor-tin');
+  var nameRow  = document.getElementById('mb-vendor-name-row');
+  if (val === '__manual__') {
+    nameRow.style.display = 'block';
+    tinField.value = '';
+    supplierSelected = null;
+    return;
   }
-  setStep(1);
+  nameRow.style.display = 'none';
+  if (!val) { supplierSelected = null; return; }
+  var opt = document.querySelector('#mb-supplier-select option[value="'+val+'"]');
+  if (opt) {
+    tinField.value = opt.dataset.tin || '';
+    supplierSelected = {id: val, name: opt.dataset.name, tin: opt.dataset.tin};
+  }
+}
+
+function toggleAddSupplier() {
+  var p = document.getElementById('add-supplier-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function saveNewSupplier() {
+  var name = document.getElementById('ns-name').value.trim();
+  if (!name) { alert('Supplier name required'); return; }
+  var btn = event.target; btn.disabled = true; btn.textContent = 'Saving...';
+  fetch('/api/supplier/quick-add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name: name,
+      tax_id: document.getElementById('ns-tin').value.trim(),
+      phone:  document.getElementById('ns-phone').value.trim(),
+      email:  document.getElementById('ns-email').value.trim()
+    })
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) {
+      var s = res.supplier;
+      // Add to dropdown
+      var sel = document.getElementById('mb-supplier-select');
+      var opt = document.createElement('option');
+      opt.value = s.id; opt.textContent = s.name + (s.tax_id?' (TIN: '+s.tax_id+')':'');
+      opt.dataset.name = s.name; opt.dataset.tin = s.tax_id || '';
+      sel.insertBefore(opt, sel.lastElementChild);
+      sel.value = s.id;
+      onSupplierSelect(s.id);
+      document.getElementById('add-supplier-panel').style.display = 'none';
+      // Clear fields
+      ['ns-name','ns-tin','ns-phone','ns-email'].forEach(function(id){
+        document.getElementById(id).value='';
+      });
+    } else {
+      var m = document.getElementById('ns-msg');
+      m.style.display='block'; m.style.color='var(--red)';
+      m.textContent = res.error;
+    }
+    btn.disabled=false; btn.textContent='Save Supplier';
+  });
+}
+
+// ── Line items ────────────────────────────────────────────────────────────
+var lineItems = [];
+var accounts = [
+  {% for a in accounts %}
+  {code:"{{ a.code }}", name:"{{ a.name }}", type:"{{ a.account_type }}"},
+  {% endfor %}
+];
+var expenseAccounts = accounts.filter(function(a){return a.type==='EXPENSE'||a.type==='ASSET';});
+
+function addLineItem(desc, sub, tax, acc) {
+  var i = lineItems.length;
+  lineItems.push({desc:desc||'',sub:sub||0,tax:tax||0,acc:acc||'5010'});
+  var tbody = document.getElementById('line-items-body');
+  var tr = document.createElement('tr');
+  tr.id = 'li-row-'+i;
+  tr.style.borderBottom = '1px solid var(--border)';
+
+  var accOpts = expenseAccounts.map(function(a){
+    return '<option value="'+a.code+'"'+(a.code===(acc||'5010')?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
+  }).join('');
+
+  tr.innerHTML = '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px" '+
+    'value="'+(desc||'')+'" placeholder="Description" oninput="updateLine('+i+',\'desc\',this.value)"></td>'+
+    '<td style="padding:4px"><select class="select-input" style="font-size:11px;padding:4px 6px" '+
+    'onchange="updateLine('+i+',\'acc\',this.value)">'+accOpts+'</select></td>'+
+    '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px;text-align:right" '+
+    'type="number" step="0.01" value="'+(sub||'')+'" placeholder="0.00" oninput="updateLine('+i+',\'sub\',this.value)"></td>'+
+    '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px;text-align:right" '+
+    'type="number" step="0.01" value="'+(tax||'')+'" placeholder="0.00" oninput="updateLine('+i+',\'tax\',this.value)"></td>'+
+    '<td style="padding:4px;text-align:right;font-family:monospace;font-size:11px" id="li-total-'+i+'">0.00</td>'+
+    '<td style="padding:4px;text-align:center"><button onclick="removeLineItem('+i+')" '+
+    'style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px">×</button></td>';
+  tbody.appendChild(tr);
+  recalcTotals();
+}
+
+function updateLine(i, field, val) {
+  lineItems[i][field] = field==='desc'||field==='acc' ? val : parseFloat(val)||0;
+  if (field!=='desc'&&field!=='acc') {
+    var tot = (lineItems[i].sub||0) + (lineItems[i].tax||0);
+    var td = document.getElementById('li-total-'+i);
+    if (td) td.textContent = tot.toFixed(2);
+  }
+  recalcTotals();
+}
+
+function removeLineItem(i) {
+  var row = document.getElementById('li-row-'+i);
+  if (row) row.remove();
+  lineItems[i] = null;
+  recalcTotals();
+}
+
+function recalcTotals() {
+  var totalSub=0, totalTax=0;
+  lineItems.forEach(function(li){
+    if (!li) return;
+    totalSub += li.sub||0;
+    totalTax += li.tax||0;
+  });
+  document.getElementById('total-sub').textContent = CCY+' '+(totalSub).toFixed(2);
+  document.getElementById('total-tax').textContent = CCY+' '+(totalTax).toFixed(2);
+  document.getElementById('total-grand').textContent = CCY+' '+(totalSub+totalTax).toFixed(2);
+}
+
+// Add initial empty line
+addLineItem();
+
+// ── Submit manual entry ───────────────────────────────────────────────────
+function submitManual() {
+  var btn = document.getElementById('mb-submit');
+  var msg = document.getElementById('mb-msg');
+  var selVal = document.getElementById('mb-supplier-select').value;
+  var vendorName = '';
+  var supplierId = null;
+
+  if (selVal && selVal !== '__manual__') {
+    supplierId = selVal;
+    var opt = document.querySelector('#mb-supplier-select option[value="'+selVal+'"]');
+    vendorName = opt ? opt.dataset.name : '';
+  } else {
+    vendorName = document.getElementById('mb-vendor').value.trim();
+  }
+  if (!vendorName) { alert('Supplier name required'); return; }
+
+  var date = document.getElementById('mb-date').value;
+  if (!date) { alert('Invoice date required'); return; }
+
+  var validLines = lineItems.filter(function(li){ return li && ((li.sub||0)+(li.tax||0))>0; });
+  if (!validLines.length) { alert('Add at least one line item with an amount'); return; }
+
+  var totalSub = validLines.reduce(function(s,li){return s+(li.sub||0);},0);
+  var totalTax = validLines.reduce(function(s,li){return s+(li.tax||0);},0);
+  var totalGrand = totalSub + totalTax;
+
+  btn.disabled=true; btn.textContent='Saving...';
+
+  fetch('/api/document/manual', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      vendor_name:    vendorName,
+      vendor_tax_id:  document.getElementById('mb-vendor-tin').value.trim(),
+      supplier_id:    supplierId,
+      invoice_number: document.getElementById('mb-invnum').value.trim(),
+      doc_type:       document.getElementById('mb-doctype').value,
+      invoice_date:   date,
+      due_date:       document.getElementById('mb-due').value,
+      subtotal:       totalSub,
+      tax_amount:     totalTax,
+      total_amount:   totalGrand,
+      currency:       document.getElementById('mb-currency').value,
+      notes:          document.getElementById('mb-notes').value.trim(),
+      line_items:     validLines,
+      account_code:   validLines[0] ? validLines[0].acc : ''
+    })
+  }).then(r=>r.json()).then(res=>{
+    msg.style.display='block';
+    if (res.ok) {
+      msg.style.background='rgba(16,185,129,.1)';
+      msg.style.border='1px solid rgba(16,185,129,.3)';
+      msg.style.color='var(--mint)';
+      msg.innerHTML='✓ Bill saved & posted to ledger. '+
+        '<a href="/documents/'+res.document_id+'" style="color:var(--mint)">View bill →</a>';
+      // Reset form
+      setTimeout(function(){
+        lineItems=[];
+        document.getElementById('line-items-body').innerHTML='';
+        document.getElementById('mb-supplier-select').value='';
+        ['mb-vendor','mb-vendor-tin','mb-invnum','mb-due','mb-notes'].forEach(function(id){
+          var el=document.getElementById(id); if(el) el.value='';
+        });
+        document.getElementById('mb-date').value='';
+        addLineItem();
+        recalcTotals();
+        msg.style.display='none';
+      }, 3000);
+    } else {
+      msg.style.background='rgba(239,68,68,.1)';
+      msg.style.border='1px solid rgba(239,68,68,.3)';
+      msg.style.color='var(--red)';
+      msg.textContent='Error: ' + res.error;
+    }
+    btn.disabled=false; btn.textContent='💾 Save Bill & Post to Ledger';
+  });
+}
+
+// ── File handling ─────────────────────────────────────────────────────────
+var currentFile = null;
+function handleFile(file) {
+  if (!file) return;
+  currentFile = file;
+  var preview = document.getElementById('preview-area');
+  var img = document.getElementById('preview-img');
+  var pdf = document.getElementById('preview-pdf');
+  preview.style.display='block';
+  if (file.type.indexOf('pdf')>=0) {
+    pdf.style.display='block'; img.style.display='none';
+    pdf.textContent='📄 '+file.name+' ready to scan';
+  } else {
+    img.style.display='block'; pdf.style.display='none';
+    var reader = new FileReader();
+    reader.onload=function(e){img.src=e.target.result;};
+    reader.readAsDataURL(file);
+  }
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').style.borderColor='var(--border)';
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+}
+function runScan() {
+  if (!currentFile) return;
+  document.getElementById('scan-status').style.display='block';
+  document.getElementById('scan-results').style.display='none';
   var reader = new FileReader();
   reader.onload = function(e) {
     var b64 = e.target.result.split(',')[1];
-    setStep(2);
     fetch('/api/upload', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({file: b64, media_type: file.type, filename: file.name})
-    }).then(function(r) { return r.json(); }).then(function(res) {
-      setStep(3);
-      setTimeout(function() { showResult(res); }, 500);
-    }).catch(function(err) {
-      document.getElementById('proc-text').textContent = 'Error: ' + err.message;
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({file_data:b64, file_type:currentFile.type, file_name:currentFile.name})
+    }).then(r=>r.json()).then(res=>{
+      document.getElementById('scan-status').style.display='none';
+      if (res.ok && res.document_id) {
+        document.getElementById('scan-results').style.display='block';
+        buildScanForm(res);
+      } else if (res.ok) {
+        document.getElementById('scan-results').style.display='block';
+        document.getElementById('scan-result-form').innerHTML=
+          '<div style="color:var(--amber);font-size:12px">Scan complete — document saved. <a href="/documents">View in bills →</a></div>';
+      } else {
+        alert('Scan error: '+(res.error||'Unknown error'));
+      }
     });
   };
-  reader.readAsDataURL(file);
+  reader.readAsDataURL(currentFile);
 }
-
-function showResult(res) {
-  if (res.is_bank_statement) {
-    window.location.href = '/bank?imported=1';
-    return;
-  }
-  document.getElementById('processing-section').style.display = 'none';
-  document.getElementById('result-section').style.display = 'block';
-  if (!res.ok) {
-    document.getElementById('result-grid').innerHTML =
-      '<div style="color:var(--red);grid-column:1/-1">Error: ' + (res.error||'Unknown') + '</div>';
-    return;
-  }
-  currentDocId = res.document_id;
-  var d = res.extracted || {};
-  var grid = document.getElementById('result-grid');
+function buildScanForm(res) {
+  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
   var fields = [
-    ['Vendor', d.vendor_name||'—'],
-    ['Invoice #', d.invoice_number||'—'],
-    ['Date', d.invoice_date||'—'],
-    ['Due Date', d.due_date||'—'],
-    ['Subtotal', d.currency+' '+(d.subtotal||0)],
-    ['Tax', d.currency+' '+(d.tax_amount||0)],
-    ['Total', d.currency+' '+(d.total_amount||0)],
-    ['Status', res.duplicate ? '⚠ Duplicate detected' : '✓ Posted to ledger']
+    {id:'sr-vendor', label:'Vendor Name', val:res.vendor_name||''},
+    {id:'sr-tin', label:'Vendor TIN', val:res.vendor_tax_id||''},
+    {id:'sr-invno', label:'Invoice Number', val:res.invoice_number||''},
+    {id:'sr-date', label:'Invoice Date', val:res.invoice_date||'', type:'date'},
+    {id:'sr-sub', label:'Subtotal (excl GST)', val:(res.subtotal||0).toFixed(2)},
+    {id:'sr-tax', label:'GST Amount', val:(res.tax_amount||0).toFixed(2)},
   ];
-  grid.innerHTML = fields.map(function(f) {
-    return '<div><span style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.05em">'+f[0]+'</span><div style="font-weight:600;font-size:13px;margin-top:2px">'+f[1]+'</div></div>';
-  }).join('');
-  var items = d.line_items || [];
-  if (items.length) {
-    document.getElementById('line-items-card').style.display = 'block';
-    document.getElementById('line-items-body').innerHTML = items.map(function(it) {
-      return '<tr><td>'+it.description+'</td><td style="text-align:right">'+it.qty+'</td><td style="text-align:right">'+it.unit_price+'</td><td style="text-align:right">'+it.total+'</td></tr>';
-    }).join('');
-    currentLineItems = items;
-    if (INV_ENABLED && items.some(function(it) { return it.is_inventory; })) {
-      document.getElementById('inventory-confirm').style.display = 'block';
-    }
-  }
-}
-
-function confirmInventory(yes) {
-  document.getElementById('inventory-confirm').style.display = 'none';
-  if (!yes || !currentDocId || !currentLineItems) return;
-  fetch('/api/inventory/update-from-doc', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({document_id: currentDocId, items: currentLineItems})
+  fields.forEach(function(f){
+    html+='<div><div class="field-label">'+f.label+'</div>'+
+      '<input class="field-input" id="'+f.id+'" value="'+f.val+'"'+(f.type?' type="'+f.type+'"':'')+'>'+
+      '</div>';
   });
+  html+='</div>';
+  html+='<input type="hidden" id="sr-doc-id" value="'+res.document_id+'">';
+  document.getElementById('scan-result-form').innerHTML=html;
 }
-
-function resetUpload() {
-  document.getElementById('upload-section').style.display = 'block';
-  document.getElementById('processing-section').style.display = 'none';
-  document.getElementById('result-section').style.display = 'none';
-  document.getElementById('doc-file').value = '';
-  document.getElementById('img-preview').innerHTML = '';
-  document.getElementById('line-items-card').style.display = 'none';
-  document.getElementById('line-items-body').innerHTML = '';
-  document.getElementById('inventory-confirm').style.display = 'none';
-}
-
-// ── Manual bill entry ─────────────────────────────────────────────────────
-function saveManualBill() {
-  var vendor = document.getElementById('mb-vendor').value.trim();
-  var amount = parseFloat(document.getElementById('mb-amount').value) || 0;
-  if (!vendor) { alert('Vendor name required'); return; }
-  if (amount <= 0) { alert('Enter a valid amount'); return; }
-  var btn = document.getElementById('mb-save-btn');
-  btn.disabled = true; btn.textContent = 'Saving...';
-  fetch('/api/document/manual', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+function saveScanResult() {
+  var docId = document.getElementById('sr-doc-id').value;
+  var sub = parseFloat(document.getElementById('sr-sub').value)||0;
+  var tax = parseFloat(document.getElementById('sr-tax').value)||0;
+  fetch('/api/document/'+docId+'/update', {
+    method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
-      doc_type:       document.getElementById('mb-type').value,
-      vendor_name:    vendor,
-      invoice_number: document.getElementById('mb-invnum').value,
-      invoice_date:   document.getElementById('mb-date').value,
-      due_date:       document.getElementById('mb-due').value,
-      currency:       document.getElementById('mb-currency').value,
-      subtotal:       amount - (parseFloat(document.getElementById('mb-tax').value) || 0),
-      tax_amount:     parseFloat(document.getElementById('mb-tax').value) || 0,
-      total_amount:   amount,
-      notes:          document.getElementById('mb-notes').value,
-      post_journal:   true
+      vendor_name:   document.getElementById('sr-vendor').value,
+      vendor_tax_id: document.getElementById('sr-tin').value,
+      invoice_number:document.getElementById('sr-invno').value,
+      invoice_date:  document.getElementById('sr-date').value,
+      subtotal:      sub, tax_amount:tax, total_amount: sub+tax
     })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(res) {
-    var m = document.getElementById('mb-msg');
-    m.style.display = 'block';
-    if (res.ok) {
-      m.style.background = 'rgba(16,185,129,.1)';
-      m.style.border = '1px solid rgba(16,185,129,.3)';
-      m.style.color = 'var(--mint)';
-      m.textContent = '✓ ' + vendor + ' bill saved and posted to ledger';
-      clearManualBill();
+  }).then(r=>r.json()).then(res=>{
+    var m=document.getElementById('scan-save-msg');
+    m.style.display='block';
+    if(res.ok){
+      m.style.color='var(--mint)';
+      m.innerHTML='✓ Saved. <a href="/documents/'+docId+'" style="color:var(--mint)">View bill →</a>';
     } else {
-      m.style.background = 'rgba(239,68,68,.1)';
-      m.style.border = '1px solid rgba(239,68,68,.3)';
-      m.style.color = 'var(--red)';
-      m.textContent = 'Error: ' + (res.error || 'Unknown error');
+      m.style.color='var(--red)'; m.textContent='Error: '+res.error;
     }
-    btn.disabled = false;
-    btn.textContent = '💾 Save & Post to Ledger';
   });
 }
 
-function clearManualBill() {
-  ['mb-vendor','mb-invnum','mb-notes'].forEach(function(id) {
-    document.getElementById(id).value = '';
-  });
-  ['mb-amount','mb-tax','mb-date','mb-due'].forEach(function(id) {
-    document.getElementById(id).value = '';
-  });
-  var m = document.getElementById('mb-msg');
-  m.style.display = 'none';
-}
-
-// ── CSV import ────────────────────────────────────────────────────────────
-function importBillsCSV() {
-  var csv = document.getElementById('bills-csv').value.trim();
-  if (!csv) { alert('Paste your CSV content first'); return; }
-  var btn = document.getElementById('csv-import-btn');
-  btn.disabled = true; btn.textContent = 'Importing...';
-  fetch('/api/bills/import-csv', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({csv_text: csv})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(res) {
-    var m = document.getElementById('bills-csv-msg');
-    m.style.display = 'block';
-    if (res.ok) {
-      m.style.background = 'rgba(16,185,129,.1)';
-      m.style.border = '1px solid rgba(16,185,129,.3)';
-      m.style.color = 'var(--mint)';
-      m.textContent = '✓ ' + res.message + (res.errors && res.errors.length ? ' | ' + res.errors.length + ' warning(s)' : '');
-    } else {
-      m.style.background = 'rgba(239,68,68,.1)';
-      m.style.border = '1px solid rgba(239,68,68,.3)';
-      m.style.color = 'var(--red)';
-      m.textContent = 'Error: ' + res.error;
-    }
-    btn.disabled = false;
-    btn.textContent = '📥 Import Bills';
-  });
-}
-</script>
-{% endblock %}
+// Set today as default date
+document.getElementById('mb-date').value = new Date().toISOString().split('T')[0];
+</script>{% endblock %}

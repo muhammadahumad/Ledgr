@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}GST Return — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% from "period_selector.html" import period_selector %}{% block title %}GST Return — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
   <div><div class="page-title">GST Return — {{ 'MIRA 205' if business.gst_sector != 'tourism' else 'MIRA 206' }}</div>
   <div class="page-sub">{{ business.display_name() }} · {{ period_label }}</div></div>
@@ -8,6 +8,7 @@
   </div>
 </div>
 <div class="content">
+  {{ period_selector(period, start, end) }}
   <div class="card" style="margin-bottom:14px">
     <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
       <div><div class="field-label">Period</div>

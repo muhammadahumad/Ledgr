@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}Department P&L — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% from "period_selector.html" import period_selector %}{% block title %}Department P&L — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
   <div><div class="page-title">Department P&L</div>
   <div class="page-sub">Income and expenses by department / cost centre</div></div>
@@ -8,6 +8,7 @@
   </div>
 </div>
 <div class="content">
+  {{ period_selector(period, start, end) }}
 
   {% if not departments %}
   <div class="card" style="text-align:center;padding:50px">

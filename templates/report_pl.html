@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% block title %}P&L — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% from "period_selector.html" import period_selector %}{% block title %}P&L — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
   <div><div class="page-title">Profit & Loss Statement</div><div class="page-sub">{{ business.display_name() }} · {{ period_label }}</div></div>
   <div style="display:flex;gap:8px">
@@ -7,24 +7,7 @@
   </div>
 </div>
 <div class="content">
-  <!-- Period selector -->
-  <div class="card" style="margin-bottom:14px">
-    <form method="get" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <div><div class="field-label">Period</div>
-        <select class="select-input" name="period" onchange="this.form.submit()">
-          <option value="month" {% if period=='month' %}selected{% endif %}>This Month</option>
-          <option value="quarter" {% if period=='quarter' %}selected{% endif %}>This Quarter</option>
-          <option value="year" {% if period=='year' %}selected{% endif %}>This Year</option>
-          <option value="custom" {% if period=='custom' %}selected{% endif %}>Custom</option>
-        </select>
-      </div>
-      {% if period=='custom' %}
-      <div><div class="field-label">From</div><input class="field-input" type="date" name="start" value="{{ start }}"></div>
-      <div><div class="field-label">To</div><input class="field-input" type="date" name="end" value="{{ end }}"></div>
-      <button type="submit" class="btn btn-primary" style="align-self:flex-end">Apply</button>
-      {% endif %}
-    </form>
-  </div>
+  {{ period_selector(period, start, end) }}
 
   <!-- P&L Report -->
   <div class="card" id="print-area" style="max-width:720px;margin:0 auto">
