@@ -8097,28 +8097,6 @@ def api_invoice_void(inv_id):
         return jsonify({"ok": False, "error": str(e)[:200]})
 
 
-@app.route("/api/invoice/<int:inv_id>/mark-paid", methods=["POST"])
-@login_required
-def api_invoice_mark_paid(inv_id):
-    """Mark invoice as paid"""
-    business, err = api_business_guard()
-    if err: return err
-    db.session.rollback()
-    try:
-        result = db.session.execute(db.text(
-            "SELECT total_amount FROM invoices WHERE id=:id AND business_id=:bid"
-        ), {"id": inv_id, "bid": business.id}).fetchone()
-        if not result:
-            return jsonify({"ok": False, "error": "Not found"})
-        db.session.execute(db.text(
-            "UPDATE invoices SET status='PAID', amount_paid=total_amount WHERE id=:id AND business_id=:bid"
-        ), {"id": inv_id, "bid": business.id})
-        db.session.commit()
-        return jsonify({"ok": True, "message": "Invoice marked as paid"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)[:200]})
-
 @app.route('/admin')
 @login_required
 @admin_required
