@@ -22,7 +22,9 @@
       <tbody>
       {% for doc in docs %}
       <tr>
-        <td style="color:var(--text3);font-size:11px;font-family:var(--mono)">{{ doc.created_at.strftime('%d %b %Y') }}</td>
+        <td style="color:var(--text3);font-size:11px;font-family:var(--mono)">
+  {{ doc.invoice_date.strftime('%d %b %Y') if doc.invoice_date else doc.created_at.strftime('%d %b %Y') }}
+</td>
         <td><span class="badge badge-gray" style="font-size:10px">{{ doc.doc_type }}</span></td>
         <td style="color:var(--text);font-weight:500">{{ doc.vendor_name or '—' }}</td>
         <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ doc.invoice_number or '—' }}</td>
