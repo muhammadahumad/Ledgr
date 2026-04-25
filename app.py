@@ -1855,44 +1855,33 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
     Works regardless of which ALTER TABLE statements have been run.
     Returns list of dicts with all base invoice fields.
     """
-    where = "WHERE business_id = :bid"
+    extra_where = ""
     params = {"bid": business_id}
     if start:
-        where += " AND invoice_date >= :s"
+        extra_where += " AND i.invoice_date >= :s"
         params["s"] = str(start)
     if end:
-        where += " AND invoice_date <= :e"
+        extra_where += " AND i.invoice_date <= :e"
         params["e"] = str(end)
     if exclude_statuses:
-        placeholders = ",".join([f":ex{i}" for i in range(len(exclude_statuses))])
-        where += f" AND status NOT IN ({placeholders})"
-        for i, st in enumerate(exclude_statuses):
-            params[f"ex{i}"] = st
+        ex_list = ",".join(f"'{s}'" for s in exclude_statuses)
+        extra_where += f" AND i.status NOT IN ({ex_list})" 
     try:
         result = db.session.execute(db.text(
-            f"SELECT id, invoice_number, customer_id, invoice_date, due_date, "
-            f"currency, subtotal, tax_amount, total_amount, amount_paid, status, "
-            f"buyer_legal_name, notes, created_at "
-            f"FROM invoices {where} ORDER BY invoice_date DESC"
+            "SELECT i.id, i.invoice_number, i.customer_id, i.invoice_date, i.due_date, "
+            "i.currency, i.subtotal, i.tax_amount, i.total_amount, i.amount_paid, i.status, "
+            "i.buyer_legal_name, i.notes, i.created_at, "
+            "COALESCE(c.name, i.buyer_legal_name, 'Unknown Customer') as customer_name "
+            "FROM invoices i "
+            "LEFT JOIN customers c ON i.customer_id = c.id "
+            f"WHERE i.business_id = :bid{extra_where} "
+            "ORDER BY i.invoice_date DESC"
         ), params)
         rows = []
         raw_rows = result.fetchall()
-        
-        # Batch-load customers to avoid per-row queries that can abort session
-        cust_ids = list(set(r[2] for r in raw_rows if r[2]))
-        cust_map = {}
-        if cust_ids:
-            try:
-                id_list = ",".join(str(int(i)) for i in cust_ids)
-                cust_result = db.session.execute(db.text(
-                    f"SELECT id, name FROM customers WHERE id IN ({id_list})"
-                ))
-                cust_map = {r[0]: r[1] for r in cust_result.fetchall()}
-            except:
-                db.session.rollback()
-        
         for r in raw_rows:
-            cust_name = cust_map.get(r[2]) or r[11] or "Walk-in"
+            # r[14] = COALESCE(c.name, buyer_legal_name, 'Unknown Customer') from JOIN
+            cust_name = r[14] if len(r) > 14 and r[14] else (r[11] or "Unknown Customer")
             rows.append({
                 "id": r[0], "invoice_number": r[1] or f"INV-{r[0]}",
                 "customer_id": r[2],
@@ -4068,8 +4057,14 @@ def report_pl():
     """Profit & Loss Statement — QB/Xero format"""
     user = current_user(); business = current_business()
     tax = business.tax_rules()
-    # Universal period
-    start, end, period_label, period = resolve_period(request.args)
+    # Universal period - default to year (not month)
+    if 'period' not in request.args:
+        from datetime import date as _d2
+        class _FA2:
+            def get(self, k, d=''): return {'period':'year'}.get(k, d)
+        start, end, period_label, period = resolve_period(_FA2())
+    else:
+        start, end, period_label, period = resolve_period(request.args)
     today = date.today()
     # Get revenue accounts with balances for period
     # Revenue: read directly from Invoice table (source of truth)
@@ -4677,7 +4672,20 @@ def report_gst_return():
     user = current_user(); business = current_business()
     tax = business.tax_rules()
     from datetime import date
-    start, end, period_label, period = resolve_period(request.args)
+    # Default GST to current year (not month) as GST is filed quarterly/annually
+    from flask import request as _req
+    if 'period' not in _req.args:
+        # No period selected - default to year
+        from datetime import date as _d
+        _args = _req.args.to_dict()
+        _args['period'] = 'year'
+        class _FakeArgs:
+            def get(self, k, d=''): return _args.get(k, d)
+            def to_dict(self): return _args
+        _old_args = _req.args
+        start, end, period_label, period = resolve_period(_FakeArgs())
+    else:
+        start, end, period_label, period = resolve_period(request.args)
     today = date.today()
         # ── GST from Invoice and Document tables (raw SQL - always works) ─────
     # Box 1: Total supplies = sum of all invoice total_amount for period
