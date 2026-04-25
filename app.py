@@ -3923,35 +3923,8 @@ def report_pl():
     """Profit & Loss Statement — QB/Xero format"""
     user = current_user(); business = current_business()
     tax = business.tax_rules()
-    # Period selection
-    period = request.args.get("period","month")
-    from datetime import date
-    today = date.today()
-    if period == "month":
-        start = date(today.year, today.month, 1)
-        end = today
-        period_label = today.strftime("%B %Y")
-    elif period == "quarter":
-        q = (today.month - 1) // 3
-        start = date(today.year, q*3+1, 1)
-        end = today
-        period_label = f"Q{q+1} {today.year}"
-    elif period == "year":
-        start = date(today.year, 1, 1)
-        end = today
-        period_label = str(today.year)
-    elif period == "custom":
-        try:
-            start = datetime.strptime(request.args.get("start",""), "%Y-%m-%d").date()
-            end = datetime.strptime(request.args.get("end",""), "%Y-%m-%d").date()
-            period_label = start.strftime("%d %b %Y") + " to " + end.strftime("%d %b %Y")
-        except:
-            start = date(today.year, 1, 1); end = today
-            period_label = str(today.year)
-    else:
-        start = date(today.year, today.month, 1); end = today
-        period_label = today.strftime("%B %Y")
-
+    # Universal period
+    start, end, period_label, period = resolve_period(request.args)
     # Get revenue accounts with balances for period
     revenue_accounts = Account.query.filter_by(
         business_id=business.id, account_type="REVENUE", is_active=True
@@ -4013,12 +3986,8 @@ def report_balance_sheet():
     """Balance Sheet — as of date"""
     user = current_user(); business = current_business()
     tax = business.tax_rules()
-    from datetime import date
-    as_of_str = request.args.get("as_of","")
-    try:
-        as_of = datetime.strptime(as_of_str, "%Y-%m-%d").date()
-    except:
-        as_of = date.today()
+    start, end, period_label, period = resolve_period(request.args)
+    as_of = end
 
     def acct_balance_as_of(acct):
         lines = db.session.query(
@@ -6229,7 +6198,8 @@ def api_process_recurring():
 def report_department_pl():
     user = current_user(); business = current_business()
     tax = business.tax_rules()
-    today = date.today()
+    start, end, period_label, period = resolve_period(request.args)
+    today = end
     departments = Department.query.filter_by(
         business_id=business.id, is_active=True).all()
     # For each department, calculate revenue and expenses
