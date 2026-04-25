@@ -203,9 +203,11 @@ INDUSTRY_COA = {
 }
 
 PLANS = {
-    'free':    {'name':'Free',    'price':0, 'uploads':10,   'businesses':1},
-    'pro':     {'name':'Pro',     'price':15,'uploads':500,  'businesses':10},
-    'business':{'name':'Business','price':35,'uploads':99999,'businesses':99999},
+    'free':       {'name':'Free',       'price':0,  'uploads':10,    'businesses':1,     'ai_scans':10},
+    'pro':        {'name':'Pro',        'price':15, 'uploads':500,   'businesses':10,    'ai_scans':500},
+    'business':   {'name':'Business',   'price':35, 'uploads':99999, 'businesses':99999, 'ai_scans':99999},
+    'paid_client':{'name':'Paid Client','price':0,  'uploads':99999, 'businesses':99999, 'ai_scans':99999,
+                   'unlimited_scans':True, 'priority_support':True},
 }
 
 # ── Employment Rules per Country (2026) ──────────────────────────────────────
@@ -403,6 +405,7 @@ class Business(db.Model):
     gst_sector = db.Column(db.String(20), default='general')
     gst_sector_type = db.Column(db.String(50))
     ayrshare_api_key = db.Column(db.String(200))
+    plan = db.Column(db.String(30), default='free')
     smtp_host = db.Column(db.String(200))
     # Import default accounts — used by CSV importers
     default_revenue_account = db.Column(db.String(10), default='4100')  # Income - Projects
@@ -1148,6 +1151,99 @@ def get_object_or_403(model, object_id, business_id):
         return None
 
 
+# ── UNIVERSAL PERIOD RESOLVER ─────────────────────────────────────────────
+def resolve_period(args):
+    """
+    Universal period resolver for all report routes.
+    Supports: month, specific_month, quarter, specific_quarter, year, custom
+    Returns: (start, end, period_label, period_type)
+    """
+    from datetime import date
+    today = date.today()
+    period = args.get("period", "month")
+
+    if period == "month":
+        # Current month
+        start = date(today.year, today.month, 1)
+        end = today
+        label = today.strftime("%B %Y")
+
+    elif period == "specific_month":
+        # e.g. ?period=specific_month&month=2025-01
+        month_str = args.get("month", "")
+        try:
+            y, m = int(month_str[:4]), int(month_str[5:7])
+            import calendar
+            last_day = calendar.monthrange(y, m)[1]
+            start = date(y, m, 1)
+            end = date(y, m, min(last_day, today.day if (y==today.year and m==today.month) else last_day))
+            label = date(y, m, 1).strftime("%B %Y")
+        except:
+            start = date(today.year, today.month, 1)
+            end = today
+            label = today.strftime("%B %Y")
+
+    elif period == "quarter":
+        # Current quarter
+        q = (today.month - 1) // 3
+        start = date(today.year, q*3+1, 1)
+        end = today
+        label = f"Q{q+1} {today.year}"
+
+    elif period == "specific_quarter":
+        # e.g. ?period=specific_quarter&q=1&year=2025
+        try:
+            q = int(args.get("q", 1)) - 1  # 0-indexed
+            y = int(args.get("year", today.year))
+            import calendar
+            qstart_month = q*3 + 1
+            qend_month = q*3 + 3
+            last_day = calendar.monthrange(y, qend_month)[1]
+            start = date(y, qstart_month, 1)
+            q_end = date(y, qend_month, last_day)
+            end = min(q_end, today)
+            label = f"Q{q+1} {y}"
+        except:
+            q = (today.month - 1) // 3
+            start = date(today.year, q*3+1, 1)
+            end = today
+            label = f"Q{q+1} {today.year}"
+
+    elif period == "year":
+        # Current financial year
+        start = date(today.year, 1, 1)
+        end = today
+        label = str(today.year)
+
+    elif period == "specific_year":
+        try:
+            y = int(args.get("year", today.year))
+            start = date(y, 1, 1)
+            end = date(y, 12, 31) if y < today.year else today
+            label = str(y)
+        except:
+            start = date(today.year, 1, 1)
+            end = today
+            label = str(today.year)
+
+    elif period == "custom":
+        try:
+            start = datetime.strptime(args.get("start", ""), "%Y-%m-%d").date()
+            end   = datetime.strptime(args.get("end",   ""), "%Y-%m-%d").date()
+            label = f"{start.strftime('%d %b %Y')} — {end.strftime('%d %b %Y')}"
+        except:
+            start = date(today.year, 1, 1)
+            end = today
+            label = str(today.year)
+
+    else:
+        start = date(today.year, today.month, 1)
+        end = today
+        label = today.strftime("%B %Y")
+
+    return start, end, label, period
+
+
 # ── UNIVERSAL ACCOUNT RESOLVER ────────────────────────────────────────────
 # Resolves which account to post to based on:
 # 1. Explicit account_code in CSV row
@@ -1666,7 +1762,15 @@ def dashboard():
 @login_required
 def upload():
     user = current_user(); business = current_business()
-    return render_template('upload.html', user=user, business=business, tax=business.tax_rules(), plan=user.get_plan())
+    suppliers = Supplier.query.filter_by(
+        business_id=business.id, is_active=True
+    ).order_by(Supplier.name).all()
+    accounts = Account.query.filter_by(
+        business_id=business.id, is_active=True
+    ).order_by(Account.code).all()
+    plan = business.get_plan()
+    return render_template('upload.html', user=user, business=business,
+        tax=business.tax_rules(), suppliers=suppliers, accounts=accounts, plan=plan, plan=user.get_plan())
 
 @app.route('/ledger')
 @login_required
@@ -3034,6 +3138,40 @@ def payments():
                            total_ap=total_ap, total_ar=total_ar)
 
 
+
+@app.route("/api/supplier/quick-add", methods=["POST"])
+@login_required
+def api_supplier_quick_add():
+    """Quick-add a supplier from the bill entry form"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Supplier name required"})
+    existing = Supplier.query.filter_by(
+        business_id=business.id, name=name).first()
+    if existing:
+        return jsonify({"ok": True, "supplier": {
+            "id": existing.id, "name": existing.name,
+            "tax_id": existing.tax_id or "", "phone": existing.phone or ""
+        }})
+    sup = Supplier(
+        business_id=business.id,
+        name=name,
+        tax_id=data.get("tax_id") or None,
+        phone=data.get("phone") or None,
+        email=data.get("email") or None,
+        currency=data.get("currency") or business.base_currency or "MVR",
+        is_active=True
+    )
+    db.session.add(sup)
+    db.session.commit()
+    return jsonify({"ok": True, "supplier": {
+        "id": sup.id, "name": sup.name,
+        "tax_id": sup.tax_id or "", "phone": sup.phone or ""
+    }})
+
 @app.route("/api/payment/pay-bills", methods=["POST"])
 @login_required
 def api_pay_bills():
@@ -3923,6 +4061,7 @@ def report_balance_sheet():
     total_equity = sum(i["amount"] for i in equity_items) + current_year_profit
 
     return render_template("report_balance_sheet.html",
+        period=period, period_label=period_label, start=start, end=end,
         user=user, business=business, tax=tax, as_of=as_of,
         asset_items=asset_items, total_assets=total_assets,
         liability_items=liability_items, total_liabilities=total_liabilities,
@@ -3980,18 +4119,7 @@ def report_cash_flow():
     user = current_user(); business = current_business()
     tax = business.tax_rules()
     from datetime import date
-    period = request.args.get("period","month")
-    today = date.today()
-    if period == "month":
-        start = date(today.year, today.month, 1); end = today
-        period_label = today.strftime("%B %Y")
-    elif period == "quarter":
-        q = (today.month-1)//3
-        start = date(today.year, q*3+1, 1); end = today
-        period_label = f"Q{q+1} {today.year}"
-    else:
-        start = date(today.year, 1, 1); end = today
-        period_label = str(today.year)
+    start, end, period_label, period = resolve_period(request.args)
 
     # Operating activities from ledger entries
     operating_in = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
@@ -4375,25 +4503,7 @@ def report_gst_return():
     user = current_user(); business = current_business()
     tax = business.tax_rules()
     from datetime import date
-    period = request.args.get("period","month")
-    today = date.today()
-    if period == "month":
-        start = date(today.year, today.month, 1); end = today
-        period_label = today.strftime("%B %Y")
-    elif period == "quarter":
-        q = (today.month-1)//3
-        start = date(today.year, q*3+1, 1); end = today
-        period_label = f"Q{q+1} {today.year}"
-    else:
-        try:
-            start = datetime.strptime(request.args.get("start",""), "%Y-%m-%d").date()
-            end = datetime.strptime(request.args.get("end",""), "%Y-%m-%d").date()
-            period_label = start.strftime("%d %b %Y") + " to " + end.strftime("%d %b %Y")
-        except:
-            start = date(today.year, today.month, 1); end = today
-            period_label = today.strftime("%B %Y")
-
-    # Box 1: Total supplies (all revenue)
+    start, end, period_label, period = resolve_period(request.args)
     total_supplies = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
         LedgerEntry.business_id==business.id,
         LedgerEntry.entry_type=="REVENUE",
@@ -6157,6 +6267,7 @@ def report_department_pl():
         db.func.sum(LedgerEntry.amount)).filter_by(
         business_id=business.id, entry_type='EXPENSE').scalar() or 0)
     return render_template("report_department_pl.html",
+        period=period, period_label=period_label, start=start, end=end,
         user=user, business=business, tax=tax, today=today,
         departments=dept_data, total_revenue=total_revenue,
         total_expense=total_expense)
@@ -8297,22 +8408,69 @@ def api_document_manual():
                    vendor_tax_id=data.get("vendor_tax_id"), invoice_number=data.get("invoice_number",""),
                    invoice_date=inv_date, due_date=due_date,
                    currency=data.get("currency",business.base_currency),
-                   subtotal=float(data.get("subtotal",0)), tax_amount=tax_amt, total_amount=total,
+                   subtotal=float(data.get("subtotal",0)) or (float(data.get("total_amount",0))-float(data.get("tax_amount",0))), tax_amount=tax_amt, total_amount=total,
                    raw_ai_data="{}", status="PROCESSED",
                    payment_status="UNPAID" if data.get("doc_type","BILL")=="BILL" else "PAID")
     db.session.add(doc)
     db.session.flush()
+    # Store line items in raw_ai_data for display in document detail
+    if data.get("line_items"):
+        doc.raw_ai_data = __import__('json').dumps({
+            "line_items": data["line_items"],
+            "source": "manual_entry"
+        })
     cat_map = {"Office Supplies":"5400","Utilities":"5300","Travel":"5700","Meals":"5800",
                "Professional Services":"5600","Inventory Purchase":"1200","Payroll":"5100",
                "Tax Payment":"6200","Other":"6900"}
-    expense_code = cat_map.get(data.get("category","Other"),"6900")
+    # Resolve expense account using universal resolver
+    explicit_acc = data.get("account_code", "") or cat_map.get(data.get("category","Other"),"")
+    expense_code = resolve_account(business, 'cogs',
+        description=data.get("vendor_name","") + " " + data.get("notes",""),
+        explicit_code=explicit_acc) if not explicit_acc else explicit_acc
+    if not expense_code: expense_code = "5010"
+
+    # Link to supplier if found
+    sup_id = data.get("supplier_id")
+    if sup_id:
+        try:
+            sup = Supplier.query.filter_by(id=int(sup_id), business_id=business.id).first()
+            if sup:
+                doc.supplier_id = sup.id
+                if not doc.vendor_name: doc.vendor_name = sup.name
+                if not doc.vendor_tax_id: doc.vendor_tax_id = sup.tax_id
+                # Update supplier total_purchases
+                sup.total_purchases = float(sup.total_purchases or 0) + total
+                sup.has_transactions = True
+        except: pass
+    elif data.get("vendor_name"):
+        # Auto-match or create supplier
+        existing_sup = Supplier.query.filter(
+            Supplier.business_id==business.id,
+            Supplier.name.ilike(data["vendor_name"].strip())
+        ).first()
+        if existing_sup:
+            doc.supplier_id = existing_sup.id
+            existing_sup.total_purchases = float(existing_sup.total_purchases or 0) + total
+            existing_sup.has_transactions = True
+
+    subtotal = total - tax_amt
     try:
-        lines = [{"account_code":expense_code,"debit":total-tax_amt,"credit":0,"description":data.get("vendor_name","")},
-                 {"account_code":"2000","debit":0,"credit":total,"description":data.get("vendor_name","")}]
-        if tax_amt > 0: lines.insert(1,{"account_code":"2210","debit":tax_amt,"credit":0,"description":"Tax"})
-        post_journal(business.id, user.id, data.get("doc_type","BILL") + " — " + data.get("vendor_name",""),
-                    data.get("invoice_number","DOC-"+str(doc.id)), "PURCHASE", lines, doc.id)
-    except Exception as e: print("Manual doc journal error: " + str(e))
+        lines = [
+            {"account_code": expense_code, "debit": round(subtotal,2), "credit": 0,
+             "description": data.get("vendor_name","")},
+            {"account_code": "2000", "debit": 0, "credit": round(total,2),
+             "description": data.get("vendor_name","")}
+        ]
+        if tax_amt > 0:
+            lines.insert(1, {"account_code":"2210","debit":round(tax_amt,2),
+                             "credit":0,"description":"Input GST"})
+        post_journal(business.id, user.id,
+                    data.get("doc_type","BILL") + " — " + data.get("vendor_name",""),
+                    data.get("invoice_number","DOC-"+str(doc.id)),
+                    "PURCHASE", lines, doc.id,
+                    entry_date=inv_date)
+    except Exception as e:
+        print("Manual doc journal error: " + str(e))
     db.session.add(LedgerEntry(business_id=business.id, document_id=doc.id, entry_type="EXPENSE",
                                amount=total, tax_amount=tax_amt, currency=data.get("currency",business.base_currency),
                                description=data.get("doc_type","BILL") + " — " + data.get("vendor_name",""),
