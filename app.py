@@ -1770,7 +1770,7 @@ def upload():
     ).order_by(Account.code).all()
     plan = business.get_plan()
     return render_template('upload.html', user=user, business=business,
-        tax=business.tax_rules(), suppliers=suppliers, accounts=accounts, plan=plan, plan=user.get_plan())
+        tax=business.tax_rules(), suppliers=suppliers, accounts=accounts, plan=plan)
 
 @app.route('/ledger')
 @login_required
