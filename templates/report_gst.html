@@ -206,7 +206,12 @@
 var GST_START = "{{ start }}";
 var GST_END   = "{{ end }}";
 var GST_CCY   = "{{ tax.currency }}";
+var TAX_RATE  = {{ tax.tax_rate }};
 var outputData = null, inputData = null;
+var excludedInvoices = [];
+var excludedBills    = [];
+var manualOutputAdj  = 0;
+var manualInputAdj   = 0;
 
 function toggleDrillDown(type) {
   var box = document.getElementById(type + '-drilldown');
@@ -222,8 +227,6 @@ function loadDrillDown(type) {
   var loading = document.getElementById(type + '-loading');
   var table   = document.getElementById(type + '-table');
   var expBtn  = document.getElementById(type + '-export');
-  // Don't reload if already loaded
-  if (table.innerHTML && table.style.display !== 'none') return;
   loading.style.display = 'block';
   table.style.display   = 'none';
 
@@ -243,17 +246,26 @@ function loadDrillDown(type) {
       }
 
       var isOutput = type === 'output';
-      var html = '<div style="overflow-x:auto"><table class="table" style="font-size:11px">';
+      var html = '<div style="margin-bottom:8px;display:flex;gap:8px;align-items:center">';
+      html += '<span style="font-size:11px;color:var(--text3)">Check items to EXCLUDE from GST filing (e.g. unpaid invoices)</span>';
+      html += '<button onclick="saveAdjustments()" class="btn btn-sm" style="color:var(--amber);border-color:var(--amber);font-size:11px">💾 Save Exclusions</button>';
+      html += '</div>';
+      html += '<div style="overflow-x:auto"><table class="table" style="font-size:11px">';
       html += '<thead><tr>';
+      html += '<th style="width:30px"><input type="checkbox" title="Toggle all" onchange="toggleAll(this,''+type+'')" style="cursor:pointer"></th>';
       html += '<th>Date</th>';
       html += isOutput ? '<th>Invoice #</th><th>Customer</th>' : '<th>Ref #</th><th>Vendor</th><th>Vendor TIN</th>';
-      html += '<th style="text-align:right">Taxable Amt</th>';
-      html += '<th style="text-align:right">GST (' + ({{ tax.tax_rate }} * 100).toFixed(0) + '%)</th>';
+      html += '<th style="text-align:right">Taxable</th>';
+      html += '<th style="text-align:right">GST</th>';
       html += '<th style="text-align:right">Total</th>';
       html += '<th>Status</th></tr></thead><tbody>';
 
       rows.forEach(function(r) {
-        html += '<tr>';
+        var excl = r.excluded;
+        html += '<tr id="row-'+type+'-'+r.id+'" style="'+(excl?'opacity:.4;text-decoration:line-through':'')+'">';
+        html += '<td><input type="checkbox" class="excl-cb" data-type="'+type+'" data-id="'+r.id+'" '
+              + (excl?'checked':'')
+              + ' onchange="toggleExclude(this)" style="cursor:pointer"></td>';
         html += '<td style="font-family:monospace">' + r.date + '</td>';
         html += '<td style="font-family:monospace">' + (isOutput ? r.invoice_number : r.invoice_number) + '</td>';
         html += '<td>' + (isOutput ? r.customer : r.vendor) + '</td>';
@@ -263,59 +275,138 @@ function loadDrillDown(type) {
               + GST_CCY + ' ' + r.tax_amount.toFixed(2) + '</td>';
         html += '<td style="text-align:right;font-family:monospace;font-weight:600">'
               + GST_CCY + ' ' + r.total.toFixed(2) + '</td>';
-        html += '<td><span class="badge badge-' + (r.status==='PAID'?'green':r.status==='VOID'?'red':'amber') + '">'
-              + (r.status||r.doc_type) + '</span></td>';
+        html += '<td><span class="badge badge-' + (r.status==='PAID'||r.status==='paid'?'green':r.status==='VOID'?'red':'amber') + '">'
+              + (r.status||r.doc_type||'—') + '</span></td>';
         html += '</tr>';
       });
 
       // Totals row
       html += '<tr style="font-weight:700;background:var(--surface2)">';
-      html += '<td colspan="' + (isOutput ? '3' : '4') + '" style="font-size:11px;padding:8px 12px">TOTAL (' + rows.length + ' transactions)</td>';
-      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px">' + GST_CCY + ' ' + res.total_taxable.toFixed(2) + '</td>';
-      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px;color:' + (isOutput?'var(--mint)':'#60a5fa') + '">'
+      html += '<td colspan="' + (isOutput ? '4' : '5') + '" style="font-size:11px;padding:8px 12px">INCLUDED (' + rows.filter(r=>!r.excluded).length + ' of ' + rows.length + ' transactions)</td>';
+      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px" id="'+type+'-total-sub">' + GST_CCY + ' ' + res.total_taxable.toFixed(2) + '</td>';
+      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px;color:' + (isOutput?'var(--mint)':'#60a5fa') + '" id="'+type+'-total-tax">'
             + GST_CCY + ' ' + res.total_tax.toFixed(2) + '</td>';
-      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px">' + GST_CCY + ' ' + res.total_gross.toFixed(2) + '</td>';
+      html += '<td style="text-align:right;font-family:monospace;padding:8px 12px" id="'+type+'-total-gross">' + GST_CCY + ' ' + res.total_gross.toFixed(2) + '</td>';
       html += '<td></td></tr>';
+
+      // Manual adjustment
+      html += '<tr style="background:rgba(245,158,11,.08)">';
+      html += '<td colspan="' + (isOutput ? '5' : '6') + '" style="font-size:11px;padding:8px 12px;color:var(--amber)">Manual Adjustment (+ or -)</td>';
+      html += '<td colspan="2" style="padding:4px 12px"><input type="number" step="0.01" id="'+type+'-manual-adj" value="0" '
+            + 'style="width:120px;font-size:11px;font-family:monospace;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:4px 6px;color:var(--amber)" '
+            + 'onchange="recalcTotals(''+type+'')" placeholder="0.00"></td>';
+      html += '<td></td></tr>';
+
       html += '</tbody></table></div>';
 
-      table.innerHTML  = html;
+      table.innerHTML = html;
       table.style.display = 'block';
       expBtn.style.display = 'block';
+
+      // Init excluded lists from saved data
+      if (isOutput) excludedInvoices = rows.filter(r=>r.excluded).map(r=>r.id);
+      else excludedBills = rows.filter(r=>r.excluded).map(r=>r.id);
     });
+}
+
+function toggleAll(cb, type) {
+  document.querySelectorAll('.excl-cb[data-type="'+type+'"]').forEach(function(c) {
+    c.checked = cb.checked;
+    toggleExclude(c);
+  });
+}
+
+function toggleExclude(cb) {
+  var type = cb.dataset.type;
+  var id   = parseInt(cb.dataset.id);
+  var row  = document.getElementById('row-'+type+'-'+id);
+  if (cb.checked) {
+    row.style.opacity = '.4';
+    row.style.textDecoration = 'line-through';
+    if (type==='output') { if (!excludedInvoices.includes(id)) excludedInvoices.push(id); }
+    else { if (!excludedBills.includes(id)) excludedBills.push(id); }
+  } else {
+    row.style.opacity = '1';
+    row.style.textDecoration = 'none';
+    if (type==='output') excludedInvoices = excludedInvoices.filter(x=>x!==id);
+    else excludedBills = excludedBills.filter(x=>x!==id);
+  }
+  recalcTotals(type);
+}
+
+function recalcTotals(type) {
+  var data = type==='output' ? outputData : inputData;
+  if (!data) return;
+  var adj = parseFloat(document.getElementById(type+'-manual-adj')?.value)||0;
+  var rows = data.rows.filter(function(r) {
+    var excl = type==='output' ? excludedInvoices.includes(r.id) : excludedBills.includes(r.id);
+    return !excl;
+  });
+  var totalSub = rows.reduce(function(s,r){return s+r.subtotal;},0);
+  var totalTax = rows.reduce(function(s,r){return s+r.tax_amount;},0) + adj;
+  var totalGross = rows.reduce(function(s,r){return s+r.total;},0);
+
+  var subEl  = document.getElementById(type+'-total-sub');
+  var taxEl  = document.getElementById(type+'-total-tax');
+  var grossEl= document.getElementById(type+'-total-gross');
+  if (subEl)  subEl.textContent  = GST_CCY+' '+totalSub.toFixed(2);
+  if (taxEl)  taxEl.textContent  = GST_CCY+' '+totalTax.toFixed(2);
+  if (grossEl)grossEl.textContent= GST_CCY+' '+totalGross.toFixed(2);
+}
+
+function saveAdjustments() {
+  var oadj = parseFloat(document.getElementById('output-manual-adj')?.value)||0;
+  var iadj = parseFloat(document.getElementById('input-manual-adj')?.value)||0;
+  fetch('/api/gst/save-adjustments', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      period_key: GST_START+'_'+GST_END,
+      excluded_invoices: excludedInvoices,
+      excluded_bills:    excludedBills,
+      manual_output_adj: oadj,
+      manual_input_adj:  iadj
+    })
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok) {
+      var el = document.createElement('div');
+      el.style.cssText='position:fixed;bottom:20px;right:20px;background:var(--mint);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999';
+      el.textContent='✓ GST adjustments saved';
+      document.body.appendChild(el);
+      setTimeout(function(){el.remove();},3000);
+    }
+  });
 }
 
 function exportDrillDown(type) {
   var data = type === 'output' ? outputData : inputData;
   if (!data) return;
   var isOutput = type === 'output';
+  var excluded = isOutput ? excludedInvoices : excludedBills;
   var lines = [];
-
-  // Header
   if (isOutput) {
-    lines.push('Date,Invoice Number,Customer,Taxable Amount,GST Amount,Total,Status');
+    lines.push('Included,Date,Invoice Number,Customer,Taxable Amount,GST Amount,Total,Status');
     data.rows.forEach(function(r) {
-      lines.push([r.date, r.invoice_number, '"'+r.customer+'"',
-        r.subtotal.toFixed(2), r.tax_amount.toFixed(2), r.total.toFixed(2), r.status].join(','));
+      var incl = !excluded.includes(r.id);
+      lines.push([(incl?'YES':'EXCLUDED'),r.date,r.invoice_number,'"'+r.customer+'"',
+        r.subtotal.toFixed(2),r.tax_amount.toFixed(2),r.total.toFixed(2),r.status].join(','));
     });
-    lines.push('');
-    lines.push('TOTAL,,,'+data.total_taxable.toFixed(2)+','+data.total_tax.toFixed(2)+','+data.total_gross.toFixed(2)+'');
   } else {
-    lines.push('Date,Reference,Vendor,Vendor TIN,Taxable Amount,GST Amount,Total,Type');
+    lines.push('Included,Date,Reference,Vendor,Vendor TIN,Taxable Amount,GST Amount,Total,Type');
     data.rows.forEach(function(r) {
-      lines.push([r.date, r.invoice_number, '"'+r.vendor+'"', r.vendor_tin,
-        r.subtotal.toFixed(2), r.tax_amount.toFixed(2), r.total.toFixed(2), r.doc_type].join(','));
+      var incl = !excluded.includes(r.id);
+      lines.push([(incl?'YES':'EXCLUDED'),r.date,r.invoice_number,'"'+r.vendor+'"',r.vendor_tin,
+        r.subtotal.toFixed(2),r.tax_amount.toFixed(2),r.total.toFixed(2),r.doc_type].join(','));
     });
-    lines.push('');
-    lines.push('TOTAL,,,,'+data.total_taxable.toFixed(2)+','+data.total_tax.toFixed(2)+','+data.total_gross.toFixed(2)+'');
   }
-
-  var csv  = lines.join('\n');
+  var adj = parseFloat(document.getElementById(type+'-manual-adj')?.value)||0;
+  if(adj) lines.push('MANUAL ADJUSTMENT,,,,,,'+adj.toFixed(2)+',,');
+  var csv  = lines.join('
+');
   var blob = new Blob([csv], {type:'text/csv'});
-  var url  = URL.createObjectURL(blob);
-  var a    = document.createElement('a');
-  a.href   = url;
-  a.download = 'GST_' + type + '_' + GST_START + '_to_' + GST_END + '.csv';
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'GST_'+type+'_'+GST_START+'_to_'+GST_END+'.csv';
   a.click();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(a.href);
 }
 </script>{% endblock %}
