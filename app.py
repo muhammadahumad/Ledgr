@@ -7426,16 +7426,30 @@ def api_journals_import_csv():
     # Standard journal has: Date, Account Code, Debit, Credit, Description
 
     lines = csv_text.strip().split('\n')
+    
+    # Auto-detect delimiter
+    first_line_raw = lines[0] if lines else ''
+    delimiter = '\t' if first_line_raw.count('\t') > first_line_raw.count(',') else ','
+    
+    # Detect if first line is a header or data
     header_keywords = ['date','account','debit','credit','description','ref','journal',
-                       'memo','narration','entry','amount','dr','cr']
-    start_line = 0
-    for i, line in enumerate(lines):
-        if sum(1 for kw in header_keywords if kw in line.lower()) >= 2:
-            start_line = i; break
-    clean_csv = '\n'.join(lines[start_line:])
-    first_line = clean_csv.split('\n')[0] if clean_csv else ''
-    delimiter = '\t' if first_line.count('\t') > first_line.count(',') else ','
-    reader = csv.DictReader(io.StringIO(clean_csv), delimiter=delimiter)
+                       'memo','narration','entry','amount','dr','cr','name','transaction','number']
+    first_line_matches = sum(1 for kw in header_keywords if kw in first_line_raw.lower())
+    
+    # QBO standard column names for headerless exports
+    QBO_COLS = ['Transaction ID','Name','Transaction date','Number','Description',
+                'Amount','Tax amount','Tax code','Line currency',
+                'Foreign amount','Foreign tax amount']
+    
+    if first_line_matches >= 2:
+        # Has header row — use as-is
+        clean_csv = '\n'.join(lines)
+        reader = csv.DictReader(io.StringIO(clean_csv), delimiter=delimiter)
+    else:
+        # No header row — inject QBO column names
+        clean_csv = '\n'.join(lines)
+        reader = csv.DictReader(io.StringIO(clean_csv), delimiter=delimiter,
+                                fieldnames=QBO_COLS)
 
     def get(row, keys, default=''):
         for k in keys:
@@ -7463,16 +7477,29 @@ def api_journals_import_csv():
     all_rows = list(reader)
     journal_groups = OrderedDict()
 
-    # Detect if this is a standard journal or QBO spend money format
+    # Detect format: standard journal vs QBO spend money
+    # Use exact/whole-word matching to avoid false positives
+    # e.g. 'cr' must not match 'description', 'dr' must not match 'address'
     first_row = all_rows[0] if all_rows else {}
+    col_names = [str(f).strip().lower() for f in first_row if f]
+    
+    # Standard journal has explicit debit/credit/account columns
+    standard_cols = ['debit','credit','account code','gl code','dr','cr']
     has_account_col = any(
-        any(k.lower() in str(f).lower() for k in ['account code','account','gl code','debit','credit','dr','cr'])
-        for f in first_row if f
+        any(col == k or col.startswith(k + ' ') or col.endswith(' ' + k)
+            for k in standard_cols)
+        for col in col_names
     )
-    is_qbo_format = not has_account_col and any(
-        any(k.lower() in str(f).lower() for k in ['transaction id','name','amount'])
-        for f in first_row if f
+    
+    # QBO format has transaction id or name+amount columns
+    qbo_indicators = ['transaction id','transaction date','foreign amount']
+    has_qbo_cols = any(
+        any(col == k or k in col for k in qbo_indicators)
+        for col in col_names
     )
+    
+    # If no recognizable header at all (pure data rows) -> treat as QBO
+    is_qbo_format = has_qbo_cols or not has_account_col
 
     for row in all_rows:
         ref   = get(row, ['reference','ref','journal ref','entry no','journal no','voucher',
