@@ -8596,14 +8596,29 @@ if __name__ == '__main__':
 @app.route("/documents")
 @business_required
 def documents():
-    db.session.rollback()  # clear any aborted transaction
+    db.session.rollback()
     user = current_user(); business = current_business()
     doc_type = request.args.get("type","")
-    query = Document.query.filter_by(business_id=business.id)
-    if doc_type: query = query.filter_by(doc_type=doc_type)
-    docs = query.order_by(Document.created_at.desc()).all()
+
+    # Load bills/documents
+    docs = []
+    try:
+        query = Document.query.filter_by(business_id=business.id)
+        if doc_type and doc_type != 'INVOICE':
+            query = query.filter_by(doc_type=doc_type)
+        if doc_type != 'INVOICE':
+            docs = query.order_by(Document.created_at.desc()).all()
+    except:
+        db.session.rollback()
+
+    # Load invoices (from Invoice table) when showing All or Invoices tab
+    inv_rows = []
+    if doc_type in ('', 'INVOICE'):
+        inv_rows = get_invoices_raw(business.id)
+
     return render_template("documents.html", user=user, business=business,
-                           docs=docs, tax=business.tax_rules(), doc_type=doc_type,
+                           docs=docs, inv_rows=inv_rows,
+                           tax=business.tax_rules(), doc_type=doc_type,
                            plan=user.get_plan())
 
 
