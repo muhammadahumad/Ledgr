@@ -544,7 +544,11 @@ class User(db.Model):
     business = db.relationship('Business', backref='users', foreign_keys=[business_id])
     def set_password(self, pw): self.password_hash = generate_password_hash(pw)
     def check_password(self, pw): return check_password_hash(self.password_hash, pw)
-    def get_plan(self): return PLANS.get(self.plan, PLANS['free'])
+    def get_plan(self):
+        try:
+            return PLANS.get(self.plan or 'free', PLANS['free'])
+        except:
+            return PLANS['free']
     def _reset_uploads(self):
         now = datetime.utcnow()
         if not self.uploads_reset_date or now >= self.uploads_reset_date:
@@ -554,8 +558,15 @@ class User(db.Model):
             try: db.session.commit()
             except: pass
     def can_upload(self):
-        self._reset_uploads()
-        return (self.uploads_this_month or 0) < self.get_plan()['uploads']
+        try:
+            plan = self.get_plan()
+            # paid_client always can upload
+            if plan.get('unlimited_scans') or plan.get('uploads', 0) >= 99999:
+                return True
+            self._reset_uploads()
+            return (self.uploads_this_month or 0) < plan['uploads']
+        except:
+            return True  # fail open - never block on plan check error
     def uploads_remaining(self):
         self._reset_uploads()
         p = self.get_plan()
@@ -8197,6 +8208,291 @@ def api_tax_codes():
         c['label_full'] = f"{c['label']} ({c['rate_pct']})" if c.get('rate') else c['label']
     return jsonify({"ok": True, "codes": codes, "region": business.region,
                     "tax_name": tax.get('tax_name','Tax')})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# AGED RECEIVABLES & PAYABLES
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/reports/aged-receivables")
+@login_required
+def report_aged_receivables():
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    today = date.today()
+
+    # Get all non-void invoices with outstanding balances
+    inv_rows = get_invoices_raw(business.id, exclude_statuses=["VOID"])
+    
+    buckets = {"current":[],"1_30":[],"31_60":[],"61_90":[],"over_90":[]}
+    totals  = {"current":0,"1_30":0,"31_60":0,"61_90":0,"over_90":0,"total":0}
+
+    for r in inv_rows:
+        outstanding = r["total_amount"] - r["amount_paid"]
+        if outstanding <= 0:
+            continue
+        due = r["due_date"]
+        if not due:
+            due = r["invoice_date"]
+        if isinstance(due, str):
+            try: due = datetime.strptime(due, "%Y-%m-%d").date()
+            except: due = today
+        days_overdue = (today - due).days
+
+        entry = {
+            "invoice_number": r["invoice_number"],
+            "customer_name":  r["customer_name"],
+            "invoice_date":   str(r["invoice_date"]),
+            "due_date":       str(due),
+            "total":          r["total_amount"],
+            "paid":           r["amount_paid"],
+            "outstanding":    round(outstanding, 2),
+            "days_overdue":   days_overdue,
+            "currency":       r["currency"],
+        }
+        if days_overdue <= 0:
+            buckets["current"].append(entry); totals["current"] += outstanding
+        elif days_overdue <= 30:
+            buckets["1_30"].append(entry);    totals["1_30"] += outstanding
+        elif days_overdue <= 60:
+            buckets["31_60"].append(entry);   totals["31_60"] += outstanding
+        elif days_overdue <= 90:
+            buckets["61_90"].append(entry);   totals["61_90"] += outstanding
+        else:
+            buckets["over_90"].append(entry); totals["over_90"] += outstanding
+        totals["total"] += outstanding
+
+    for k in totals:
+        totals[k] = round(totals[k], 2)
+
+    return render_template("report_aged_ar.html", user=user, business=business,
+                           tax=tax, today=today, buckets=buckets, totals=totals)
+
+
+@app.route("/reports/aged-payables")
+@login_required
+def report_aged_payables():
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    today = date.today()
+
+    try:
+        docs = db.session.execute(db.text(
+            "SELECT d.invoice_number, d.invoice_date, d.due_date, "
+            "d.total_amount, d.vendor_name, d.currency, "
+            "COALESCE(s.name, d.vendor_name, 'Unknown') as supplier_name "
+            "FROM documents d "
+            "LEFT JOIN suppliers s ON d.supplier_id = s.id "
+            "WHERE d.business_id = :bid AND d.doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "ORDER BY d.invoice_date"
+        ), {"bid": business.id}).fetchall()
+    except:
+        db.session.rollback()
+        docs = []
+
+    buckets = {"current":[],"1_30":[],"31_60":[],"61_90":[],"over_90":[]}
+    totals  = {"current":0,"1_30":0,"31_60":0,"61_90":0,"over_90":0,"total":0}
+
+    for r in docs:
+        total = float(r[3] or 0)
+        if total <= 0: continue
+        due = r[2] or r[1]
+        if isinstance(due, str):
+            try: due = datetime.strptime(due, "%Y-%m-%d").date()
+            except: due = today
+        days_overdue = (today - due).days if due else 0
+
+        entry = {
+            "invoice_number": r[0] or "—",
+            "supplier_name":  r[6],
+            "invoice_date":   str(r[1]),
+            "due_date":       str(due),
+            "total":          total,
+            "days_overdue":   days_overdue,
+            "currency":       r[5] or tax["currency"],
+        }
+        if days_overdue <= 0:
+            buckets["current"].append(entry); totals["current"] += total
+        elif days_overdue <= 30:
+            buckets["1_30"].append(entry);    totals["1_30"] += total
+        elif days_overdue <= 60:
+            buckets["31_60"].append(entry);   totals["31_60"] += total
+        elif days_overdue <= 90:
+            buckets["61_90"].append(entry);   totals["61_90"] += total
+        else:
+            buckets["over_90"].append(entry); totals["over_90"] += total
+        totals["total"] += total
+
+    for k in totals:
+        totals[k] = round(totals[k], 2)
+
+    return render_template("report_aged_ap.html", user=user, business=business,
+                           tax=tax, today=today, buckets=buckets, totals=totals)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# IN-APP SUPPORT TICKETS
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/support")
+@login_required
+def support():
+    user = current_user(); business = current_business()
+    try:
+        tickets = db.session.execute(db.text(
+            "SELECT id, subject, status, priority, created_at, last_reply_at "
+            "FROM support_tickets WHERE business_id=:bid ORDER BY created_at DESC"
+        ), {"bid": business.id}).fetchall()
+    except:
+        db.session.rollback()
+        tickets = []
+    return render_template("support.html", user=user, business=business, tickets=tickets)
+
+
+@app.route("/api/support/ticket", methods=["POST"])
+@login_required
+def api_support_create_ticket():
+    user = current_user(); business = current_business()
+    data = request.get_json() or {}
+    subject  = (data.get("subject") or "").strip()
+    message  = (data.get("message") or "").strip()
+    priority = data.get("priority", "normal")
+    if not subject or not message:
+        return jsonify({"ok": False, "error": "Subject and message required"})
+    try:
+        db.session.execute(db.text("""
+            INSERT INTO support_tickets
+                (business_id, user_id, subject, message, status, priority, created_at, last_reply_at)
+            VALUES (:bid, :uid, :sub, :msg, 'open', :pri, NOW(), NOW())
+        """), {"bid": business.id, "uid": user.id,
+               "sub": subject, "msg": message, "pri": priority})
+        db.session.commit()
+        # Notify admin via email if configured
+        try:
+            admin_email = app.config.get("ADMIN_EMAIL", "")
+            if admin_email and SMTP_HOST:
+                send_email(admin_email, f"[LEDGR Support] {subject}",
+                    f"Business: {business.display_name()}<br>"
+                    f"User: {user.email}<br>Priority: {priority}<br><br>{message}")
+        except: pass
+        return jsonify({"ok": True, "message": "Ticket submitted"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+@app.route("/api/support/tickets")
+@login_required
+def api_support_tickets():
+    business, err = api_business_guard()
+    if err: return err
+    try:
+        rows = db.session.execute(db.text(
+            "SELECT id, subject, status, priority, created_at, message "
+            "FROM support_tickets WHERE business_id=:bid ORDER BY created_at DESC"
+        ), {"bid": business.id}).fetchall()
+        tickets = [{"id":r[0],"subject":r[1],"status":r[2],
+                    "priority":r[3],"created_at":str(r[4]),"message":r[5]}
+                   for r in rows]
+        return jsonify({"ok": True, "tickets": tickets})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:100]})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# BANK RECONCILIATION
+# ════════════════════════════════════════════════════════════════════════════
+
+@app.route("/bank/reconcile")
+@login_required
+def bank_reconcile():
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    
+    # Get bank accounts
+    try:
+        bank_accounts = Account.query.filter_by(
+            business_id=business.id, is_active=True
+        ).filter(Account.code.like('1%')).order_by(Account.code).all()
+    except:
+        db.session.rollback()
+        bank_accounts = []
+
+    selected_account = request.args.get("account", "")
+    period = request.args.get("period", "month")
+    start, end, period_label, period = resolve_period(request.args)
+
+    # Get unreconciled journal entries for the account
+    unreconciled = []
+    account_balance = 0
+    if selected_account:
+        try:
+            result = db.session.execute(db.text("""
+                SELECT jl.id, je.date, je.description, je.reference,
+                       jl.debit, jl.credit,
+                       (jl.debit - jl.credit) as movement,
+                       COALESCE(jl.reconciled, false) as reconciled
+                FROM journal_lines jl
+                JOIN journal_entries je ON jl.journal_entry_id = je.id
+                JOIN accounts a ON jl.account_id = a.id
+                WHERE a.business_id = :bid AND a.code = :code
+                AND je.date >= :s AND je.date <= :e
+                ORDER BY je.date DESC
+            """), {"bid": business.id, "code": selected_account,
+                   "s": str(start), "e": str(end)}).fetchall()
+            unreconciled = [
+                {"id":r[0],"date":str(r[1]),"description":r[2],"reference":r[3],
+                 "debit":float(r[4] or 0),"credit":float(r[5] or 0),
+                 "movement":float(r[6] or 0),"reconciled":bool(r[7])}
+                for r in result
+            ]
+            account_balance = sum(r["movement"] for r in unreconciled)
+        except:
+            db.session.rollback()
+
+    return render_template("bank_reconcile.html", user=user, business=business,
+                           tax=tax, bank_accounts=bank_accounts,
+                           selected_account=selected_account,
+                           unreconciled=unreconciled,
+                           account_balance=round(account_balance,2),
+                           period=period, period_label=period_label,
+                           start=start, end=end)
+
+
+@app.route("/api/bank/reconcile", methods=["POST"])
+@login_required
+def api_bank_reconcile():
+    """Mark journal lines as reconciled"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json() or {}
+    line_ids = data.get("line_ids", [])
+    statement_balance = data.get("statement_balance", 0)
+    if not line_ids:
+        return jsonify({"ok": False, "error": "No lines selected"})
+    try:
+        # Add reconciled column if not exists
+        try:
+            db.session.execute(db.text(
+                "ALTER TABLE journal_lines ADD COLUMN IF NOT EXISTS reconciled BOOLEAN DEFAULT FALSE"
+            ))
+            db.session.commit()
+        except: db.session.rollback()
+
+        ids_str = ",".join(str(int(i)) for i in line_ids)
+        db.session.execute(db.text(
+            f"UPDATE journal_lines SET reconciled=TRUE WHERE id IN ({ids_str})"
+        ))
+        db.session.commit()
+        return jsonify({"ok": True, "reconciled_count": len(line_ids),
+                        "statement_balance": statement_balance})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
 
 @app.route('/admin')
 @login_required
