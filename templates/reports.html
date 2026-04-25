@@ -13,9 +13,55 @@
   {% if threshold.warning and not threshold.exceeded %}<p style="font-size:11px;color:var(--amber);margin-top:8px">Approaching the {{ threshold.authority }} registration threshold. Consider consulting an accountant.</p>{% elif threshold.exceeded %}<p style="font-size:11px;color:var(--red);margin-top:8px">Threshold exceeded. Register with {{ threshold.authority }} immediately and begin collecting {{ threshold.tax }}.</p>{% endif %}
 </div>
 {% endif %}
+<!-- Period Selector for Reports Overview -->
+<div class="card" style="margin-bottom:14px;padding:12px 16px">
+  <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+    <div>
+      <div class="field-label">Period</div>
+      <select class="select-input" name="period" onchange="this.form.submit()" style="min-width:160px">
+        <option value="month"   {% if period=='month' or not period %}selected{% endif %}>This Month</option>
+        <option value="quarter" {% if period=='quarter' %}selected{% endif %}>This Quarter</option>
+        <option value="year"    {% if period=='year' %}selected{% endif %}>This Year</option>
+        <option value="custom"  {% if period=='custom' %}selected{% endif %}>Custom Range</option>
+      </select>
+    </div>
+    {% if period=='custom' %}
+    <div><div class="field-label">From</div>
+      <input class="field-input" type="date" name="start" value="{{ start_str or '' }}"></div>
+    <div><div class="field-label">To</div>
+      <input class="field-input" type="date" name="end" value="{{ end_str or '' }}"></div>
+    <button type="submit" class="btn btn-primary" style="height:36px">Apply</button>
+    {% endif %}
+  </form>
+</div>
+
+<!-- Quick links to full report pages -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+  <a href="/reports/pl?period={{ period or 'month' }}" class="card" style="text-decoration:none;text-align:center;padding:14px;cursor:pointer">
+    <div style="font-size:20px;margin-bottom:4px">📊</div>
+    <div style="font-size:11px;font-weight:600;color:var(--text)">P&L Statement</div>
+    <div style="font-size:10px;color:var(--text3)">Full detail</div>
+  </a>
+  <a href="/reports/balance-sheet?period={{ period or 'month' }}" class="card" style="text-decoration:none;text-align:center;padding:14px;cursor:pointer">
+    <div style="font-size:20px;margin-bottom:4px">⚖️</div>
+    <div style="font-size:11px;font-weight:600;color:var(--text)">Balance Sheet</div>
+    <div style="font-size:10px;color:var(--text3)">Assets & liabilities</div>
+  </a>
+  <a href="/reports/gst-return?period={{ period or 'month' }}" class="card" style="text-decoration:none;text-align:center;padding:14px;cursor:pointer">
+    <div style="font-size:20px;margin-bottom:4px">🧾</div>
+    <div style="font-size:11px;font-weight:600;color:var(--text)">GST Return</div>
+    <div style="font-size:10px;color:var(--text3)">MIRA filing</div>
+  </a>
+  <a href="/reports/cash-flow?period={{ period or 'month' }}" class="card" style="text-decoration:none;text-align:center;padding:14px;cursor:pointer">
+    <div style="font-size:20px;margin-bottom:4px">💰</div>
+    <div style="font-size:11px;font-weight:600;color:var(--text)">Cash Flow</div>
+    <div style="font-size:10px;color:var(--text3)">Inflows & outflows</div>
+  </a>
+</div>
+
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
 <div class="card">
-  <div class="card-title">Profit & Loss</div>
+  <div class="card-title">Profit & Loss — {{ period_label or 'This Month' }}</div>
   <table style="width:100%;font-size:13px;border-collapse:collapse">
     <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 0;color:var(--text2)">Revenue</td><td style="text-align:right;color:var(--mint);font-weight:500;font-family:var(--mono)">{{ business.base_currency }} {{ "%.2f"|format(total_revenue) }}</td></tr>
     <tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 0;color:var(--text2)">Expenses</td><td style="text-align:right;color:var(--red);font-weight:500;font-family:var(--mono)">{{ business.base_currency }} {{ "%.2f"|format(total_expenses) }}</td></tr>
