@@ -11,6 +11,13 @@ import secrets
 app = Flask(__name__)
 
 
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+
 # ── Field-level encryption for sensitive data ──────────────────────────
 _FIELD_KEY = os.environ.get('FIELD_ENCRYPT_KEY', '').encode()
 
@@ -40,19 +47,6 @@ def _decrypt_field(value):
         return decrypted.decode()
     except:
         return value
-
-@app.after_request
-@app.after_request
-def add_security_headers(response):
-    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
-    response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
-    # HSTS — force HTTPS for 1 year
-    if request.is_secure:
-        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    return response
 
 @app.template_filter('from_json')
 def from_json_filter(s):
@@ -1851,45 +1845,72 @@ def customers():
 @login_required
 def invoices():
     user = current_user(); business = current_business()
+    # Try full ORM query first
+    invoice_list = []
     try:
         invoice_list = Invoice.query.filter_by(
-            business_id=business.id).order_by(Invoice.created_at.desc()).all()
+            business_id=business.id
+        ).order_by(Invoice.created_at.desc()).all()
     except Exception:
         db.session.rollback()
-        # Fallback: raw SQL to get invoices even if new columns don't exist yet
         try:
-            result = db.session.execute(db.text(
-                "SELECT id, invoice_number, customer_id, invoice_date, due_date, "
-                "currency, total_amount, amount_paid, status, created_at "
-                "FROM invoices WHERE business_id = :bid ORDER BY created_at DESC"
-            ), {"bid": business.id})
-            # Build minimal invoice objects
-            from collections import namedtuple
-            InvRow = namedtuple('InvRow', ['id','invoice_number','customer_id',
-                'invoice_date','due_date','currency','total_amount','amount_paid',
-                'status','created_at','customer','is_recurring','recur_interval'])
+            # Fallback: raw SQL with only original columns
+            result = db.session.execute(db.text("""
+                SELECT id, invoice_number, customer_id, invoice_date, due_date,
+                       currency, total_amount, amount_paid, status, created_at
+                FROM invoices
+                WHERE business_id = :bid
+                ORDER BY created_at DESC
+            """), {"bid": business.id})
+            rows = result.fetchall()
             invoice_list = []
-            for r in result:
-                cust = Customer.query.get(r.customer_id) if r.customer_id else None
-                invoice_list.append(InvRow(
-                    id=r.id, invoice_number=r.invoice_number,
-                    customer_id=r.customer_id, invoice_date=r.invoice_date,
-                    due_date=r.due_date, currency=r.currency or business.base_currency,
-                    total_amount=r.total_amount, amount_paid=r.amount_paid,
-                    status=r.status, created_at=r.created_at,
-                    customer=cust, is_recurring=False, recur_interval=None
-                ))
-        except Exception:
+            for r in rows:
+                cust = None
+                try:
+                    if r.customer_id:
+                        cust = Customer.query.get(r.customer_id)
+                except: pass
+                # Create a simple namespace object
+                class FakeInv:
+                    pass
+                inv = FakeInv()
+                inv.id = r.id
+                inv.invoice_number = r.invoice_number
+                inv.customer_id = r.customer_id
+                inv.customer = cust
+                inv.invoice_date = r.invoice_date
+                inv.due_date = r.due_date
+                inv.currency = r.currency or business.base_currency or 'MVR'
+                inv.total_amount = r.total_amount
+                inv.amount_paid = r.amount_paid or 0
+                inv.status = r.status or 'SENT'
+                inv.created_at = r.created_at
+                inv.is_recurring = False
+                inv.recur_interval = None
+                inv.payment_link_url = None
+                invoice_list.append(inv)
+        except Exception as e2:
             db.session.rollback()
             invoice_list = []
-    customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
+
+    customers_list = []
+    try:
+        customers_list = Customer.query.filter_by(
+            business_id=business.id).order_by(Customer.name).all()
+    except: db.session.rollback()
+
     products_list = []
-    if business.has_inventory:
-        products_list = Product.query.filter_by(business_id=business.id).filter(
-            db.or_(Product.is_active==True, Product.is_active==None)
-        ).order_by(Product.name).all()
-    return render_template('invoices.html', user=user, business=business, invoices=invoice_list,
-                           customers=customers_list, products=products_list, tax=business.tax_rules())
+    try:
+        if business.has_inventory:
+            products_list = Product.query.filter_by(
+                business_id=business.id).filter(
+                db.or_(Product.is_active==True, Product.is_active==None)
+            ).order_by(Product.name).all()
+    except: db.session.rollback()
+
+    return render_template('invoices.html', user=user, business=business,
+                           invoices=invoice_list, customers=customers_list,
+                           products=products_list, tax=business.tax_rules())
 
 @app.route('/reports')
 @login_required
@@ -4005,6 +4026,7 @@ def report_pl():
     tax = business.tax_rules()
     # Universal period
     start, end, period_label, period = resolve_period(request.args)
+    today = date.today()
     # Get revenue accounts with balances for period
     revenue_accounts = Account.query.filter_by(
         business_id=business.id, account_type="REVENUE", is_active=True
@@ -4171,17 +4193,31 @@ def report_cash_flow():
     start, end, period_label, period = resolve_period(request.args)
 
     # Operating activities from ledger entries
-    operating_in = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
-        LedgerEntry.business_id==business.id, LedgerEntry.entry_type=="REVENUE",
-        LedgerEntry.timestamp >= datetime.combine(start, datetime.min.time()),
-        LedgerEntry.timestamp <= datetime.combine(end, datetime.max.time())
-    ).scalar() or 0)
+    # Operating cash flows from journal lines
+    revenue_accts = Account.query.filter_by(
+        business_id=business.id, account_type='REVENUE', is_active=True).all()
+    expense_accts = Account.query.filter_by(
+        business_id=business.id, account_type='EXPENSE', is_active=True).all()
+    start_dt = datetime.combine(start, datetime.min.time())
+    end_dt   = datetime.combine(end,   datetime.max.time())
 
-    operating_out = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
-        LedgerEntry.business_id==business.id, LedgerEntry.entry_type=="EXPENSE",
-        LedgerEntry.timestamp >= datetime.combine(start, datetime.min.time()),
-        LedgerEntry.timestamp <= datetime.combine(end, datetime.max.time())
-    ).scalar() or 0)
+    def period_balance(acct, debit_positive=True):
+        q = db.session.query(
+            db.func.sum(JournalLine.debit - JournalLine.credit)
+            if debit_positive else
+            db.func.sum(JournalLine.credit - JournalLine.debit)
+        ).join(JournalEntry).filter(
+            JournalLine.account_id == acct.id,
+            JournalEntry.business_id == business.id,
+            JournalEntry.date >= start_dt,
+            JournalEntry.date <= end_dt
+        ).scalar()
+        return float(q or 0)
+
+    operating_in  = sum(period_balance(a, False) for a in revenue_accts)
+    operating_out = sum(period_balance(a, True)  for a in expense_accts)
+
+    
 
     # Bank transactions for financing
     bank_credits = float(db.session.query(db.func.sum(BankTransaction.credit)).filter(
