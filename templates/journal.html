@@ -17,12 +17,7 @@
         <div style="display:flex;align-items:center;gap:10px">
           <div style="font-size:11px;color:var(--text3);font-family:var(--mono)">{{ entry.date.strftime('%d %b %Y %H:%M') }} · {{ entry.reference or '—' }}</div>
           {% if not entry.is_void and entry.entry_type in ['MANUAL','ADJUSTMENT'] %}
-          <button class="btn btn-sm" onclick="voidJE({{ entry.id }})"
-            {% if entry.entry_type in ['MANUAL','OPENING_BALANCE','VOID'] %}
-            <button class="btn btn-sm" style="color:var(--red);border-color:var(--red)"
-              data-action="deljournal" data-id="{{ entry.id }}"
-              data-type="{{ entry.entry_type }}">Delete</button>
-            {% endif %} style="color:var(--red);border-color:var(--red);font-size:10px">Void</button>
+          <button class="btn btn-sm" onclick="voidJE({{ entry.id }})" style="color:var(--red);border-color:var(--red);font-size:10px">Void</button>
           {% elif not entry.is_void %}
           <button class="btn btn-sm" onclick="voidJE({{ entry.id }})" style="color:var(--text3);font-size:10px" title="Creates reversal entry">⊘ Reverse</button>
           {% endif %}
@@ -170,17 +165,4 @@ function voidJE(id) {
       else alert('Error: '+res.error);
     });
 }
-
-// Hard delete journal entry (manual entries only)
-document.addEventListener('click', function(e) {
-  var btn = e.target.closest('[data-action="deljournal"]');
-  if (!btn) return;
-  var id = btn.dataset.id, type = btn.dataset.type;
-  if (!confirm('Hard delete this journal entry?\n\nThis permanently removes the entry and all its lines. Use void for posted transactions.')) return;
-  fetch('/api/journal/'+id+'/delete', {method:'POST'})
-    .then(r=>r.json()).then(res=>{
-      if(res.ok) location.reload();
-      else alert('Error: ' + res.error);
-    });
-});
 </script>{% endblock %}
