@@ -7,7 +7,7 @@
   <table class="table"><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th style="text-align:right">Total</th><th>Status</th><th></th></tr></thead><tbody>
   {% for inv in invoices %}<tr>
     <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
-    <td style="color:var(--text)">{{ inv.customer.name if inv.customer else 'Walk-in' }}</td>
+    <td style="color:var(--text)">{{ inv.customer_name if inv.customer_name else (inv.customer.name if inv.customer else 'Unknown') }}</td>
     <td style="color:var(--text3);font-size:11px">{{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
     <td style="color:var(--text3);font-size:11px">{{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
     <td style="text-align:right;font-family:var(--mono);font-weight:500;color:var(--text)">{{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
