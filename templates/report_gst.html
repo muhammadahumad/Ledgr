@@ -47,7 +47,7 @@
         <div class="field-label">Year</div>
         <select class="select-input" name="year">
           {% for y in range(2020,2028) %}
-          <option value="{{ y }}" {% if request.args.get('year','')|int==y or (not request.args.get('year') and y==start.year if start else false) %}selected{% endif %}>{{ y }}</option>
+          <option value="{{ y }}" {% if request.args.get('year','')|int==y or (not request.args.get('year') and start and y==start.year) %}selected{% endif %}>{{ y }}</option>
           {% endfor %}
         </select>
       </div>
