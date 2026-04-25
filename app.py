@@ -2323,7 +2323,7 @@ def api_quote_email(qid):
 
 @app.route("/bank/reconcile/<int:account_id>")
 @business_required
-def bank_reconcile(account_id):
+def bank_reconcile_old(account_id):
     user = current_user(); business = current_business()
     acct = BankAccount.query.filter_by(id=account_id, business_id=business.id).first()
     if not acct: return redirect(url_for("bank"))
@@ -2335,7 +2335,7 @@ def bank_reconcile(account_id):
 
 @app.route("/api/bank/reconcile", methods=["POST"])
 @login_required
-def api_bank_reconcile():
+def api_bank_reconcile_old():
     business, err = api_business_guard()
     if err: return err
     data = request.get_json()
@@ -8408,7 +8408,7 @@ def api_support_tickets():
 
 @app.route("/bank/reconcile")
 @login_required
-def bank_reconcile():
+def bank_reconcile_page():
     db.session.rollback()
     user = current_user(); business = current_business()
     tax = business.tax_rules()
