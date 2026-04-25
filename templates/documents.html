@@ -16,7 +16,42 @@
 
   <div class="card">
     <div class="card-title">{{ docs|length }} documents {% if doc_type %}· {{ doc_type }}{% endif %}</div>
+    {% set total_count = (docs|length) + (inv_rows|length) %}
+    <div class="card-title">{{ total_count }} records
+      {% if doc_type %} · {{ doc_type }}{% endif %}
+    </div>
+
+    {% if inv_rows and doc_type in ('', 'INVOICE') %}
+    <!-- Invoices from Invoice table -->
+    {% if doc_type == '' %}<div style="font-weight:600;font-size:11px;color:var(--mint);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">Sales Invoices ({{ inv_rows|length }})</div>{% endif %}
+    <table class="table" style="margin-bottom:14px">
+      <thead><tr>
+        <th>Date</th><th>Invoice #</th><th>Customer</th>
+        <th style="text-align:right">Subtotal</th>
+        <th style="text-align:right">GST</th>
+        <th style="text-align:right">Total</th>
+        <th>Status</th><th>Actions</th>
+      </tr></thead>
+      <tbody>
+      {% for inv in inv_rows %}
+      <tr>
+        <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">
+          {{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
+        <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
+        <td style="font-weight:500">{{ inv.customer_name }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px">{{ inv.currency }} {{ "%.2f"|format(inv.subtotal) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">{{ inv.currency }} {{ "%.2f"|format(inv.tax_amount) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
+        <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='VOID' %}red{% else %}amber{% endif %}">{{ inv.status }}</span></td>
+        <td><a href="/invoices" class="btn btn-sm">View</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
     {% if docs %}
+    {% if doc_type == '' and inv_rows %}<div style="font-weight:600;font-size:11px;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em">Bills & Documents ({{ docs|length }})</div>{% endif %}
     <table class="table">
       <thead><tr><th>Date</th><th>Type</th><th>Vendor/Source</th><th>Invoice #</th><th style="text-align:right">Amount</th><th>Tax</th><th>Account Head</th><th>Payment</th><th>File</th><th></th></tr></thead>
       <tbody>
