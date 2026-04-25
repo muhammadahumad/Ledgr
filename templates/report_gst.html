@@ -230,11 +230,18 @@ function loadDrillDown(type) {
   loading.style.display = 'block';
   table.style.display   = 'none';
 
-  fetch('/api/gst/' + type + '-details?start=' + GST_START + '&end=' + GST_END)
-    .then(r => r.json())
+  var url = '/api/gst/' + type + '-details?start=' + GST_START + '&end=' + GST_END;
+  loading.textContent = 'Loading ' + type + ' data for period: ' + GST_START + ' to ' + GST_END + '...';
+  fetch(url)
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
     .then(res => {
       loading.style.display = 'none';
-      if (!res.ok) { loading.textContent = 'Error: ' + res.error; loading.style.display='block'; return; }
+      if (!res.ok) { 
+        loading.style.display='block';
+        loading.style.color='var(--red)';
+        loading.textContent = 'Error: ' + res.error; 
+        return; 
+      }
       if (type === 'output') outputData = res;
       else inputData = res;
 
@@ -306,6 +313,11 @@ function loadDrillDown(type) {
       // Init excluded lists from saved data
       if (isOutput) excludedInvoices = rows.filter(r=>r.excluded).map(r=>r.id);
       else excludedBills = rows.filter(r=>r.excluded).map(r=>r.id);
+    })
+    .catch(function(err) {
+      loading.style.display = 'block';
+      loading.style.color = 'var(--red)';
+      loading.textContent = 'Network error: ' + err.message + '. URL: ' + url;
     });
 }
 
