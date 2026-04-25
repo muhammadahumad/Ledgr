@@ -1875,14 +1875,25 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
             f"FROM invoices {where} ORDER BY invoice_date DESC"
         ), params)
         rows = []
-        for r in result.fetchall():
-            cust = None
+        raw_rows = result.fetchall()
+        
+        # Batch-load customers to avoid per-row queries that can abort session
+        cust_ids = list(set(r[2] for r in raw_rows if r[2]))
+        cust_map = {}
+        if cust_ids:
             try:
-                if r[2]:
-                    cust = Customer.query.get(r[2])
-            except: pass
+                cust_result = db.session.execute(db.text(
+                    "SELECT id, name FROM customers WHERE id IN :ids"
+                ), {"ids": tuple(cust_ids)})
+                cust_map = {r[0]: r[1] for r in cust_result.fetchall()}
+            except:
+                db.session.rollback()
+        
+        for r in raw_rows:
+            cust_name = cust_map.get(r[2]) or r[11] or "Walk-in"
             rows.append({
-                "id": r[0], "invoice_number": r[1], "customer_id": r[2],
+                "id": r[0], "invoice_number": r[1] or f"INV-{r[0]}",
+                "customer_id": r[2],
                 "invoice_date": r[3], "due_date": r[4],
                 "currency": r[5] or "MVR",
                 "subtotal": float(r[6] or 0),
@@ -1893,8 +1904,8 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
                 "buyer_legal_name": r[11],
                 "notes": r[12],
                 "created_at": r[13],
-                "customer": cust,
-                "customer_name": cust.name if cust else (r[11] or "Walk-in")
+                "customer": None,
+                "customer_name": cust_name
             })
         return rows
     except Exception as ex:
@@ -1905,6 +1916,7 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
 @app.route('/invoices')
 @login_required
 def invoices():
+    db.session.rollback()  # clear any aborted transaction
     user = current_user(); business = current_business()
     # Use raw SQL helper - works even without ALTER TABLE migrations
     rows = get_invoices_raw(business.id)
@@ -4659,6 +4671,7 @@ def api_onboarding_complete():
 @app.route("/reports/gst-return")
 @business_required
 def report_gst_return():
+    db.session.rollback()  # clear any aborted transaction
     user = current_user(); business = current_business()
     tax = business.tax_rules()
     from datetime import date
@@ -4723,6 +4736,7 @@ def report_gst_return():
 @login_required
 def api_gst_save_adjustments():
     """Save GST filing adjustments - exclude unpaid invoices or specific transactions"""
+    db.session.rollback()
     business, err = api_business_guard()
     if err: return err
     data = request.get_json() or {}
@@ -4752,6 +4766,7 @@ def api_gst_save_adjustments():
 @login_required  
 def api_gst_output_details():
     """Drill-down: all invoices contributing to output GST"""
+    db.session.rollback()
     business, err = api_business_guard()
     if err: return err
     tax = business.tax_rules()
@@ -4815,6 +4830,7 @@ def api_gst_output_details():
 @login_required
 def api_gst_input_details():
     """Drill-down: all bills contributing to input GST"""
+    db.session.rollback()
     business, err = api_business_guard()
     if err: return err
     tax = business.tax_rules()
@@ -7938,23 +7954,23 @@ def api_debug_counts():
     if err: return err
     bid = business.id
     counts = {}
-    for table, col in [
-        ('invoices', 'id'),
-        ('documents', 'id'), 
-        ('journal_entries', 'id'),
-        ('journal_lines', 'id'),
-        ('customers', 'id'),
-        ('suppliers', 'id'),
-        ('accounts', 'id'),
-    ]:
+    queries = {
+        'invoices':       "SELECT COUNT(*) FROM invoices WHERE business_id=:bid",
+        'documents':      "SELECT COUNT(*) FROM documents WHERE business_id=:bid",
+        'journal_entries':"SELECT COUNT(*) FROM journal_entries WHERE business_id=:bid",
+        'journal_lines':  "SELECT COUNT(*) FROM journal_lines WHERE journal_entry_id IN (SELECT id FROM journal_entries WHERE business_id=:bid)",
+        'customers':      "SELECT COUNT(*) FROM customers WHERE business_id=:bid",
+        'suppliers':      "SELECT COUNT(*) FROM suppliers WHERE business_id=:bid",
+        'accounts':       "SELECT COUNT(*) FROM accounts WHERE business_id=:bid",
+    }
+    for table, sql in queries.items():
         try:
-            r = db.session.execute(
-                db.text(f"SELECT COUNT(*) FROM {table} WHERE business_id=:bid"),
-                {"bid": bid}
-            ).scalar()
+            db.session.rollback()  # clear any aborted tx before each query
+            r = db.session.execute(db.text(sql), {"bid": bid}).scalar()
             counts[table] = r
         except Exception as e:
-            counts[table] = f"ERROR: {str(e)[:50]}"
+            db.session.rollback()
+            counts[table] = f"ERROR: {str(e)[:80]}"
     
     # Also get sample invoice
     try:
@@ -8560,6 +8576,7 @@ if __name__ == '__main__':
 @app.route("/documents")
 @business_required
 def documents():
+    db.session.rollback()  # clear any aborted transaction
     user = current_user(); business = current_business()
     doc_type = request.args.get("type","")
     query = Document.query.filter_by(business_id=business.id)
