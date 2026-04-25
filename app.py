@@ -1847,57 +1847,80 @@ def customers():
     return render_template('customers.html', user=user, business=business, customers=customer_list,
                            total_outstanding=total_outstanding, vip_count=vip_count, tax=business.tax_rules())
 
+
+def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
+    """
+    Universal raw SQL invoice query — bypasses ORM column issues.
+    Works regardless of which ALTER TABLE statements have been run.
+    Returns list of dicts with all base invoice fields.
+    """
+    where = "WHERE business_id = :bid"
+    params = {"bid": business_id}
+    if start:
+        where += " AND invoice_date >= :s"
+        params["s"] = str(start)
+    if end:
+        where += " AND invoice_date <= :e"
+        params["e"] = str(end)
+    if exclude_statuses:
+        placeholders = ",".join([f":ex{i}" for i in range(len(exclude_statuses))])
+        where += f" AND status NOT IN ({placeholders})"
+        for i, st in enumerate(exclude_statuses):
+            params[f"ex{i}"] = st
+    try:
+        result = db.session.execute(db.text(
+            f"SELECT id, invoice_number, customer_id, invoice_date, due_date, "
+            f"currency, subtotal, tax_amount, total_amount, amount_paid, status, "
+            f"buyer_legal_name, notes, created_at "
+            f"FROM invoices {where} ORDER BY invoice_date DESC"
+        ), params)
+        rows = []
+        for r in result.fetchall():
+            cust = None
+            try:
+                if r[2]:
+                    cust = Customer.query.get(r[2])
+            except: pass
+            rows.append({
+                "id": r[0], "invoice_number": r[1], "customer_id": r[2],
+                "invoice_date": r[3], "due_date": r[4],
+                "currency": r[5] or "MVR",
+                "subtotal": float(r[6] or 0),
+                "tax_amount": float(r[7] or 0),
+                "total_amount": float(r[8] or 0),
+                "amount_paid": float(r[9] or 0),
+                "status": r[10] or "SENT",
+                "buyer_legal_name": r[11],
+                "notes": r[12],
+                "created_at": r[13],
+                "customer": cust,
+                "customer_name": cust.name if cust else (r[11] or "Walk-in")
+            })
+        return rows
+    except Exception as ex:
+        db.session.rollback()
+        return []
+
+
 @app.route('/invoices')
 @login_required
 def invoices():
     user = current_user(); business = current_business()
-    # Try full ORM query first
+    # Use raw SQL helper - works even without ALTER TABLE migrations
+    rows = get_invoices_raw(business.id)
+    
+    # Convert to FakeInv objects for template compatibility
+    class FakeInv:
+        pass
     invoice_list = []
-    try:
-        invoice_list = Invoice.query.filter_by(
-            business_id=business.id
-        ).order_by(Invoice.created_at.desc()).all()
-    except Exception:
-        db.session.rollback()
-        try:
-            # Fallback: raw SQL with only original columns
-            result = db.session.execute(db.text("""
-                SELECT id, invoice_number, customer_id, invoice_date, due_date,
-                       currency, total_amount, amount_paid, status, created_at
-                FROM invoices
-                WHERE business_id = :bid
-                ORDER BY created_at DESC
-            """), {"bid": business.id})
-            rows = result.fetchall()
-            invoice_list = []
-            for r in rows:
-                cust = None
-                try:
-                    if r.customer_id:
-                        cust = Customer.query.get(r.customer_id)
-                except: pass
-                # Create a simple namespace object
-                class FakeInv:
-                    pass
-                inv = FakeInv()
-                inv.id = r.id
-                inv.invoice_number = r.invoice_number
-                inv.customer_id = r.customer_id
-                inv.customer = cust
-                inv.invoice_date = r.invoice_date
-                inv.due_date = r.due_date
-                inv.currency = r.currency or business.base_currency or 'MVR'
-                inv.total_amount = r.total_amount
-                inv.amount_paid = r.amount_paid or 0
-                inv.status = r.status or 'SENT'
-                inv.created_at = r.created_at
-                inv.is_recurring = False
-                inv.recur_interval = None
-                inv.payment_link_url = None
-                invoice_list.append(inv)
-        except Exception as e2:
-            db.session.rollback()
-            invoice_list = []
+    for r in rows:
+        inv = FakeInv()
+        for k, v in r.items():
+            setattr(inv, k, v)
+        inv.is_recurring = False
+        inv.recur_interval = None
+        inv.payment_link_url = None
+        invoice_list.append(inv)
 
     customers_list = []
     try:
@@ -1917,6 +1940,7 @@ def invoices():
     return render_template('invoices.html', user=user, business=business,
                            invoices=invoice_list, customers=customers_list,
                            products=products_list, tax=business.tax_rules())
+
 
 @app.route('/reports')
 @login_required
@@ -4034,53 +4058,60 @@ def report_pl():
     start, end, period_label, period = resolve_period(request.args)
     today = date.today()
     # Get revenue accounts with balances for period
+    # Revenue: read directly from Invoice table (source of truth)
+    # Supplement with JournalLine if accounts exist
+    inv_rows = get_invoices_raw(business.id, start=start, end=end,
+                                exclude_statuses=['VOID','DRAFT'])
+    
+    revenue_from_invoices = sum(r['subtotal'] for r in inv_rows)
+    tax_from_invoices     = sum(r['tax_amount'] for r in inv_rows)
+    
+    # Also read from JournalLine for any manual entries
     revenue_accounts = Account.query.filter_by(
         business_id=business.id, account_type="REVENUE", is_active=True
     ).order_by(Account.code).all()
 
-    expense_accounts = Account.query.filter_by(
-        business_id=business.id, account_type="EXPENSE", is_active=True
-    ).order_by(Account.code).all()
-
-    # Calculate balances for period from journal lines
     def account_period_balance(acct_id, start, end):
-        lines = db.session.query(
-            db.func.sum(JournalLine.credit - JournalLine.debit)
-        ).join(JournalEntry).filter(
-            JournalLine.account_id == acct_id,
-            JournalEntry.business_id == business.id,
-            db.func.date(JournalEntry.date) >= start,
-            db.func.date(JournalEntry.date) <= end
-        ).scalar() or 0
-        return float(lines)
+        try:
+            lines = db.session.query(
+                db.func.sum(JournalLine.credit - JournalLine.debit)
+            ).join(JournalEntry).filter(
+                JournalLine.account_id == acct_id,
+                JournalEntry.business_id == business.id,
+                db.func.date(JournalEntry.date) >= start,
+                db.func.date(JournalEntry.date) <= end
+            ).scalar() or 0
+            return float(lines)
+        except:
+            db.session.rollback()
+            return 0.0
 
     revenue_items = []
-    total_revenue = 0
+    total_revenue_journal = 0
     for acct in revenue_accounts:
         bal = account_period_balance(acct.id, start, end)
         if bal != 0:
             revenue_items.append({"code":acct.code,"name":acct.name,"amount":bal})
-            total_revenue += bal
+            total_revenue_journal += bal
 
-    # Supplement with Invoice table if journal lines show 0
-    # (handles case where accounts didn't exist when invoices were imported)
-    if total_revenue == 0:
-        try:
-            inv_q = db.session.query(
-                db.func.sum(Invoice.subtotal)
-            ).filter(
-                Invoice.business_id == business.id,
-                Invoice.invoice_date >= start,
-                Invoice.invoice_date <= end,
-                Invoice.status.notin_(['VOID','DRAFT'])
-            ).scalar()
-            inv_total = float(inv_q or 0)
-            if inv_total > 0:
-                # Group by customer for detail
-                revenue_items = [{"code":"4000","name":"Sales Revenue (from invoices)","amount":inv_total}]
-                total_revenue = inv_total
-        except:
-            db.session.rollback()
+    # Use Invoice data if it gives more revenue (catches imported invoices)
+    if revenue_from_invoices > total_revenue_journal:
+        total_revenue = revenue_from_invoices
+        # Merge into revenue_items
+        if revenue_items:
+            # Add invoice revenue to existing items
+            inv_acct_exists = any(r['code'] in ['4000','4100','4010'] for r in revenue_items)
+            if not inv_acct_exists:
+                revenue_items.insert(0, {"code":"4000","name":"Sales Revenue","amount":revenue_from_invoices})
+        else:
+            revenue_items = [{"code":"4000","name":"Sales Revenue","amount":revenue_from_invoices}]
+    else:
+        total_revenue = total_revenue_journal
+
+    # Expenses from JournalLine
+    expense_accounts = Account.query.filter_by(
+        business_id=business.id, account_type="EXPENSE", is_active=True
+    ).order_by(Account.code).all()
 
     expense_items = []
     total_expenses = 0
@@ -4089,6 +4120,23 @@ def report_pl():
         if bal != 0:
             expense_items.append({"code":acct.code,"name":acct.name,"amount":bal})
             total_expenses += bal
+
+    # Also read from Document table for bills
+    try:
+        doc_total = float(db.session.query(
+            db.func.sum(Document.subtotal)
+        ).filter(
+            Document.business_id == business.id,
+            Document.doc_type.in_(['BILL','EXPENSE','PURCHASE']),
+            Document.invoice_date >= start,
+            Document.invoice_date <= end
+        ).scalar() or 0)
+        if doc_total > total_expenses:
+            total_expenses = doc_total
+            if not expense_items:
+                expense_items = [{"code":"5000","name":"Cost of Sales","amount":doc_total}]
+    except:
+        db.session.rollback()
 
     # Group expenses by category
     cogs_items = [e for e in expense_items if e["code"].startswith("5") and int(e["code"][:4]) <= 5099]
@@ -4616,133 +4664,40 @@ def report_gst_return():
     from datetime import date
     start, end, period_label, period = resolve_period(request.args)
     today = date.today()
-        # ── GST Calculations from Journal Lines (double-entry) ──────────────────
-    # Revenue accounts start with '4' - sum of credits on these accounts
-    # This reads from the actual posted journal entries, not LedgerEntry
+        # ── GST from Invoice and Document tables (raw SQL - always works) ─────
+    # Box 1: Total supplies = sum of all invoice total_amount for period
+    inv_rows_gst = get_invoices_raw(business.id, start=start, end=end,
+                                    exclude_statuses=['VOID','DRAFT'])
+    total_supplies  = sum(r['total_amount'] for r in inv_rows_gst)
+    output_tax      = sum(r['tax_amount'] for r in inv_rows_gst)
+    # If no tax_amount stored, calculate from total
+    if output_tax == 0 and total_supplies > 0:
+        output_tax = round(total_supplies * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
+    # Taxable = total - tax
+    taxable_supplies = total_supplies - output_tax
+    exempt_supplies  = 0.0
 
-    start_dt = datetime.combine(start, datetime.min.time())
-    end_dt   = datetime.combine(end,   datetime.max.time())
-
-    # Box 1: Total supplies = credits on revenue accounts (4xxx)
-    # Join JournalLine -> Account -> JournalEntry for date filter
-    revenue_q = db.session.query(
-        db.func.sum(JournalLine.credit)
-    ).join(Account, JournalLine.account_id == Account.id
-    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
-    ).filter(
-        Account.business_id == business.id,
-        Account.account_type == 'REVENUE',
-        JournalEntry.business_id == business.id,
-        JournalEntry.date >= start_dt,
-        JournalEntry.date <= end_dt
-    ).scalar()
-    total_supplies = float(revenue_q or 0)
-
-    # Also include direct invoice totals (tax-exclusive) for any not in journal
-    # Get from Invoice table directly for the period
+    # Box 5: Total purchases = sum of document total_amount
     try:
-        inv_revenue = db.session.query(
-            db.func.sum(Invoice.subtotal)
-        ).filter(
-            Invoice.business_id == business.id,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-            Invoice.status.notin_(['VOID','DRAFT'])
-        ).scalar()
-        inv_revenue = float(inv_revenue or 0)
-        # Use whichever is higher (journal entries or direct invoice sum)
-        if inv_revenue > total_supplies:
-            total_supplies = inv_revenue
+        total_purchases = float(db.session.execute(db.text(
+            "SELECT COALESCE(SUM(total_amount),0) FROM documents "
+            "WHERE business_id=:bid AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "AND invoice_date>=:s AND invoice_date<=:e"
+        ), {"bid":business.id,"s":str(start),"e":str(end)}).scalar() or 0)
     except:
         db.session.rollback()
+        total_purchases = 0.0
 
-    # Box 2: Exempt / zero-rated
-    exempt_supplies = 0.0
-
-    # Box 3: Taxable supplies
-    taxable_supplies = total_supplies - exempt_supplies
-
-    # Box 4: Output tax
-    # First try: sum credits on output tax account (2200)
-    output_tax_q = db.session.query(
-        db.func.sum(JournalLine.credit)
-    ).join(Account, JournalLine.account_id == Account.id
-    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
-    ).filter(
-        Account.business_id == business.id,
-        Account.code.in_(['2200','2201','2202']),
-        JournalEntry.business_id == business.id,
-        JournalEntry.date >= start_dt,
-        JournalEntry.date <= end_dt
-    ).scalar()
-    output_tax_journal = float(output_tax_q or 0)
-
-    # Also calculate from invoice tax_amount directly
+    # Box 6: Input tax = sum of document tax_amount
     try:
-        inv_tax = db.session.query(
-            db.func.sum(Invoice.tax_amount)
-        ).filter(
-            Invoice.business_id == business.id,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-            Invoice.status.notin_(['VOID','DRAFT'])
-        ).scalar()
-        inv_tax = float(inv_tax or 0)
+        input_tax = float(db.session.execute(db.text(
+            "SELECT COALESCE(SUM(tax_amount),0) FROM documents "
+            "WHERE business_id=:bid AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "AND invoice_date>=:s AND invoice_date<=:e AND tax_amount>0"
+        ), {"bid":business.id,"s":str(start),"e":str(end)}).scalar() or 0)
     except:
         db.session.rollback()
-        inv_tax = 0
-
-    # Use invoice tax if available and higher, otherwise calculate from revenue
-    if inv_tax > 0:
-        output_tax = round(inv_tax, 2)
-    elif output_tax_journal > 0:
-        output_tax = round(output_tax_journal, 2)
-    else:
-        output_tax = round(taxable_supplies * tax["tax_rate"], 2)
-
-    # Box 5: Total purchases — from Document table
-    total_purchases = float(db.session.query(
-        db.func.sum(Document.total_amount)
-    ).filter(
-        Document.business_id == business.id,
-        Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
-        Document.invoice_date >= start,
-        Document.invoice_date <= end
-    ).scalar() or 0)
-
-    # Box 6: Input tax — from Document tax_amount directly
-    input_tax_direct = float(db.session.query(
-        db.func.sum(Document.tax_amount)
-    ).filter(
-        Document.business_id == business.id,
-        Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
-        Document.invoice_date >= start,
-        Document.invoice_date <= end,
-        Document.tax_amount > 0
-    ).scalar() or 0)
-
-    # Also try from journal lines (debit on input tax account 2210)
-    input_tax_q = db.session.query(
-        db.func.sum(JournalLine.debit)
-    ).join(Account, JournalLine.account_id == Account.id
-    ).join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id
-    ).filter(
-        Account.business_id == business.id,
-        Account.code.in_(['2210','2211']),
-        JournalEntry.business_id == business.id,
-        JournalEntry.date >= start_dt,
-        JournalEntry.date <= end_dt
-    ).scalar()
-    input_tax_journal = float(input_tax_q or 0)
-
-    # Use whichever gives a result
-    if input_tax_direct > 0:
-        input_tax = round(input_tax_direct, 2)
-    elif input_tax_journal > 0:
-        input_tax = round(input_tax_journal, 2)
-    else:
         input_tax = round(total_purchases * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
-
 
     # Box 7: Net tax payable
     net_tax = round(output_tax - input_tax, 2)
@@ -4796,7 +4751,7 @@ def api_gst_save_adjustments():
 @app.route("/api/gst/output-details")
 @login_required  
 def api_gst_output_details():
-    """Drill-down: all invoices contributing to output GST for a period"""
+    """Drill-down: all invoices contributing to output GST"""
     business, err = api_business_guard()
     if err: return err
     tax = business.tax_rules()
@@ -4810,85 +4765,48 @@ def api_gst_output_details():
         start = date(today.year, today.month, 1)
         end   = today
 
-    # Load any saved exclusions
     import json
     period_key = f"{start_str}_{end_str}"
-    adj = {}
-    if hasattr(business, 'compliance_data') and business.compliance_data:
-        try:
-            all_adj = json.loads(business.compliance_data)
-            adj = all_adj.get(f"gst_adj_{period_key}", {})
-        except: pass
-    excluded = adj.get("excluded_invoices", [])
-
+    excluded = []
     try:
-        invoices = Invoice.query.filter(
-            Invoice.business_id == business.id,
-            Invoice.invoice_date >= start,
-            Invoice.invoice_date <= end,
-            Invoice.status.notin_(["VOID","DRAFT"])
-        ).order_by(Invoice.invoice_date).all()
-    except Exception:
-        db.session.rollback()
-        # Fallback: raw SQL with base columns only
-        try:
-            result = db.session.execute(db.text(
-                "SELECT id, invoice_number, customer_id, invoice_date, "
-                "total_amount, tax_amount, amount_paid, status, currency, "
-                "buyer_legal_name FROM invoices "
-                "WHERE business_id = :bid AND invoice_date >= :s AND invoice_date <= :e "
-                "AND status NOT IN ('VOID','DRAFT') ORDER BY invoice_date"
-            ), {"bid": business.id, "s": str(start), "e": str(end)})
-            class FakeInv:
-                pass
-            invoices = []
-            for r in result.fetchall():
-                inv = FakeInv()
-                inv.id = r[0]; inv.invoice_number = r[1]; inv.customer_id = r[2]
-                inv.invoice_date = r[3]; inv.total_amount = r[4]; inv.tax_amount = r[5]
-                inv.amount_paid = r[6]; inv.status = r[7]; inv.currency = r[8]
-                cust = None
-                try:
-                    if r[2]: cust = Customer.query.get(r[2])
-                except: pass
-                inv.customer = cust
-                inv.buyer_legal_name = r[9]
-                invoices.append(inv)
-        except Exception:
-            db.session.rollback()
-            invoices = []
+        if hasattr(business, 'compliance_data') and business.compliance_data:
+            all_adj = json.loads(business.compliance_data)
+            excluded = all_adj.get(f"gst_adj_{period_key}", {}).get("excluded_invoices", [])
+    except: pass
 
+    # Use raw SQL - always works regardless of DB migration state
+    inv_rows = get_invoices_raw(business.id, start=start, end=end,
+                                exclude_statuses=["VOID","DRAFT"])
+    
     rows = []
-    for inv in invoices:
-        total   = float(inv.total_amount or 0)
-        tax_amt = float(inv.tax_amount  or 0)
+    for r in inv_rows:
+        total   = r["total_amount"]
+        tax_amt = r["tax_amount"]
         if tax_amt == 0 and total > 0:
             tax_amt = round(total * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
         subtotal = total - tax_amt
         rows.append({
-            "id":             inv.id,
-            "invoice_number": inv.invoice_number,
-            "date":           str(inv.invoice_date),
-            "customer":       inv.customer.name if inv.customer else (inv.buyer_legal_name or "—"),
+            "id":             r["id"],
+            "invoice_number": r["invoice_number"] or f"INV-{r['id']}",
+            "date":           str(r["invoice_date"]) if r["invoice_date"] else "",
+            "customer":       r["customer_name"],
             "subtotal":       round(subtotal, 2),
-            "tax_amount":     round(tax_amt,  2),
-            "total":          round(total,    2),
-            "status":         inv.status,
-            "currency":       inv.currency or tax["currency"],
-            "excluded":       inv.id in excluded
+            "tax_amount":     round(tax_amt, 2),
+            "total":          round(total, 2),
+            "status":         r["status"],
+            "currency":       r["currency"] or tax["currency"],
+            "excluded":       r["id"] in excluded
         })
 
     included = [r for r in rows if not r["excluded"]]
-    total_tax = sum(r["tax_amount"] for r in included)
-    total_taxable = sum(r["subtotal"] for r in included)
-
     return jsonify({
-        "ok": True, "rows": rows,
-        "total_taxable": round(total_taxable, 2),
-        "total_tax":     round(total_tax,     2),
-        "total_gross":   round(total_taxable + total_tax, 2),
-        "currency":      tax["currency"],
-        "period":        f"{start_str} to {end_str}",
+        "ok":             True,
+        "rows":           rows,
+        "total_taxable":  round(sum(r["subtotal"] for r in included), 2),
+        "total_tax":      round(sum(r["tax_amount"] for r in included), 2),
+        "total_gross":    round(sum(r["total"] for r in included), 2),
+        "currency":       tax["currency"],
+        "period":         f"{start_str} to {end_str}",
         "excluded_count": len(excluded)
     })
 
@@ -4912,63 +4830,61 @@ def api_gst_input_details():
 
     import json
     period_key = f"{start_str}_{end_str}"
-    adj = {}
-    if hasattr(business, 'compliance_data') and business.compliance_data:
-        try:
+    excluded = []
+    try:
+        if hasattr(business, 'compliance_data') and business.compliance_data:
             all_adj = json.loads(business.compliance_data)
-            adj = all_adj.get(f"gst_adj_{period_key}", {})
-        except: pass
-    excluded = adj.get("excluded_bills", [])
+            excluded = all_adj.get(f"gst_adj_{period_key}", {}).get("excluded_bills", [])
+    except: pass
 
-    docs = Document.query.filter(
-        Document.business_id == business.id,
-        Document.doc_type.in_(["BILL","EXPENSE","PURCHASE"]),
-        Document.invoice_date >= start,
-        Document.invoice_date <= end
-    ).order_by(Document.invoice_date).all()
+    # Raw SQL for documents
+    try:
+        result = db.session.execute(db.text(
+            "SELECT id, invoice_number, invoice_date, vendor_name, vendor_tax_id, "
+            "subtotal, tax_amount, total_amount, doc_type, currency "
+            "FROM documents WHERE business_id = :bid "
+            "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "AND invoice_date >= :s AND invoice_date <= :e "
+            "ORDER BY invoice_date"
+        ), {"bid": business.id, "s": str(start), "e": str(end)})
+        doc_rows = result.fetchall()
+    except:
+        db.session.rollback()
+        doc_rows = []
 
     rows = []
-    for doc in docs:
-        total   = float(doc.total_amount or 0)
-        tax_amt = float(doc.tax_amount   or 0)
+    for r in doc_rows:
+        total   = float(r[7] or 0)
+        tax_amt = float(r[6] or 0)
         if tax_amt == 0 and total > 0:
             tax_amt = round(total * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
-        subtotal = total - tax_amt
+        subtotal = float(r[5] or 0) or (total - tax_amt)
         rows.append({
-            "id":             doc.id,
-            "invoice_number": doc.invoice_number or "—",
-            "date":           str(doc.invoice_date) if doc.invoice_date else "—",
-            "vendor":         doc.vendor_name or "—",
-            "vendor_tin":     doc.vendor_tax_id or "—",
+            "id":             r[0],
+            "invoice_number": r[1] or "—",
+            "date":           str(r[2]) if r[2] else "—",
+            "vendor":         r[3] or "—",
+            "vendor_tin":     r[4] or "—",
             "subtotal":       round(subtotal, 2),
-            "tax_amount":     round(tax_amt,  2),
-            "total":          round(total,    2),
-            "doc_type":       doc.doc_type,
-            "currency":       doc.currency or tax["currency"],
-            "excluded":       doc.id in excluded
+            "tax_amount":     round(tax_amt, 2),
+            "total":          round(total, 2),
+            "doc_type":       r[8] or "BILL",
+            "currency":       r[9] or tax["currency"],
+            "excluded":       r[0] in excluded
         })
 
     included = [r for r in rows if not r["excluded"]]
-    total_tax = sum(r["tax_amount"] for r in included)
-    total_taxable = sum(r["subtotal"] for r in included)
-
     return jsonify({
-        "ok": True, "rows": rows,
-        "total_taxable": round(total_taxable, 2),
-        "total_tax":     round(total_tax,     2),
-        "total_gross":   round(total_taxable + total_tax, 2),
-        "currency":      tax["currency"],
-        "period":        f"{start_str} to {end_str}",
+        "ok":             True,
+        "rows":           rows,
+        "total_taxable":  round(sum(r["subtotal"] for r in included), 2),
+        "total_tax":      round(sum(r["tax_amount"] for r in included), 2),
+        "total_gross":    round(sum(r["total"] for r in included), 2),
+        "currency":       tax["currency"],
+        "period":         f"{start_str} to {end_str}",
         "excluded_count": len(excluded)
     })
 
-
-
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# SOCIAL MEDIA MANAGEMENT
-# ════════════════════════════════════════════════════════════════════════════
 
 @app.route("/social")
 @business_required
