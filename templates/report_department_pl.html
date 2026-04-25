@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% from "period_selector.html" import period_selector %}{% block title %}Department P&L — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Department P&L — LEDGR{% endblock %}{% block content %}
 <div class="topbar">
   <div><div class="page-title">Department P&L</div>
   <div class="page-sub">Income and expenses by department / cost centre</div></div>
@@ -8,7 +8,75 @@
   </div>
 </div>
 <div class="content">
-  {{ period_selector(period, start, end) }}
+    <!-- Period Selector -->
+  <div class="card" style="margin-bottom:14px;padding:12px 16px">
+    <form method="get" id="period-form" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <div class="field-label">Period</div>
+        <select class="select-input" name="period" onchange="handlePeriod(this.value)" style="min-width:160px">
+          <option value="month"            {% if period=='month' %}selected{% endif %}>This Month</option>
+          <option value="specific_month"   {% if period=='specific_month' %}selected{% endif %}>Pick Month</option>
+          <option value="quarter"          {% if period=='quarter' %}selected{% endif %}>This Quarter</option>
+          <option value="specific_quarter" {% if period=='specific_quarter' %}selected{% endif %}>Pick Quarter</option>
+          <option value="year"             {% if period=='year' %}selected{% endif %}>This Year</option>
+          <option value="specific_year"    {% if period=='specific_year' %}selected{% endif %}>Pick Year</option>
+          <option value="custom"           {% if period=='custom' %}selected{% endif %}>Custom Range</option>
+        </select>
+      </div>
+      <div id="p-specific_month" style="display:{% if period=='specific_month' %}block{% else %}none{% endif %}">
+        <div class="field-label">Month</div>
+        <input class="field-input" type="month" name="month"
+          value="{{ request.args.get('month', start.strftime('%Y-%m') if start else '') }}">
+      </div>
+      <div id="p-specific_quarter" style="display:{% if period=='specific_quarter' %}flex{% else %}none{% endif %};gap:8px">
+        <div><div class="field-label">Quarter</div>
+          <select class="select-input" name="q">
+            <option value="1" {% if request.args.get('q')=='1' %}selected{% endif %}>Q1 (Jan–Mar)</option>
+            <option value="2" {% if request.args.get('q')=='2' %}selected{% endif %}>Q2 (Apr–Jun)</option>
+            <option value="3" {% if request.args.get('q')=='3' %}selected{% endif %}>Q3 (Jul–Sep)</option>
+            <option value="4" {% if request.args.get('q')=='4' %}selected{% endif %}>Q4 (Oct–Dec)</option>
+          </select></div>
+        <div><div class="field-label">Year</div>
+          <select class="select-input" name="year">
+            {% for y in range(2020,2028) %}
+            <option value="{{ y }}" {% if request.args.get('year','')|int==y or (not request.args.get('year') and y==start.year if start else false) %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+          </select></div>
+      </div>
+      <div id="p-specific_year" style="display:{% if period=='specific_year' %}block{% else %}none{% endif %}">
+        <div class="field-label">Year</div>
+        <select class="select-input" name="year">
+          {% for y in range(2020,2028) %}
+          <option value="{{ y }}" {% if request.args.get('year','')|int==y or (not request.args.get('year') and y==start.year if start else false) %}selected{% endif %}>{{ y }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div id="p-custom" style="display:{% if period=='custom' %}flex{% else %}none{% endif %};gap:8px">
+        <div><div class="field-label">From</div>
+          <input class="field-input" type="date" name="start"
+            value="{{ start.strftime('%Y-%m-%d') if start else '' }}"></div>
+        <div><div class="field-label">To</div>
+          <input class="field-input" type="date" name="end"
+            value="{{ end.strftime('%Y-%m-%d') if end else '' }}"></div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="height:36px;padding:0 16px">Apply</button>
+    </form>
+    <script>
+    function handlePeriod(val) {
+      ['specific_month','specific_quarter','specific_year','custom'].forEach(function(p){
+        document.getElementById('p-'+p).style.display='none';
+      });
+      if(val==='specific_quarter'||val==='custom'){
+        document.getElementById('p-'+val).style.display='flex';
+      } else if(val==='specific_month'||val==='specific_year'){
+        document.getElementById('p-'+val).style.display='block';
+      }
+      if(['month','quarter','year'].indexOf(val)>=0){
+        document.getElementById('period-form').submit();
+      }
+    }
+    </script>
+  </div>
 
   {% if not departments %}
   <div class="card" style="text-align:center;padding:50px">

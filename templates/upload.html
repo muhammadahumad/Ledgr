@@ -32,8 +32,8 @@
         Upload a photo or PDF of any bill, receipt, or invoice. LEDGR AI will extract vendor name,
         tax ID, invoice number, dates, line items, GST amount, and post automatically to the ledger.
       </div>
-      {% set plan = plan or {} %}
-      {% if plan.get('unlimited_scans') or (plan.get('ai_scans', 0)|int > 10) %}
+      
+      {% if plan.unlimited_scans is defined and plan.unlimited_scans or (plan.ai_scans is defined and plan.ai_scans|int > 10) %}
       <div style="background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.2);border-radius:7px;padding:8px 12px;font-size:11px;color:var(--mint);margin-bottom:14px">
         ✓ Unlimited AI scans enabled
       </div>
