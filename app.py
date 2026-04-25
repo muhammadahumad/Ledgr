@@ -8039,6 +8039,86 @@ def api_debug_counts():
 
     return jsonify({"ok": True, "business_id": bid, "version": app.config.get("LEDGR_VERSION","unknown"), "counts": counts})
 
+
+@app.route("/api/invoice/<int:inv_id>/update", methods=["POST"])
+@login_required
+def api_invoice_update(inv_id):
+    """Update invoice fields - works with imported invoices"""
+    business, err = api_business_guard()
+    if err: return err
+    db.session.rollback()
+    try:
+        result = db.session.execute(db.text(
+            "SELECT id, business_id FROM invoices WHERE id=:id AND business_id=:bid"
+        ), {"id": inv_id, "bid": business.id}).fetchone()
+        if not result:
+            return jsonify({"ok": False, "error": "Invoice not found"})
+        
+        data = request.get_json() or {}
+        updates = []
+        params = {"id": inv_id}
+        
+        allowed = ["invoice_number","invoice_date","due_date","status",
+                   "customer_id","buyer_legal_name","notes","currency",
+                   "subtotal","tax_amount","total_amount","amount_paid"]
+        
+        for field in allowed:
+            if field in data and data[field] is not None:
+                updates.append(f"{field} = :{field}")
+                params[field] = data[field]
+        
+        if updates:
+            db.session.execute(db.text(
+                f"UPDATE invoices SET {', '.join(updates)} WHERE id = :id"
+            ), params)
+            db.session.commit()
+        
+        return jsonify({"ok": True, "message": "Invoice updated"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+@app.route("/api/invoice/<int:inv_id>/void", methods=["POST"])
+@login_required
+def api_invoice_void(inv_id):
+    """Void an invoice"""
+    business, err = api_business_guard()
+    if err: return err
+    db.session.rollback()
+    try:
+        db.session.execute(db.text(
+            "UPDATE invoices SET status='VOID' WHERE id=:id AND business_id=:bid"
+        ), {"id": inv_id, "bid": business.id})
+        db.session.commit()
+        return jsonify({"ok": True, "message": "Invoice voided"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+@app.route("/api/invoice/<int:inv_id>/mark-paid", methods=["POST"])
+@login_required
+def api_invoice_mark_paid(inv_id):
+    """Mark invoice as paid"""
+    business, err = api_business_guard()
+    if err: return err
+    db.session.rollback()
+    try:
+        result = db.session.execute(db.text(
+            "SELECT total_amount FROM invoices WHERE id=:id AND business_id=:bid"
+        ), {"id": inv_id, "bid": business.id}).fetchone()
+        if not result:
+            return jsonify({"ok": False, "error": "Not found"})
+        db.session.execute(db.text(
+            "UPDATE invoices SET status='PAID', amount_paid=total_amount WHERE id=:id AND business_id=:bid"
+        ), {"id": inv_id, "bid": business.id})
+        db.session.commit()
+        return jsonify({"ok": True, "message": "Invoice marked as paid"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
 @app.route('/admin')
 @login_required
 @admin_required
