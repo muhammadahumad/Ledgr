@@ -4473,6 +4473,7 @@ def report_gst_return():
     tax = business.tax_rules()
     from datetime import date
     start, end, period_label, period = resolve_period(request.args)
+    today = date.today()
     total_supplies = float(db.session.query(db.func.sum(LedgerEntry.amount)).filter(
         LedgerEntry.business_id==business.id,
         LedgerEntry.entry_type=="REVENUE",
