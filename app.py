@@ -7974,15 +7974,33 @@ def api_debug_counts():
             db.session.rollback()
             counts[table] = f"ERROR: {str(e)[:80]}"
     
-    # Also get sample invoice
+    # Test get_invoices_raw directly
     try:
-        sample = db.session.execute(
-            db.text("SELECT id, invoice_number, total_amount, status FROM invoices WHERE business_id=:bid LIMIT 3"),
-            {"bid": bid}
-        ).fetchall()
-        counts['sample_invoices'] = [{"id":r[0],"num":r[1],"total":str(r[2]),"status":r[3]} for r in sample]
+        db.session.rollback()
+        test_rows = get_invoices_raw(bid)
+        counts['get_invoices_raw_count'] = len(test_rows)
+        if test_rows:
+            counts['sample_invoices'] = [
+                {"id":r['id'],"num":r['invoice_number'],
+                 "total":r['total_amount'],"status":r['status'],
+                 "cust":r['customer_name']} 
+                for r in test_rows[:3]
+            ]
+        else:
+            counts['sample_invoices'] = "EMPTY - get_invoices_raw returned []"
     except Exception as e:
-        counts['sample_invoices'] = f"ERROR: {str(e)[:100]}"
+        counts['sample_invoices'] = f"get_invoices_raw ERROR: {str(e)[:150]}"
+    
+    # Also test direct SQL
+    try:
+        db.session.rollback()
+        direct = db.session.execute(
+            db.text("SELECT COUNT(*), MIN(invoice_date), MAX(invoice_date) FROM invoices WHERE business_id=:bid"),
+            {"bid": bid}
+        ).fetchone()
+        counts['invoice_date_range'] = {"count":direct[0],"min":str(direct[1]),"max":str(direct[2])}
+    except Exception as e:
+        counts['invoice_date_range'] = f"ERROR: {str(e)[:100]}"
     
     return jsonify({"ok": True, "business_id": bid, "version": app.config.get("LEDGR_VERSION","unknown"), "counts": counts})
 
