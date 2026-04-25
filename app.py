@@ -9,7 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 
 app = Flask(__name__)
-app.config['LEDGR_VERSION'] = 'v2025-04-25-tx-fix'  # deployment marker
+app.config['LEDGR_VERSION'] = 'v2025-04-25-FINAL'  # deployment marker
 
 
 @app.after_request
