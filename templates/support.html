@@ -1,0 +1,103 @@
+{% extends "base.html" %}{% block title %}Support — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Support</div>
+    <div class="page-sub">Contact LEDGR support or report an issue</div></div>
+</div>
+<div class="content" style="max-width:700px">
+
+  <!-- New Ticket -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title">New Support Request</div>
+    <div class="field-group">
+      <div class="field-label">Priority</div>
+      <select class="select-input" id="t-priority" style="max-width:200px">
+        <option value="normal">Normal</option>
+        <option value="high">High — Blocking my work</option>
+        <option value="urgent">Urgent — Data issue / Filing deadline</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <div class="field-label">Subject *</div>
+      <input class="field-input" id="t-subject" placeholder="Brief description of issue">
+    </div>
+    <div class="field-group">
+      <div class="field-label">Message *</div>
+      <textarea class="field-input" id="t-message" rows="5"
+        placeholder="Describe what happened, what you expected, and any error messages you saw…"></textarea>
+    </div>
+    <button class="btn btn-primary" onclick="submitTicket()" id="t-submit">
+      📨 Send to Support
+    </button>
+    <div id="t-msg" style="display:none;margin-top:10px;font-size:12px;padding:10px 14px;border-radius:7px"></div>
+  </div>
+
+  <!-- Previous tickets -->
+  {% if tickets %}
+  <div class="card" style="padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+      <div class="card-title" style="margin:0">Previous Requests</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Subject</th><th>Status</th><th>Priority</th><th>Date</th></tr></thead>
+      <tbody>
+      {% for t in tickets %}
+      <tr>
+        <td style="font-weight:500">{{ t[1] }}</td>
+        <td><span class="badge badge-{% if t[2]=='open' %}amber{% elif t[2]=='resolved' %}green{% else %}gray{% endif %}">
+          {{ t[2] }}</span></td>
+        <td><span style="font-size:11px;color:{% if t[3]=='urgent' %}var(--red){% elif t[3]=='high' %}var(--amber){% else %}var(--text3){% endif %}">
+          {{ t[3] }}</span></td>
+        <td style="font-size:11px;color:var(--text3)">{{ t[4].strftime('%d %b %Y') if t[4] else '—' }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Quick links -->
+  <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <a href="mailto:support@ledgrglobal.com" class="card" style="text-decoration:none;padding:16px;display:flex;gap:12px;align-items:center">
+      <span style="font-size:24px">📧</span>
+      <div><div style="font-weight:600;font-size:12px">Email Support</div>
+        <div style="font-size:11px;color:var(--text3)">support@ledgrglobal.com</div></div>
+    </a>
+    <a href="https://wa.me/9607XXXXXXX" target="_blank" class="card" style="text-decoration:none;padding:16px;display:flex;gap:12px;align-items:center">
+      <span style="font-size:24px">💬</span>
+      <div><div style="font-weight:600;font-size:12px">WhatsApp</div>
+        <div style="font-size:11px;color:var(--text3)">Quick response during business hours</div></div>
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+function submitTicket() {
+  var subject  = document.getElementById('t-subject').value.trim();
+  var message  = document.getElementById('t-message').value.trim();
+  var priority = document.getElementById('t-priority').value;
+  var msg      = document.getElementById('t-msg');
+  var btn      = document.getElementById('t-submit');
+
+  if (!subject) { alert('Subject required'); return; }
+  if (!message) { alert('Message required'); return; }
+
+  btn.disabled=true; btn.textContent='Sending…';
+  fetch('/api/support/ticket', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({subject:subject, message:message, priority:priority})
+  }).then(r=>r.json()).then(res=>{
+    msg.style.display='block';
+    if (res.ok) {
+      msg.style.cssText='display:block;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--mint);padding:10px 14px;border-radius:7px;font-size:12px';
+      msg.textContent='✓ Request sent. We will respond within 24 hours.';
+      document.getElementById('t-subject').value='';
+      document.getElementById('t-message').value='';
+    } else {
+      msg.style.cssText='display:block;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red);padding:10px 14px;border-radius:7px;font-size:12px';
+      msg.textContent='Error: '+res.error;
+    }
+    btn.disabled=false; btn.textContent='📨 Send to Support';
+  });
+}
+</script>{% endblock %}

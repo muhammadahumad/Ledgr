@@ -1,85 +1,166 @@
-{% extends "base.html" %}{% block title %}Reconcile — {{ account.bank_name }}{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Bank Reconciliation — LEDGR{% endblock %}
+{% block content %}
 <div class="topbar">
-  <div><div class="page-title">Bank Reconciliation</div><div class="page-sub">{{ account.bank_name }} · {{ account.account_name }} · {{ account.currency }}</div></div>
-  <a href="/bank" class="btn">← Back to Bank</a>
+  <div><div class="page-title">Bank Reconciliation</div>
+    <div class="page-sub">Match bank statement to ledger entries</div></div>
+  <div style="display:flex;gap:8px">
+    <a href="/bank" class="btn">← Bank</a>
+  </div>
 </div>
-<div class="content" style="max-width:700px">
-  <div class="card" style="border-color:rgba(16,185,129,.3)">
-    <div class="card-title">Reconcile Account</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:16px">
-      <div class="stat-card"><div class="stat-label">Opening Balance</div><div class="stat-value" style="font-size:16px">{{ account.currency }} {{ "%.2f"|format(account.opening_balance) }}</div></div>
-      <div class="stat-card"><div class="stat-label">Current Book Balance</div><div class="stat-value" style="font-size:16px" id="book-bal">{{ account.currency }} {{ "%.2f"|format(account.current_balance) }}</div></div>
-      <div class="stat-card" id="variance-card"><div class="stat-label">Variance</div><div class="stat-value" style="font-size:16px" id="variance-val">—</div></div>
-    </div>
-    <div class="field-group">
-      <div class="field-label">Statement Closing Balance (from your bank statement)</div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <span style="color:var(--mint);font-weight:600">{{ account.currency }}</span>
-        <input class="field-input" type="number" id="stmt-bal" step="0.01" placeholder="0.00" oninput="calcVariance()" style="flex:1;max-width:200px">
-        <button class="btn btn-primary" onclick="reconcile()">Reconcile</button>
+<div class="content">
+
+  <!-- Account & period selector -->
+  <div class="card" style="margin-bottom:14px;padding:14px">
+    <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <div class="field-label">Bank / Cash Account</div>
+        <select class="select-input" name="account" style="min-width:200px">
+          <option value="">— Select Account —</option>
+          {% for a in bank_accounts %}
+          <option value="{{ a.code }}" {% if a.code==selected_account %}selected{% endif %}>
+            {{ a.code }} — {{ a.name }}</option>
+          {% endfor %}
+        </select>
       </div>
-    </div>
-    <div id="reconcile-result" style="display:none;margin-top:12px"></div>
+      <div>
+        <div class="field-label">Period</div>
+        <select class="select-input" name="period" onchange="this.form.submit()">
+          <option value="month"  {% if period=='month' %}selected{% endif %}>This Month</option>
+          <option value="quarter"{% if period=='quarter' %}selected{% endif %}>This Quarter</option>
+          <option value="year"   {% if period=='year' %}selected{% endif %}>This Year</option>
+          <option value="custom" {% if period=='custom' %}selected{% endif %}>Custom</option>
+        </select>
+      </div>
+      {% if period=='custom' %}
+      <div><div class="field-label">From</div>
+        <input class="field-input" type="date" name="start" value="{{ start }}"></div>
+      <div><div class="field-label">To</div>
+        <input class="field-input" type="date" name="end" value="{{ end }}"></div>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">Load</button>
+    </form>
   </div>
 
-  <div class="card">
-    <div class="card-title">Transaction History <span class="badge badge-blue">{{ transactions|length }}</span></div>
-    {% if transactions %}
-    <table class="table"><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Debit</th><th style="text-align:right">Credit</th><th style="text-align:right">Balance</th><th>Status</th></tr></thead><tbody>
-    {% for t in transactions %}<tr>
-      <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">{{ t.txn_date.strftime('%d %b %Y') if t.txn_date else '—' }}</td>
-      <td style="color:var(--text)">{{ t.description or '—' }}</td>
-      <td style="color:var(--text3);font-size:11px">{{ t.category or '—' }}</td>
-      <td style="text-align:right;color:var(--red);font-family:var(--mono)">{% if t.debit > 0 %}{{ "%.2f"|format(t.debit) }}{% endif %}</td>
-      <td style="text-align:right;color:var(--mint);font-family:var(--mono)">{% if t.credit > 0 %}{{ "%.2f"|format(t.credit) }}{% endif %}</td>
-      <td style="text-align:right;font-family:var(--mono)">{{ "%.2f"|format(t.balance) }}</td>
-      <td><span class="badge badge-{% if t.is_reconciled %}green{% else %}amber{% endif %}">{% if t.is_reconciled %}✓{% else %}Pending{% endif %}</span></td>
-    </tr>{% endfor %}
-    </tbody></table>
-    {% else %}
-    <div style="text-align:center;padding:30px;color:var(--text3)">No transactions yet. Upload a bank statement to get started.</div>
-    {% endif %}
+  {% if selected_account and unreconciled %}
+  <!-- Statement balance input -->
+  <div class="card" style="margin-bottom:14px;padding:14px">
+    <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+      <div>
+        <div class="field-label">Ledger Balance ({{ period_label }})</div>
+        <div style="font-weight:700;font-size:18px;font-family:var(--mono);
+          color:{% if account_balance >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+          {{ tax.currency }} {{ "%.2f"|format(account_balance) }}</div>
+      </div>
+      <div>
+        <div class="field-label">Bank Statement Balance</div>
+        <input class="field-input" type="number" step="0.01" id="stmt-balance"
+          placeholder="Enter statement balance" style="max-width:200px;font-family:var(--mono)">
+      </div>
+      <div>
+        <div class="field-label">Difference</div>
+        <div id="difference" style="font-weight:700;font-size:18px;font-family:var(--mono)">—</div>
+      </div>
+    </div>
   </div>
+
+  <!-- Transactions to reconcile -->
+  <div class="card" style="padding:0;margin-bottom:14px">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-weight:600">Transactions — {{ period_label }}</div>
+      <div style="display:flex;gap:8px">
+        <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" onchange="toggleAll(this)"> Select All</label>
+        <button class="btn btn-primary btn-sm" onclick="reconcile()">✓ Mark Reconciled</button>
+      </div>
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th style="width:36px"></th>
+        <th>Date</th><th>Description</th><th>Reference</th>
+        <th style="text-align:right">Debit</th>
+        <th style="text-align:right">Credit</th>
+        <th style="text-align:right">Movement</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody>
+      {% for t in unreconciled %}
+      <tr style="{% if t.reconciled %}opacity:.5{% endif %}">
+        <td style="text-align:center">
+          <input type="checkbox" class="recon-cb" value="{{ t.id }}"
+            {% if t.reconciled %}disabled{% endif %}>
+        </td>
+        <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">{{ t.date }}</td>
+        <td style="font-weight:500;font-size:12px">{{ t.description }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ t.reference or '—' }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;
+          color:{% if t.debit > 0 %}var(--mint){% else %}var(--text3){% endif %}">
+          {% if t.debit > 0 %}{{ tax.currency }} {{ "%.2f"|format(t.debit) }}{% else %}—{% endif %}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;
+          color:{% if t.credit > 0 %}var(--red){% else %}var(--text3){% endif %}">
+          {% if t.credit > 0 %}{{ tax.currency }} {{ "%.2f"|format(t.credit) }}{% else %}—{% endif %}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600;
+          color:{% if t.movement > 0 %}var(--mint){% else %}var(--red){% endif %}">
+          {{ tax.currency }} {{ "%.2f"|format(t.movement) }}</td>
+        <td>
+          {% if t.reconciled %}
+          <span class="badge badge-green">Reconciled</span>
+          {% else %}
+          <span class="badge badge-amber">Pending</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div id="recon-msg" style="display:none;font-size:12px;padding:10px 14px;border-radius:7px;margin-bottom:14px"></div>
+
+  {% elif selected_account %}
+  <div class="card" style="padding:40px;text-align:center;color:var(--text3)">
+    No transactions found for this account and period.
+  </div>
+  {% else %}
+  <div class="card" style="padding:40px;text-align:center;color:var(--text3)">
+    Select a bank or cash account above to begin reconciliation.
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}<script>
-var bookBal = {{ account.current_balance|float }};
-var currency = '{{ account.currency }}';
+var LEDGER_BALANCE = {{ account_balance }};
+var CCY = "{{ tax.currency }}";
 
-function calcVariance() {
-  var stmt = parseFloat(document.getElementById('stmt-bal').value) || 0;
-  var variance = stmt - bookBal;
-  var el = document.getElementById('variance-val');
-  var card = document.getElementById('variance-card');
-  el.textContent = currency + ' ' + variance.toFixed(2);
-  if (Math.abs(variance) < 0.01) {
-    el.style.color = 'var(--mint)';
-    card.style.borderColor = 'rgba(16,185,129,.3)';
-  } else {
-    el.style.color = variance < 0 ? 'var(--red)' : 'var(--amber)';
-    card.style.borderColor = 'rgba(239,68,68,.3)';
-  }
+document.getElementById('stmt-balance') && document.getElementById('stmt-balance').addEventListener('input', function() {
+  var stmt = parseFloat(this.value) || 0;
+  var diff = stmt - LEDGER_BALANCE;
+  var el = document.getElementById('difference');
+  el.textContent = CCY + ' ' + diff.toFixed(2);
+  el.style.color = Math.abs(diff) < 0.01 ? 'var(--mint)' : 'var(--red)';
+});
+
+function toggleAll(cb) {
+  document.querySelectorAll('.recon-cb:not(:disabled)').forEach(function(c){
+    c.checked = cb.checked;
+  });
 }
 
 function reconcile() {
-  var stmt = parseFloat(document.getElementById('stmt-bal').value);
-  if (!stmt && stmt !== 0) { alert('Enter statement balance'); return; }
+  var ids = Array.from(document.querySelectorAll('.recon-cb:checked')).map(function(c){ return parseInt(c.value); });
+  if (!ids.length) { alert('Select transactions to reconcile'); return; }
+  var stmt = parseFloat(document.getElementById('stmt-balance').value) || 0;
   fetch('/api/bank/reconcile', {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({account_id: {{ account.id }}, statement_balance: stmt})
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({line_ids:ids, statement_balance:stmt})
   }).then(r=>r.json()).then(res=>{
-    var el = document.getElementById('reconcile-result');
-    el.style.display = 'block';
-    if (res.ok) {
-      if (res.reconciled) {
-        el.innerHTML = '<div class="alert alert-success">✓ Reconciled! Statement balance matches book balance. Difference: ' + currency + ' 0.00</div>';
-      } else {
-        el.innerHTML = '<div class="alert" style="background:rgba(245,158,11,.08);border-color:var(--amber);color:var(--amber)">⚠ Variance of ' + currency + ' ' + Math.abs(res.variance).toFixed(2) + '. Review unrecorded transactions or timing differences.</div>';
-      }
-      document.getElementById('book-bal').textContent = currency + ' ' + res.book_balance.toFixed(2);
-      bookBal = res.book_balance;
+    var msg = document.getElementById('recon-msg');
+    msg.style.display='block';
+    if(res.ok){
+      msg.style.cssText='display:block;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--mint);padding:10px 14px;border-radius:7px;font-size:12px';
+      msg.textContent='✓ '+res.reconciled_count+' transactions reconciled. Reloading…';
+      setTimeout(function(){ location.reload(); }, 1500);
     } else {
-      el.innerHTML = '<div class="alert alert-error">Error: ' + res.error + '</div>';
+      msg.style.cssText='display:block;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:var(--red);padding:10px 14px;border-radius:7px;font-size:12px';
+      msg.textContent='Error: '+res.error;
     }
   });
 }

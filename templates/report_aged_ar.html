@@ -1,0 +1,75 @@
+{% extends "base.html" %}{% block title %}Aged Receivables — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Aged Receivables</div>
+    <div class="page-sub">Outstanding invoices by age — as of {{ today.strftime('%d %b %Y') }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button onclick="window.print()" class="btn">🖨 Print</button>
+    <a href="/reports" class="btn">← Reports</a>
+  </div>
+</div>
+<div class="content">
+
+  <!-- Summary buckets -->
+  <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px">
+    {% for key,label,color in [('current','Current','var(--mint)'),('1_30','1–30 days','var(--amber)'),('31_60','31–60 days','#f97316'),('61_90','61–90 days','var(--red)'),('over_90','Over 90','#7f1d1d)')] %}
+    <div class="card" style="padding:14px;text-align:center;border-top:3px solid {{color}}">
+      <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">{{label}}</div>
+      <div style="font-weight:700;font-size:16px;color:{{color}};font-family:var(--mono)">
+        {{ tax.currency }} {{ "%.2f"|format(totals[key]) }}</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:3px">{{ buckets[key]|length }} invoice(s)</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Total -->
+  <div class="card" style="padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-weight:700;font-size:14px">Total Outstanding</div>
+    <div style="font-weight:700;font-size:20px;color:var(--red);font-family:var(--mono)">
+      {{ tax.currency }} {{ "%.2f"|format(totals.total) }}</div>
+  </div>
+
+  <!-- Detail per bucket -->
+  {% for key,label,color in [('current','Current (not yet due)','var(--mint)'),('1_30','1–30 Days Overdue','var(--amber)'),('31_60','31–60 Days Overdue','#f97316'),('61_90','61–90 Days Overdue','var(--red)'),('over_90','Over 90 Days Overdue','#7f1d1d')] %}
+  {% if buckets[key] %}
+  <div class="card" style="margin-bottom:14px;padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+      <div style="font-weight:600;font-size:13px;color:{{color}}">{{label}}</div>
+      <div style="font-weight:700;font-family:var(--mono);color:{{color}}">
+        {{ tax.currency }} {{ "%.2f"|format(totals[key]) }}</div>
+    </div>
+    <table class="table">
+      <thead><tr>
+        <th>Invoice #</th><th>Customer</th><th>Invoice Date</th>
+        <th>Due Date</th><th>Days</th>
+        <th style="text-align:right">Total</th>
+        <th style="text-align:right">Outstanding</th>
+      </tr></thead>
+      <tbody>
+      {% for inv in buckets[key] %}
+      <tr>
+        <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
+        <td style="font-weight:500">{{ inv.customer_name }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ inv.invoice_date }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ inv.due_date }}</td>
+        <td style="font-size:11px;color:{{color}};font-weight:600">
+          {% if inv.days_overdue > 0 %}{{ inv.days_overdue }} days{% else %}—{% endif %}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:12px">
+          {{ inv.currency }} {{ "%.2f"|format(inv.total) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:700;color:{{color}}">
+          {{ inv.currency }} {{ "%.2f"|format(inv.outstanding) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% if totals.total == 0 %}
+  <div class="card" style="padding:40px;text-align:center;color:var(--text3)">
+    ✓ No outstanding receivables
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
