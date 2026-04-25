@@ -1854,10 +1854,34 @@ def invoices():
     try:
         invoice_list = Invoice.query.filter_by(
             business_id=business.id).order_by(Invoice.created_at.desc()).all()
-    except Exception as e:
-        # DB columns may not exist yet - run ALTER TABLE statements
+    except Exception:
         db.session.rollback()
-        invoice_list = []
+        # Fallback: raw SQL to get invoices even if new columns don't exist yet
+        try:
+            result = db.session.execute(db.text(
+                "SELECT id, invoice_number, customer_id, invoice_date, due_date, "
+                "currency, total_amount, amount_paid, status, created_at "
+                "FROM invoices WHERE business_id = :bid ORDER BY created_at DESC"
+            ), {"bid": business.id})
+            # Build minimal invoice objects
+            from collections import namedtuple
+            InvRow = namedtuple('InvRow', ['id','invoice_number','customer_id',
+                'invoice_date','due_date','currency','total_amount','amount_paid',
+                'status','created_at','customer','is_recurring','recur_interval'])
+            invoice_list = []
+            for r in result:
+                cust = Customer.query.get(r.customer_id) if r.customer_id else None
+                invoice_list.append(InvRow(
+                    id=r.id, invoice_number=r.invoice_number,
+                    customer_id=r.customer_id, invoice_date=r.invoice_date,
+                    due_date=r.due_date, currency=r.currency or business.base_currency,
+                    total_amount=r.total_amount, amount_paid=r.amount_paid,
+                    status=r.status, created_at=r.created_at,
+                    customer=cust, is_recurring=False, recur_interval=None
+                ))
+        except Exception:
+            db.session.rollback()
+            invoice_list = []
     customers_list = Customer.query.filter_by(business_id=business.id).order_by(Customer.name).all()
     products_list = []
     if business.has_inventory:
@@ -4564,14 +4588,44 @@ def report_gst_return():
 
 
 
+@app.route("/api/gst/save-adjustments", methods=["POST"])
+@login_required
+def api_gst_save_adjustments():
+    """Save GST filing adjustments - exclude unpaid invoices or specific transactions"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json() or {}
+    period_key = data.get("period_key", "")  # e.g. "2025-Q1"
+    excluded_invoices = data.get("excluded_invoices", [])  # list of invoice IDs
+    excluded_bills    = data.get("excluded_bills", [])     # list of document IDs
+    manual_output_adj = float(data.get("manual_output_adj", 0))  # manual adjustments
+    manual_input_adj  = float(data.get("manual_input_adj", 0))
+
+    # Store as JSON in a simple key-value via business compliance_data
+    import json
+    existing = json.loads(business.compliance_data or "{}") if hasattr(business,'compliance_data') else {}
+    existing[f"gst_adj_{period_key}"] = {
+        "excluded_invoices": excluded_invoices,
+        "excluded_bills":    excluded_bills,
+        "manual_output_adj": manual_output_adj,
+        "manual_input_adj":  manual_input_adj,
+        "saved_at": datetime.utcnow().isoformat()
+    }
+    if hasattr(business, 'compliance_data'):
+        business.compliance_data = json.dumps(existing)
+    db.session.commit()
+    return jsonify({"ok": True, "message": "GST adjustments saved"})
+
+
 @app.route("/api/gst/output-details")
-@business_required
+@login_required  
 def api_gst_output_details():
     """Drill-down: all invoices contributing to output GST for a period"""
-    business = current_business()
+    business, err = api_business_guard()
+    if err: return err
     tax = business.tax_rules()
-    start_str = request.args.get("start", "")
-    end_str = request.args.get("end", "")
+    start_str = request.args.get("start","")
+    end_str   = request.args.get("end","")
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d").date()
         end   = datetime.strptime(end_str,   "%Y-%m-%d").date()
@@ -4580,17 +4634,32 @@ def api_gst_output_details():
         start = date(today.year, today.month, 1)
         end   = today
 
-    invoices = Invoice.query.filter(
-        Invoice.business_id == business.id,
-        Invoice.invoice_date >= start,
-        Invoice.invoice_date <= end,
-        Invoice.status.notin_(["VOID","DRAFT"])
-    ).order_by(Invoice.invoice_date).all()
+    # Load any saved exclusions
+    import json
+    period_key = f"{start_str}_{end_str}"
+    adj = {}
+    if hasattr(business, 'compliance_data') and business.compliance_data:
+        try:
+            all_adj = json.loads(business.compliance_data)
+            adj = all_adj.get(f"gst_adj_{period_key}", {})
+        except: pass
+    excluded = adj.get("excluded_invoices", [])
+
+    try:
+        invoices = Invoice.query.filter(
+            Invoice.business_id == business.id,
+            Invoice.invoice_date >= start,
+            Invoice.invoice_date <= end,
+            Invoice.status.notin_(["VOID","DRAFT"])
+        ).order_by(Invoice.invoice_date).all()
+    except:
+        db.session.rollback()
+        invoices = []
 
     rows = []
     for inv in invoices:
         total   = float(inv.total_amount or 0)
-        tax_amt = float(inv.tax_amount or 0)
+        tax_amt = float(inv.tax_amount  or 0)
         if tax_amt == 0 and total > 0:
             tax_amt = round(total * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
         subtotal = total - tax_amt
@@ -4603,32 +4672,34 @@ def api_gst_output_details():
             "tax_amount":     round(tax_amt,  2),
             "total":          round(total,    2),
             "status":         inv.status,
-            "currency":       inv.currency or tax["currency"]
+            "currency":       inv.currency or tax["currency"],
+            "excluded":       inv.id in excluded
         })
 
-    total_taxable = sum(r["subtotal"]   for r in rows)
-    total_tax     = sum(r["tax_amount"] for r in rows)
-    total_gross   = sum(r["total"]      for r in rows)
+    included = [r for r in rows if not r["excluded"]]
+    total_tax = sum(r["tax_amount"] for r in included)
+    total_taxable = sum(r["subtotal"] for r in included)
 
     return jsonify({
-        "ok":            True,
-        "rows":          rows,
+        "ok": True, "rows": rows,
         "total_taxable": round(total_taxable, 2),
         "total_tax":     round(total_tax,     2),
-        "total_gross":   round(total_gross,   2),
+        "total_gross":   round(total_taxable + total_tax, 2),
         "currency":      tax["currency"],
-        "period":        f"{start_str} to {end_str}"
+        "period":        f"{start_str} to {end_str}",
+        "excluded_count": len(excluded)
     })
 
 
 @app.route("/api/gst/input-details")
-@business_required
+@login_required
 def api_gst_input_details():
-    """Drill-down: all bills contributing to input GST for a period"""
-    business = current_business()
+    """Drill-down: all bills contributing to input GST"""
+    business, err = api_business_guard()
+    if err: return err
     tax = business.tax_rules()
-    start_str = request.args.get("start", "")
-    end_str   = request.args.get("end",   "")
+    start_str = request.args.get("start","")
+    end_str   = request.args.get("end","")
     try:
         start = datetime.strptime(start_str, "%Y-%m-%d").date()
         end   = datetime.strptime(end_str,   "%Y-%m-%d").date()
@@ -4636,6 +4707,16 @@ def api_gst_input_details():
         today = date.today()
         start = date(today.year, today.month, 1)
         end   = today
+
+    import json
+    period_key = f"{start_str}_{end_str}"
+    adj = {}
+    if hasattr(business, 'compliance_data') and business.compliance_data:
+        try:
+            all_adj = json.loads(business.compliance_data)
+            adj = all_adj.get(f"gst_adj_{period_key}", {})
+        except: pass
+    excluded = adj.get("excluded_bills", [])
 
     docs = Document.query.filter(
         Document.business_id == business.id,
@@ -4661,69 +4742,26 @@ def api_gst_input_details():
             "tax_amount":     round(tax_amt,  2),
             "total":          round(total,    2),
             "doc_type":       doc.doc_type,
-            "currency":       doc.currency or tax["currency"]
+            "currency":       doc.currency or tax["currency"],
+            "excluded":       doc.id in excluded
         })
 
-    total_taxable = sum(r["subtotal"]   for r in rows)
-    total_tax     = sum(r["tax_amount"] for r in rows)
-    total_gross   = sum(r["total"]      for r in rows)
+    included = [r for r in rows if not r["excluded"]]
+    total_tax = sum(r["tax_amount"] for r in included)
+    total_taxable = sum(r["subtotal"] for r in included)
 
     return jsonify({
-        "ok":            True,
-        "rows":          rows,
+        "ok": True, "rows": rows,
         "total_taxable": round(total_taxable, 2),
         "total_tax":     round(total_tax,     2),
-        "total_gross":   round(total_gross,   2),
+        "total_gross":   round(total_taxable + total_tax, 2),
         "currency":      tax["currency"],
-        "period":        f"{start_str} to {end_str}"
+        "period":        f"{start_str} to {end_str}",
+        "excluded_count": len(excluded)
     })
 
-# ════════════════════════════════════════════════════════════════════════════
-# CREDIT NOTES
-# ════════════════════════════════════════════════════════════════════════════
 
-@app.route("/api/invoice/<int:inv_id>/credit-note", methods=["POST"])
-@login_required
-def api_create_credit_note(inv_id):
-    user = current_user()
-    business, err = api_business_guard()
-    if err: return err
-    inv = Invoice.query.filter_by(id=inv_id, business_id=business.id).first()
-    if not inv: return jsonify({"ok":False,"error":"Invoice not found"})
-    data = request.get_json()
-    amount = float(data.get("amount", inv.total_amount or 0))
-    reason = data.get("reason","Credit note")
-    try:
-        # Generate credit note number
-        count = CreditNote.query.filter_by(business_id=business.id).count()
-        cn_number = (business.invoice_prefix or "INV") + "-CN-" + str(count+1).zfill(4)
-        cn = CreditNote(
-            business_id=business.id,
-            invoice_id=inv.id,
-            credit_note_number=cn_number,
-            amount=amount,
-            reason=reason,
-            status="ISSUED"
-        )
-        db.session.add(cn)
-        # Post reversal journal
-        lines = [
-            {"account_code":"4000","debit":amount,"credit":0,"description":"Credit note: "+cn_number},
-            {"account_code":"1100","debit":0,"credit":amount,"description":"AR reversed: "+inv.invoice_number}
-        ]
-        je = post_journal(business.id, user.id,
-                         "Credit Note "+cn_number+" for Invoice "+inv.invoice_number,
-                         cn_number, "CREDIT_NOTE", lines)
-        cn.journal_entry_id = je.id
-        # Update invoice
-        inv.amount_paid = float(inv.amount_paid or 0) + amount
-        if inv.amount_paid >= float(inv.total_amount or 0):
-            inv.status = "PAID"
-        db.session.commit()
-        return jsonify({"ok":True,"cn_number":cn_number,"message":"Credit note "+cn_number+" issued"})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok":False,"error":str(e)})
+
 
 
 # ════════════════════════════════════════════════════════════════════════════
