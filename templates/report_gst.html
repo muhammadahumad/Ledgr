@@ -1,14 +1,19 @@
-{% extends "base.html" %}{% block title %}GST Return — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}GST Return — LEDGR{% endblock %}
+{% block content %}
 <div class="topbar">
-  <div><div class="page-title">GST Return — {{ 'MIRA 205' if business.gst_sector != 'tourism' else 'MIRA 206' }}</div>
-  <div class="page-sub">{{ business.display_name() }} · {{ period_label }}</div></div>
+  <div>
+    <div class="page-title">{{ 'MIRA 206 — T-GST Return' if business.gst_sector=='tourism' else 'MIRA 205 — GST Return' }}</div>
+    <div class="page-sub">{{ business.display_name() }} · {{ period_label }}</div>
+  </div>
   <div style="display:flex;gap:8px">
     <button onclick="window.print()" class="btn">🖨 Print</button>
     <a href="/reports" class="btn">← Reports</a>
   </div>
 </div>
+
 <div class="content">
-    <!-- Period Selector -->
+
+  <!-- ── Period Selector ──────────────────────────────────────────────── -->
   <div class="card" style="margin-bottom:14px;padding:12px 16px">
     <form method="get" id="period-form" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
       <div>
@@ -31,15 +36,15 @@
       <div id="p-specific_quarter" style="display:{% if period=='specific_quarter' %}flex{% else %}none{% endif %};gap:8px">
         <div><div class="field-label">Quarter</div>
           <select class="select-input" name="q">
-            <option value="1" {% if request.args.get('q')=='1' %}selected{% endif %}>Q1 (Jan–Mar)</option>
-            <option value="2" {% if request.args.get('q')=='2' %}selected{% endif %}>Q2 (Apr–Jun)</option>
-            <option value="3" {% if request.args.get('q')=='3' %}selected{% endif %}>Q3 (Jul–Sep)</option>
-            <option value="4" {% if request.args.get('q')=='4' %}selected{% endif %}>Q4 (Oct–Dec)</option>
+            <option value="1" {% if request.args.get('q')=='1' %}selected{% endif %}>Q1 Jan–Mar</option>
+            <option value="2" {% if request.args.get('q')=='2' %}selected{% endif %}>Q2 Apr–Jun</option>
+            <option value="3" {% if request.args.get('q')=='3' %}selected{% endif %}>Q3 Jul–Sep</option>
+            <option value="4" {% if request.args.get('q')=='4' %}selected{% endif %}>Q4 Oct–Dec</option>
           </select></div>
         <div><div class="field-label">Year</div>
           <select class="select-input" name="year">
             {% for y in range(2020,2028) %}
-            <option value="{{ y }}" {% if request.args.get('year','')|int==y or (not request.args.get('year') and y==start.year if start else false) %}selected{% endif %}>{{ y }}</option>
+            <option value="{{ y }}" {% if request.args.get('year','')|int==y or (not request.args.get('year') and start and y==start.year) %}selected{% endif %}>{{ y }}</option>
             {% endfor %}
           </select></div>
       </div>
@@ -53,402 +58,362 @@
       </div>
       <div id="p-custom" style="display:{% if period=='custom' %}flex{% else %}none{% endif %};gap:8px">
         <div><div class="field-label">From</div>
-          <input class="field-input" type="date" name="start"
-            value="{{ start.strftime('%Y-%m-%d') if start else '' }}"></div>
+          <input class="field-input" type="date" name="start" value="{{ start.strftime('%Y-%m-%d') if start else '' }}"></div>
         <div><div class="field-label">To</div>
-          <input class="field-input" type="date" name="end"
-            value="{{ end.strftime('%Y-%m-%d') if end else '' }}"></div>
+          <input class="field-input" type="date" name="end" value="{{ end.strftime('%Y-%m-%d') if end else '' }}"></div>
       </div>
       <button type="submit" class="btn btn-primary" style="height:36px;padding:0 16px">Apply</button>
     </form>
-    <script>
-    function handlePeriod(val) {
-      ['specific_month','specific_quarter','specific_year','custom'].forEach(function(p){
-        document.getElementById('p-'+p).style.display='none';
-      });
-      if(val==='specific_quarter'||val==='custom'){
-        document.getElementById('p-'+val).style.display='flex';
-      } else if(val==='specific_month'||val==='specific_year'){
-        document.getElementById('p-'+val).style.display='block';
-      }
-      if(['month','quarter','year'].indexOf(val)>=0){
-        // Clear stale params and submit cleanly
-        var form = document.getElementById('period-form');
-        var newForm = document.createElement('form');
-        newForm.method = 'get';
-        newForm.action = window.location.pathname;
-        var inp = document.createElement('input');
-        inp.type='hidden'; inp.name='period'; inp.value=val;
-        newForm.appendChild(inp);
-        document.body.appendChild(newForm);
-        newForm.submit();
-      }
-    }
-    </script>
   </div>
 
-  <div class="card" id="print-area" style="max-width:680px;margin:0 auto">
+  <!-- ── GST Return Form ───────────────────────────────────────────────── -->
+  <div class="card" id="print-area" style="max-width:700px;margin:0 auto">
+
     <!-- Header -->
     <div style="text-align:center;padding-bottom:16px;border-bottom:2px solid var(--border);margin-bottom:20px">
-      {% if business.logo_data %}<img src="/api/business/logo" style="height:45px;object-fit:contain;margin:0 auto 8px;display:block">{% endif %}
-      <div style="font-size:16px;font-weight:700;color:var(--text)">{{ business.display_name() }}</div>
-      {% if business.is_tax_registered %}
-      <div style="font-size:11px;color:var(--text3)">{{ tax.tax_name }} TIN: {{ business.tax_registration_number or '—' }}</div>
+      {% if business.logo_data %}
+      <img src="/api/business/logo" style="height:45px;object-fit:contain;display:block;margin:0 auto 8px">
       {% endif %}
-      <div style="font-size:13px;font-weight:700;margin-top:10px">
-        {% if business.gst_sector == 'tourism' %}MIRA 206 — GST RETURN (TOURISM SECTOR){% else %}MIRA 205 — GST RETURN (GENERAL SECTOR){% endif %}
+      <div style="font-size:16px;font-weight:700">{{ business.display_name() }}</div>
+      {% if business.tax_registration_number %}
+      <div style="font-size:11px;color:var(--text3)">{{ tax.tax_name }} TIN: {{ business.tax_registration_number }}</div>
+      {% endif %}
+      <div style="font-size:14px;font-weight:700;margin-top:12px;color:var(--text)">
+        {{ 'MIRA 206 — GST RETURN (TOURISM SECTOR)' if business.gst_sector=='tourism' else 'MIRA 205 — GST RETURN (GENERAL SECTOR)' }}
       </div>
-      <div style="font-size:12px;color:var(--text2)">{{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}</div>
-      <div style="font-size:11px;color:var(--red);margin-top:4px">Filing due: {{ due_date.strftime('%d %b %Y') }}</div>
+      <div style="font-size:12px;color:var(--text2);margin-top:4px">
+        {{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}
+      </div>
+      <div style="font-size:11px;color:var(--red);margin-top:4px">
+        Filing due: {{ due_date.strftime('%d %b %Y') }}
+      </div>
     </div>
 
-    <!-- Output Tax -->
-    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mint);padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px">Part A — Output Tax</div>
-    {% macro box(num, label, value, color='var(--text)') %}
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:7px;margin-bottom:6px">
+    <!-- Part A -->
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mint);padding:6px 0;margin-bottom:8px">
+      Part A — Output Tax
+    </div>
+
+    {% macro box_row(num, label, value, color='var(--text)') %}
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
       <div style="display:flex;align-items:center;gap:12px">
-        <div style="width:30px;height:30px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--text2)">{{ num }}</div>
+        <div style="width:28px;height:28px;background:var(--bg);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);flex-shrink:0">{{ num }}</div>
         <span style="font-size:13px;color:var(--text2)">{{ label }}</span>
       </div>
-      <span style="font-family:var(--mono);font-weight:700;font-size:14px;color:{{ color }}">{{ tax.currency }} {{ "%.2f"|format(value) }}</span>
+      <span style="font-family:var(--mono);font-weight:700;font-size:15px;color:{{ color }};white-space:nowrap">
+        {{ tax.currency }} {{ "{:,.2f}".format(value) }}
+      </span>
     </div>
     {% endmacro %}
-    {{ box(1, 'Total value of all supplies (Sales)', total_supplies) }}
-    {{ box(2, 'Zero-rated and exempt supplies', exempt_supplies, 'var(--text3)') }}
-    {{ box(3, 'Taxable supplies (Box 1 minus Box 2)', taxable_supplies) }}
-    <!-- Box 4: Output Tax — clickable to expand -->
-    <div style="border-bottom:1px solid var(--border);padding:10px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleDrillDown('output')">
-        <div>
-          <span style="font-size:11px;font-weight:700;color:var(--text3);margin-right:8px">Box 4</span>
-          <span style="font-size:13px;color:var(--text2)">Output tax ({{ (tax.tax_rate * 100)|round(1) }}% of Box 3)</span>
-          <span style="font-size:10px;color:var(--mint);margin-left:8px">▼ click to expand</span>
-        </div>
-        <span style="font-family:var(--mono);font-weight:700;font-size:14px;color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(output_tax) }}</span>
-      </div>
-      <!-- Output drill-down -->
-      <div id="output-drilldown" style="display:none;margin-top:10px">
-        <div id="output-loading" style="display:none"></div>
-        <div id="output-table"></div>
-        <div id="output-export" style="display:none;margin-top:8px">
-          <button onclick="exportOutput()" class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)">📥 Export CSV</button>
-          <span style="font-size:10px;color:var(--text3);margin-left:8px">For MIRA portal submission</span>
-        </div>
-      </div>
-    </div>
 
-    <!-- Input Tax -->
-    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);padding:10px 0 6px;border-bottom:1px solid var(--border);margin-bottom:8px;margin-top:12px">Part B — Input Tax</div>
-    {{ box(5, 'Total value of purchases and expenses', total_purchases) }}
-    <!-- Box 6: Input Tax — clickable to expand -->
-    <div style="border-bottom:1px solid var(--border);padding:10px 0">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleDrillDown('input')">
-        <div>
-          <span style="font-size:11px;font-weight:700;color:var(--text3);margin-right:8px">Box 6</span>
-          <span style="font-size:13px;color:var(--text2)">Input tax claimed (purchases from GST-registered suppliers)</span>
-          <span style="font-size:10px;color:#60a5fa;margin-left:8px">▼ click to expand</span>
-        </div>
-        <span style="font-family:var(--mono);font-weight:700;font-size:14px;color:#60a5fa">{{ tax.currency }} {{ "%.2f"|format(input_tax) }}</span>
-      </div>
-      <!-- Input drill-down -->
-      <div id="input-drilldown" style="display:none;margin-top:10px">
-        <div id="input-loading" style="display:none"></div>
-        <div id="input-table"></div>
-        <div id="input-export" style="display:none;margin-top:8px">
-          <button onclick="exportInput()" class="btn btn-sm" style="color:#60a5fa;border-color:#60a5fa">📥 Export CSV</button>
-          <span style="font-size:10px;color:var(--text3);margin-left:8px">For MIRA portal submission</span>
-        </div>
-      </div>
-    </div>
+    {{ box_row(1, 'Total value of all supplies (Sales)', total_supplies) }}
+    {{ box_row(2, 'Zero-rated and exempt supplies', exempt_supplies, 'var(--text3)') }}
+    {{ box_row(3, 'Taxable supplies (Box 1 minus Box 2)', taxable_supplies) }}
 
-    <!-- Net -->
-    <div style="margin-top:16px;padding:16px;border:2px solid {% if net_tax > 0 %}var(--red){% elif net_tax < 0 %}var(--mint){% else %}var(--border){% endif %};border-radius:9px">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div>
-          <div style="font-weight:700;font-size:14px;color:var(--text)">
-            {% if net_tax > 0 %}Box 7: Tax Payable to MIRA{% elif net_tax < 0 %}Box 7: Refund Claimable{% else %}Box 7: No Tax Due{% endif %}
+    <!-- Box 4 — expandable -->
+    <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;cursor:pointer;background:var(--bg)"
+           onclick="toggleBox('output')">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:28px;height:28px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);flex-shrink:0">4</div>
+          <div>
+            <div style="font-size:13px;color:var(--text2)">Output tax ({{ (tax.tax_rate * 100)|round(1) }}% of Box 3)</div>
+            <div style="font-size:10px;color:var(--mint);margin-top:1px">▼ Click to expand · check/uncheck invoices · export CSV</div>
           </div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">Output tax (Box 4) minus Input tax (Box 6)</div>
         </div>
-        <div style="font-family:var(--mono);font-size:22px;font-weight:700;color:{% if net_tax > 0 %}var(--red){% elif net_tax < 0 %}var(--mint){% else %}var(--text3){% endif %}">
-          {{ tax.currency }} {{ "%.2f"|format(net_tax|abs) }}
+        <span style="font-family:var(--mono);font-weight:700;font-size:15px;color:var(--mint);white-space:nowrap">
+          {{ tax.currency }} {{ "{:,.2f}".format(output_tax) }}
+        </span>
+      </div>
+      <div id="output-box" style="display:none;border-top:1px solid var(--border)">
+        <div style="padding:10px 12px;display:flex;gap:8px;background:rgba(16,185,129,.04)">
+          <button class="btn btn-sm" onclick="selectAll('output', false)">✓ Include All</button>
+          <button class="btn btn-sm" onclick="selectAll('output', true)">✗ Exclude All</button>
+          <button class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)" onclick="exportCSV('output')">📥 Export CSV</button>
+          <span id="output-summary" style="font-size:11px;color:var(--text3);align-self:center;margin-left:auto"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px" id="output-table">
+            <thead>
+              <tr style="background:var(--bg);color:var(--text3)">
+                <th style="padding:8px;width:32px;text-align:center">
+                  <input type="checkbox" checked onchange="selectAll('output', !this.checked)" title="Toggle all">
+                </th>
+                <th style="padding:8px;text-align:left">Date</th>
+                <th style="padding:8px;text-align:left">Invoice #</th>
+                <th style="padding:8px;text-align:left">Customer</th>
+                <th style="padding:8px;text-align:right">Taxable</th>
+                <th style="padding:8px;text-align:right">GST</th>
+                <th style="padding:8px;text-align:right">Total</th>
+                <th style="padding:8px">Status</th>
+              </tr>
+            </thead>
+            <tbody id="output-tbody"></tbody>
+            <tfoot>
+              <tr style="font-weight:700;background:var(--surface2);border-top:2px solid var(--border)">
+                <td colspan="4" style="padding:10px 8px" id="output-count"></td>
+                <td style="padding:10px 8px;text-align:right;font-family:monospace" id="output-total-sub"></td>
+                <td style="padding:10px 8px;text-align:right;font-family:monospace;color:var(--mint)" id="output-total-tax"></td>
+                <td style="padding:10px 8px;text-align:right;font-family:monospace" id="output-total-gross"></td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
     </div>
 
-    <!-- Instructions -->
-    <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:8px;font-size:11px;color:var(--text3)">
-      <div style="font-weight:600;color:var(--text2);margin-bottom:6px">📋 Filing Instructions</div>
-      <div>1. Log in to <strong>MIRAconnect</strong> at mira.gov.mv</div>
-      <div>2. Select <strong>{% if business.gst_sector == 'tourism' %}MIRA 206{% else %}MIRA 205{% endif %}</strong> from the GST Returns section</div>
-      <div>3. Enter the values above in the corresponding boxes</div>
-      <div>4. Submit and pay by <strong style="color:var(--red)">{{ due_date.strftime('%d %b %Y') }}</strong></div>
-      {% if business.gst_sector == 'tourism' %}
-      <div style="margin-top:6px;color:var(--amber)">⚠ Tourism sector returns must be prepared and paid in <strong>US Dollars (USD)</strong></div>
-      {% endif %}
+    <!-- Part B -->
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#60a5fa;padding:6px 0;margin:14px 0 8px">
+      Part B — Input Tax
     </div>
 
-    <div style="margin-top:14px;font-size:10px;color:var(--text3);text-align:center">
-      Generated by LEDGR · {{ today.strftime('%d %b %Y') }} · Verify figures against your records before filing
+    {{ box_row(5, 'Total value of purchases and expenses', total_purchases, 'var(--text)') }}
+
+    <!-- Box 6 — expandable -->
+    <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;cursor:pointer;background:var(--bg)"
+           onclick="toggleBox('input')">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div style="width:28px;height:28px;background:var(--surface2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text3);flex-shrink:0">6</div>
+          <div>
+            <div style="font-size:13px;color:var(--text2)">Input tax claimed (GST-registered suppliers)</div>
+            <div style="font-size:10px;color:#60a5fa;margin-top:1px">▼ Click to expand · check/uncheck bills · export CSV</div>
+          </div>
+        </div>
+        <span style="font-family:var(--mono);font-weight:700;font-size:15px;color:#60a5fa;white-space:nowrap">
+          {{ tax.currency }} {{ "{:,.2f}".format(input_tax) }}
+        </span>
+      </div>
+      <div id="input-box" style="display:none;border-top:1px solid var(--border)">
+        <div style="padding:10px 12px;display:flex;gap:8px;background:rgba(96,165,250,.04)">
+          <button class="btn btn-sm" onclick="selectAll('input', false)">✓ Include All</button>
+          <button class="btn btn-sm" onclick="selectAll('input', true)">✗ Exclude All</button>
+          <button class="btn btn-sm" style="color:#60a5fa;border-color:#60a5fa" onclick="exportCSV('input')">📥 Export CSV</button>
+          <span id="input-summary" style="font-size:11px;color:var(--text3);align-self:center;margin-left:auto"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:11px" id="input-table">
+            <thead>
+              <tr style="background:var(--bg);color:var(--text3)">
+                <th style="padding:8px;width:32px;text-align:center">
+                  <input type="checkbox" checked onchange="selectAll('input', !this.checked)" title="Toggle all">
+                </th>
+                <th style="padding:8px;text-align:left">Date</th>
+                <th style="padding:8px;text-align:left">Ref #</th>
+                <th style="padding:8px;text-align:left">Vendor</th>
+                <th style="padding:8px;text-align:left">TIN</th>
+                <th style="padding:8px;text-align:right">Net</th>
+                <th style="padding:8px;text-align:right">Tax</th>
+                <th style="padding:8px;text-align:right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="input-tbody"></tbody>
+            <tfoot>
+              <tr style="font-weight:700;background:var(--surface2);border-top:2px solid var(--border)">
+                <td colspan="5" style="padding:10px 8px" id="input-count"></td>
+                <td style="padding:10px 8px;text-align:right;font-family:monospace" id="input-total-sub"></td>
+                <td style="padding:10px 8px;text-align:right;font-family:monospace;color:#60a5fa" id="input-total-tax"></td>
+                <td style="padding:10px 8px;text-align:right;font-family:monospace" id="input-total-gross"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
+
+    <!-- Box 7 -->
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:{% if net_tax > 0 %}rgba(239,68,68,.08){% else %}rgba(16,185,129,.08){% endif %};border:2px solid {% if net_tax > 0 %}var(--red){% else %}var(--mint){% endif %};border-radius:10px;margin-top:14px">
+      <div>
+        <div style="font-weight:700;font-size:13px">Box 7 — Net Tax Payable to MIRA</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">Output tax (Box 4) minus Input tax (Box 6)</div>
+      </div>
+      <div style="font-family:var(--mono);font-weight:700;font-size:20px;color:{% if net_tax > 0 %}var(--red){% else %}var(--mint){% endif %}">
+        {{ tax.currency }} {{ "{:,.2f}".format(net_tax) }}
+      </div>
+    </div>
+
   </div>
 </div>
-<style>@media print{.sidebar,.topbar,.card:not(#print-area){display:none!important}}</style>
 
 {% endblock %}
 {% block scripts %}<script>
-var CCY      = "{{ tax.currency }}";
-var TAX_RATE = {{ tax.tax_rate | float }};
-var TAX_NAME = "{{ tax.tax_name }}";
-var PERIOD   = "{{ period_label }}";
-var START    = "{{ start }}";
-var END      = "{{ end }}";
-
-// ── Inline data from server ──────────────────────────────────────────────
-try {
-  var INV_ROWS  = {{ inv_rows | tojson(indent=None) if inv_rows is not none else '[]' | safe }};
-  var BILL_ROWS = {{ bill_rows | tojson(indent=None) if bill_rows is not none else '[]' | safe }};
-  console.log('LEDGR GST: INV_ROWS loaded:', INV_ROWS.length, 'invoices');
-  console.log('LEDGR GST: BILL_ROWS loaded:', BILL_ROWS.length, 'bills');
-} catch(e) {
-  console.error('LEDGR GST data error:', e);
-  var INV_ROWS = [];
-  var BILL_ROWS = [];
+// ── Period selector ───────────────────────────────────────────────────────
+function handlePeriod(val) {
+  ['specific_month','specific_quarter','specific_year','custom'].forEach(function(p){
+    var el = document.getElementById('p-'+p);
+    if (el) el.style.display = 'none';
+  });
+  if (val === 'specific_quarter' || val === 'custom') {
+    document.getElementById('p-'+val).style.display = 'flex';
+  } else if (val === 'specific_month' || val === 'specific_year') {
+    document.getElementById('p-'+val).style.display = 'block';
+  }
+  if (['month','quarter','year'].indexOf(val) >= 0) {
+    // Submit clean URL with only period param
+    var form = document.createElement('form');
+    form.method = 'get';
+    form.action = '/reports/gst-return';
+    var inp = document.createElement('input');
+    inp.type = 'hidden'; inp.name = 'period'; inp.value = val;
+    form.appendChild(inp);
+    document.body.appendChild(form);
+    form.submit();
+  }
 }
 
-// Exclusion state
-var excludedInvoices = [];
-var excludedBills    = [];
+// ── Data from server (pre-serialized, no Decimal/date issues) ─────────────
+var CCY = "{{ tax.currency }}";
+var INV_ROWS  = {{ inv_rows_json | safe }};
+var BILL_ROWS = {{ bill_rows_json | safe }};
+var excluded  = {output: [], input: []};
 
-// ── Toggle drill-down ─────────────────────────────────────────────────────
-function toggleDrillDown(type) {
-  var box = document.getElementById(type + '-drilldown');
-  if (!box) { alert('ERROR: ' + type + '-drilldown element not found'); return; }
-  if (box.style.display === 'none' || box.style.display === '') {
+// ── Number formatter ──────────────────────────────────────────────────────
+function fmt(n) {
+  return CCY + ' ' + parseFloat(n).toLocaleString('en-US', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  });
+}
+function fmtN(n) {
+  return parseFloat(n).toLocaleString('en-US', {
+    minimumFractionDigits: 2, maximumFractionDigits: 2
+  });
+}
+
+// ── Toggle expand ─────────────────────────────────────────────────────────
+function toggleBox(type) {
+  var box = document.getElementById(type + '-box');
+  if (box.style.display === 'none') {
     box.style.display = 'block';
-    try {
-      if (type === 'output' && !box.dataset.loaded) {
-        buildOutputTable();
-        box.dataset.loaded = '1';
-      }
-      if (type === 'input' && !box.dataset.loaded) {
-        buildInputTable();
-        box.dataset.loaded = '1';
-      }
-    } catch(e) {
-      box.innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">'
-        + '⚠ Error building table: ' + e.message + '<br>'
-        + 'INV_ROWS: ' + INV_ROWS.length + ' rows, BILL_ROWS: ' + BILL_ROWS.length + ' rows'
-        + '</div>';
+    if (!box.dataset.built) {
+      type === 'output' ? buildOutput() : buildInput();
+      box.dataset.built = '1';
     }
   } else {
     box.style.display = 'none';
   }
 }
 
-// ── Build Output Tax table ────────────────────────────────────────────────
-function buildOutputTable() {
-  document.getElementById('output-loading').style.display = 'none';
-  var tbody = '<thead><tr style="color:var(--text3);border-bottom:1px solid var(--border)">'
-    + '<th style="padding:6px 8px;width:36px"><input type="checkbox" title="Toggle all" onchange="toggleAllOutput(this)"></th>'
-    + '<th style="padding:6px 8px">Date</th>'
-    + '<th style="padding:6px 8px">Invoice #</th>'
-    + '<th style="padding:6px 8px">Customer</th>'
-    + '<th style="padding:6px 8px;text-align:right">Taxable (excl GST)</th>'
-    + '<th style="padding:6px 8px;text-align:right">GST</th>'
-    + '<th style="padding:6px 8px;text-align:right">Total</th>'
-    + '<th style="padding:6px 8px">Status</th>'
-    + '</tr></thead><tbody>';
-
+// ── Build Output table ────────────────────────────────────────────────────
+function buildOutput() {
+  var tbody = document.getElementById('output-tbody');
+  tbody.innerHTML = '';
   INV_ROWS.forEach(function(r, i) {
-    var excl = excludedInvoices.includes(r.id);
-    var tax  = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount * TAX_RATE / (1 + TAX_RATE) * 100) / 100;
-    var sub  = r.subtotal > 0   ? r.subtotal   : r.total_amount - tax;
-    tbody += '<tr id="out-row-' + i + '" style="border-bottom:1px solid var(--border);'
-           + (excl ? 'opacity:.4;text-decoration:line-through' : '') + '">'
-      + '<td style="padding:6px 8px"><input type="checkbox" class="out-cb" data-idx="' + i + '" data-id="' + r.id + '" '
-      + (excl ? 'checked' : '') + ' onchange="toggleOutputRow(this)"></td>'
-      + '<td style="padding:6px 8px;font-size:11px;color:var(--text3)">' + (r.invoice_date || '—') + '</td>'
-      + '<td style="padding:6px 8px;font-family:monospace;color:var(--mint);font-size:11px">' + (r.invoice_number || '—') + '</td>'
-      + '<td style="padding:6px 8px;font-size:12px">' + (r.customer_name || '—') + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-family:monospace;font-size:11px">' + CCY + ' ' + sub.toFixed(2) + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-family:monospace;font-size:11px;color:var(--mint)">' + tax.toFixed(2) + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-family:monospace;font-weight:600">' + CCY + ' ' + r.total_amount.toFixed(2) + '</td>'
-      + '<td style="padding:6px 8px"><span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(245,158,11,.15);color:var(--amber)">' + (r.status || '—') + '</span></td>'
-      + '</tr>';
+    var tax = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount * 0.08 / 1.08 * 100)/100;
+    var sub = r.subtotal > 0 ? r.subtotal : r.total_amount - tax;
+    var tr = document.createElement('tr');
+    tr.id = 'orow-'+i;
+    tr.style.borderBottom = '1px solid var(--border)';
+    tr.innerHTML =
+      '<td style="padding:8px;text-align:center"><input type="checkbox" class="ocb" data-i="'+i+'" checked onchange="onToggle(\'output\','+i+',this.checked)"></td>'+
+      '<td style="padding:8px;color:var(--text3)">'+r.invoice_date+'</td>'+
+      '<td style="padding:8px;font-family:monospace;color:var(--mint)">'+r.invoice_number+'</td>'+
+      '<td style="padding:8px">'+r.customer_name+'</td>'+
+      '<td style="padding:8px;text-align:right;font-family:monospace">'+fmtN(sub)+'</td>'+
+      '<td style="padding:8px;text-align:right;font-family:monospace;color:var(--mint)">'+fmtN(tax)+'</td>'+
+      '<td style="padding:8px;text-align:right;font-family:monospace;font-weight:600">'+fmt(r.total_amount)+'</td>'+
+      '<td style="padding:8px"><span style="font-size:10px;padding:2px 6px;border-radius:4px;background:rgba(245,158,11,.15);color:var(--amber)">'+r.status+'</span></td>';
+    tbody.appendChild(tr);
   });
-
-  // Totals row
-  var totals = calcOutputTotals();
-  tbody += '<tr style="font-weight:700;background:var(--surface2);border-top:2px solid var(--border)">'
-    + '<td colspan="4" style="padding:8px">Included: ' + totals.count + ' of ' + INV_ROWS.length + ' invoices</td>'
-    + '<td style="padding:8px;text-align:right;font-family:monospace" id="out-total-sub">' + CCY + ' ' + totals.sub.toFixed(2) + '</td>'
-    + '<td style="padding:8px;text-align:right;font-family:monospace;color:var(--mint)" id="out-total-tax">' + totals.tax.toFixed(2) + '</td>'
-    + '<td style="padding:8px;text-align:right;font-family:monospace" id="out-total-gross">' + CCY + ' ' + totals.gross.toFixed(2) + '</td>'
-    + '<td></td></tr>';
-
-  var tbl = document.getElementById('output-table');
-  tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' + tbody + '</tbody></table>';
-  tbl.style.display = 'block';
-
-  // Export button
-  var expBtn = document.getElementById('output-export');
-  if (expBtn) expBtn.style.display = 'block';
+  updateTotals('output');
 }
 
-function calcOutputTotals() {
-  var sub=0, tax=0, gross=0, count=0;
-  INV_ROWS.forEach(function(r) {
-    if (excludedInvoices.includes(r.id)) return;
-    var t = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount * TAX_RATE / (1 + TAX_RATE) * 100) / 100;
-    var s = r.subtotal > 0 ? r.subtotal : r.total_amount - t;
-    sub += s; tax += t; gross += r.total_amount; count++;
-  });
-  return {sub:sub, tax:tax, gross:gross, count:count};
-}
-
-function toggleAllOutput(cb) {
-  document.querySelectorAll('.out-cb').forEach(function(c) {
-    c.checked = cb.checked;
-    toggleOutputRow(c);
-  });
-}
-
-function toggleOutputRow(cb) {
-  var id  = parseInt(cb.dataset.id);
-  var idx = cb.dataset.idx;
-  var row = document.getElementById('out-row-' + idx);
-  if (cb.checked) {
-    if (!excludedInvoices.includes(id)) excludedInvoices.push(id);
-    if (row) { row.style.opacity='.4'; row.style.textDecoration='line-through'; }
-  } else {
-    excludedInvoices = excludedInvoices.filter(function(x){return x!==id;});
-    if (row) { row.style.opacity='1'; row.style.textDecoration='none'; }
-  }
-  var t = calcOutputTotals();
-  var el;
-  el = document.getElementById('out-total-sub');  if(el) el.textContent = CCY+' '+t.sub.toFixed(2);
-  el = document.getElementById('out-total-tax');  if(el) el.textContent = t.tax.toFixed(2);
-  el = document.getElementById('out-total-gross');if(el) el.textContent = CCY+' '+t.gross.toFixed(2);
-}
-
-// ── Build Input Tax table ─────────────────────────────────────────────────
-function buildInputTable() {
-  document.getElementById('input-loading').style.display = 'none';
-  var tbody = '<thead><tr style="color:var(--text3);border-bottom:1px solid var(--border)">'
-    + '<th style="padding:6px 8px;width:36px"><input type="checkbox" title="Toggle all" onchange="toggleAllInput(this)"></th>'
-    + '<th style="padding:6px 8px">Date</th>'
-    + '<th style="padding:6px 8px">Ref #</th>'
-    + '<th style="padding:6px 8px">Vendor</th>'
-    + '<th style="padding:6px 8px">Vendor TIN</th>'
-    + '<th style="padding:6px 8px;text-align:right">Net</th>'
-    + '<th style="padding:6px 8px;text-align:right">Tax</th>'
-    + '<th style="padding:6px 8px;text-align:right">Total</th>'
-    + '</tr></thead><tbody>';
-
+// ── Build Input table ─────────────────────────────────────────────────────
+function buildInput() {
+  var tbody = document.getElementById('input-tbody');
+  tbody.innerHTML = '';
   BILL_ROWS.forEach(function(r, i) {
-    var excl = excludedBills.includes(i);
-    tbody += '<tr id="in-row-' + i + '" style="border-bottom:1px solid var(--border);'
-           + (excl ? 'opacity:.4;text-decoration:line-through' : '') + '">'
-      + '<td style="padding:6px 8px"><input type="checkbox" class="in-cb" data-idx="' + i + '" '
-      + (excl ? 'checked' : '') + ' onchange="toggleInputRow(this)"></td>'
-      + '<td style="padding:6px 8px;font-size:11px;color:var(--text3)">' + (r.invoice_date || '—') + '</td>'
-      + '<td style="padding:6px 8px;font-family:monospace;font-size:11px">' + (r.invoice_number || '—') + '</td>'
-      + '<td style="padding:6px 8px;font-size:12px">' + (r.vendor_name || '—') + '</td>'
-      + '<td style="padding:6px 8px;font-size:11px;color:var(--text3)">' + (r.vendor_tax_id || '—') + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-family:monospace;font-size:11px">' + (r.subtotal||0).toFixed(2) + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-family:monospace;font-size:11px;color:#60a5fa">' + (r.tax_amount||0).toFixed(2) + '</td>'
-      + '<td style="padding:6px 8px;text-align:right;font-family:monospace;font-weight:600">' + CCY + ' ' + (r.total_amount||0).toFixed(2) + '</td>'
-      + '</tr>';
+    var tr = document.createElement('tr');
+    tr.id = 'irow-'+i;
+    tr.style.borderBottom = '1px solid var(--border)';
+    tr.innerHTML =
+      '<td style="padding:8px;text-align:center"><input type="checkbox" class="icb" data-i="'+i+'" checked onchange="onToggle(\'input\','+i+',this.checked)"></td>'+
+      '<td style="padding:8px;color:var(--text3)">'+r.invoice_date+'</td>'+
+      '<td style="padding:8px;font-family:monospace">'+r.invoice_number+'</td>'+
+      '<td style="padding:8px">'+r.vendor_name+'</td>'+
+      '<td style="padding:8px;color:var(--text3)">'+r.vendor_tax_id+'</td>'+
+      '<td style="padding:8px;text-align:right;font-family:monospace">'+fmtN(r.subtotal)+'</td>'+
+      '<td style="padding:8px;text-align:right;font-family:monospace;color:#60a5fa">'+fmtN(r.tax_amount)+'</td>'+
+      '<td style="padding:8px;text-align:right;font-family:monospace;font-weight:600">'+fmt(r.total_amount)+'</td>';
+    tbody.appendChild(tr);
   });
-
-  var totals = calcInputTotals();
-  tbody += '<tr style="font-weight:700;background:var(--surface2);border-top:2px solid var(--border)">'
-    + '<td colspan="5" style="padding:8px">Included: ' + totals.count + ' of ' + BILL_ROWS.length + ' bills</td>'
-    + '<td style="padding:8px;text-align:right;font-family:monospace" id="in-total-sub">' + totals.sub.toFixed(2) + '</td>'
-    + '<td style="padding:8px;text-align:right;font-family:monospace;color:#60a5fa" id="in-total-tax">' + totals.tax.toFixed(2) + '</td>'
-    + '<td style="padding:8px;text-align:right;font-family:monospace" id="in-total-gross">' + CCY + ' ' + totals.gross.toFixed(2) + '</td>'
-    + '</tr>';
-
-  var tbl = document.getElementById('input-table');
-  tbl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:12px">' + tbody + '</tbody></table>';
-  tbl.style.display = 'block';
-
-  var expBtn = document.getElementById('input-export');
-  if (expBtn) expBtn.style.display = 'block';
+  updateTotals('input');
 }
 
-function calcInputTotals() {
-  var sub=0, tax=0, gross=0, count=0;
-  BILL_ROWS.forEach(function(r, i) {
-    if (excludedBills.includes(i)) return;
-    sub += r.subtotal||0; tax += r.tax_amount||0; gross += r.total_amount||0; count++;
-  });
-  return {sub:sub, tax:tax, gross:gross, count:count};
-}
-
-function toggleAllInput(cb) {
-  document.querySelectorAll('.in-cb').forEach(function(c){
-    c.checked = cb.checked; toggleInputRow(c);
-  });
-}
-
-function toggleInputRow(cb) {
-  var i   = parseInt(cb.dataset.idx);
-  var row = document.getElementById('in-row-'+i);
-  if (cb.checked) {
-    if (!excludedBills.includes(i)) excludedBills.push(i);
-    if (row) { row.style.opacity='.4'; row.style.textDecoration='line-through'; }
+// ── Toggle row ────────────────────────────────────────────────────────────
+function onToggle(type, i, checked) {
+  var row = document.getElementById((type==='output'?'orow':'irow')+'-'+i);
+  if (checked) {
+    excluded[type] = excluded[type].filter(function(x){return x!==i;});
+    row.style.opacity = '1';
+    row.style.textDecoration = 'none';
   } else {
-    excludedBills = excludedBills.filter(function(x){return x!==i;});
-    if (row) { row.style.opacity='1'; row.style.textDecoration='none'; }
+    if (!excluded[type].includes(i)) excluded[type].push(i);
+    row.style.opacity = '.35';
+    row.style.textDecoration = 'line-through';
   }
-  var t = calcInputTotals();
-  var el;
-  el=document.getElementById('in-total-sub');  if(el) el.textContent=t.sub.toFixed(2);
-  el=document.getElementById('in-total-tax');  if(el) el.textContent=t.tax.toFixed(2);
-  el=document.getElementById('in-total-gross');if(el) el.textContent=CCY+' '+t.gross.toFixed(2);
+  updateTotals(type);
+}
+
+function selectAll(type, exclude) {
+  var cbs = document.querySelectorAll('.'+(type==='output'?'o':'i')+'cb');
+  cbs.forEach(function(cb){
+    cb.checked = !exclude;
+    onToggle(type, parseInt(cb.dataset.i), !exclude);
+  });
+}
+
+// ── Update totals ─────────────────────────────────────────────────────────
+function updateTotals(type) {
+  var rows = type==='output' ? INV_ROWS : BILL_ROWS;
+  var sub=0, tax=0, gross=0, count=0;
+  rows.forEach(function(r, i) {
+    if (excluded[type].includes(i)) return;
+    if (type==='output') {
+      var t = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount*0.08/1.08*100)/100;
+      var s = r.subtotal > 0 ? r.subtotal : r.total_amount - t;
+      sub+=s; tax+=t; gross+=r.total_amount;
+    } else {
+      sub+=r.subtotal; tax+=r.tax_amount; gross+=r.total_amount;
+    }
+    count++;
+  });
+  var pfx = type==='output'?'output':'input';
+  document.getElementById(pfx+'-count').textContent  = count + ' of ' + rows.length + ' included';
+  document.getElementById(pfx+'-total-sub').textContent   = CCY+' '+fmtN(sub);
+  document.getElementById(pfx+'-total-tax').textContent   = CCY+' '+fmtN(tax);
+  document.getElementById(pfx+'-total-gross').textContent = CCY+' '+fmtN(gross);
+  document.getElementById(pfx+'-summary').textContent     = count + ' included / ' + excluded[type].length + ' excluded';
 }
 
 // ── Export CSV ────────────────────────────────────────────────────────────
-function exportOutput() {
-  var lines = ['Status,Date,Invoice #,Customer,Taxable (excl GST),GST Amount,Total'];
-  INV_ROWS.forEach(function(r) {
-    var incl = !excludedInvoices.includes(r.id) ? 'INCLUDED' : 'EXCLUDED';
-    var tax  = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount * TAX_RATE / (1+TAX_RATE)*100)/100;
-    var sub  = r.subtotal > 0 ? r.subtotal : r.total_amount - tax;
-    lines.push([incl, r.invoice_date||'', r.invoice_number||'',
-      '"'+(r.customer_name||'')+'"',
-      sub.toFixed(2), tax.toFixed(2), r.total_amount.toFixed(2)].join(','));
-  });
-  var totals = calcOutputTotals();
-  lines.push('');
-  lines.push('TOTAL,,,,'+totals.sub.toFixed(2)+','+totals.tax.toFixed(2)+','+totals.gross.toFixed(2));
-  downloadCSV(lines.join('
-'), 'GST_Output_'+START+'_to_'+END+'.csv');
-}
-
-function exportInput() {
-  var lines = ['Status,Date,Ref #,Vendor,Vendor TIN,Net Amount,Tax Amount,Total'];
-  BILL_ROWS.forEach(function(r, i) {
-    var incl = !excludedBills.includes(i) ? 'INCLUDED' : 'EXCLUDED';
-    lines.push([incl, r.invoice_date||'', r.invoice_number||'',
-      '"'+(r.vendor_name||'')+'"', r.vendor_tax_id||'',
-      (r.subtotal||0).toFixed(2),(r.tax_amount||0).toFixed(2),(r.total_amount||0).toFixed(2)].join(','));
-  });
-  var t = calcInputTotals();
-  lines.push('');
-  lines.push('TOTAL,,,,,'+ t.sub.toFixed(2)+','+t.tax.toFixed(2)+','+t.gross.toFixed(2));
-  downloadCSV(lines.join('
-'), 'GST_Input_'+START+'_to_'+END+'.csv');
-}
-
-function downloadCSV(content, filename) {
-  var blob = new Blob([content], {type:'text/csv'});
+function exportCSV(type) {
+  var rows = type==='output' ? INV_ROWS : BILL_ROWS;
+  var lines = [];
+  if (type==='output') {
+    lines.push('Status,Date,Invoice #,Customer,Taxable (excl GST),GST,Total');
+    rows.forEach(function(r,i){
+      var incl = excluded.output.includes(i) ? 'EXCLUDED' : 'INCLUDED';
+      var t = r.tax_amount>0?r.tax_amount:Math.round(r.total_amount*0.08/1.08*100)/100;
+      var s = r.subtotal>0?r.subtotal:r.total_amount-t;
+      lines.push([incl,r.invoice_date,r.invoice_number,'"'+r.customer_name+'"',
+        s.toFixed(2),t.toFixed(2),r.total_amount.toFixed(2)].join(','));
+    });
+  } else {
+    lines.push('Status,Date,Ref #,Vendor,Vendor TIN,Net,Tax,Total');
+    rows.forEach(function(r,i){
+      var incl = excluded.input.includes(i) ? 'EXCLUDED' : 'INCLUDED';
+      lines.push([incl,r.invoice_date,r.invoice_number,'"'+r.vendor_name+'"',
+        r.vendor_tax_id,r.subtotal.toFixed(2),r.tax_amount.toFixed(2),r.total_amount.toFixed(2)].join(','));
+    });
+  }
+  var blob = new Blob([lines.join('\n')], {type:'text/csv'});
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = filename;
+  a.download = 'GST_'+type+'_{{ start }}_to_{{ end }}.csv';
   a.click();
-  URL.revokeObjectURL(a.href);
 }
+
+// ── toggleDrillDown alias (for compatibility) ─────────────────────────────
+function toggleDrillDown(type) { toggleBox(type); }
 </script>{% endblock %}
