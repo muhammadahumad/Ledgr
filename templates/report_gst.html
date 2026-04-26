@@ -86,21 +86,6 @@
     }
     </script>
   </div>
-  <div class="card" style="margin-bottom:14px">
-    <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
-      <div><div class="field-label">Period</div>
-        <select class="select-input" name="period" onchange="this.form.submit()">
-          <option value="month" {% if period=='month' %}selected{% endif %}>This Month</option>
-          <option value="quarter" {% if period=='quarter' %}selected{% endif %}>This Quarter</option>
-          <option value="custom" {% if period=='custom' %}selected{% endif %}>Custom</option>
-        </select></div>
-      {% if period=='custom' %}
-      <div><div class="field-label">From</div><input class="field-input" type="date" name="start" value="{{ start }}"></div>
-      <div><div class="field-label">To</div><input class="field-input" type="date" name="end" value="{{ end }}"></div>
-      <button type="submit" class="btn btn-primary" style="align-self:flex-end">Apply</button>
-      {% endif %}
-    </form>
-  </div>
 
   <div class="card" id="print-area" style="max-width:680px;margin:0 auto">
     <!-- Header -->
@@ -143,8 +128,8 @@
       </div>
       <!-- Output drill-down -->
       <div id="output-drilldown" style="display:none;margin-top:10px">
-        <div id="output-loading" style="font-size:12px;color:var(--text3);padding:8px">Loading invoices...</div>
-        <div id="output-table" style="display:none"></div>
+        <div id="output-loading" style="display:none"></div>
+        <div id="output-table"></div>
         <div id="output-export" style="display:none;margin-top:8px">
           <button onclick="exportOutput()" class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)">📥 Export CSV</button>
           <span style="font-size:10px;color:var(--text3);margin-left:8px">For MIRA portal submission</span>
@@ -167,8 +152,8 @@
       </div>
       <!-- Input drill-down -->
       <div id="input-drilldown" style="display:none;margin-top:10px">
-        <div id="input-loading" style="font-size:12px;color:var(--text3);padding:8px">Loading bills...</div>
-        <div id="input-table" style="display:none"></div>
+        <div id="input-loading" style="display:none"></div>
+        <div id="input-table"></div>
         <div id="input-export" style="display:none;margin-top:8px">
           <button onclick="exportInput()" class="btn btn-sm" style="color:#60a5fa;border-color:#60a5fa">📥 Export CSV</button>
           <span style="font-size:10px;color:var(--text3);margin-left:8px">For MIRA portal submission</span>
@@ -263,6 +248,7 @@ function toggleDrillDown(type) {
 
 // ── Build Output Tax table ────────────────────────────────────────────────
 function buildOutputTable() {
+  document.getElementById('output-loading').style.display = 'none';
   var tbody = '<thead><tr style="color:var(--text3);border-bottom:1px solid var(--border)">'
     + '<th style="padding:6px 8px;width:36px"><input type="checkbox" title="Toggle all" onchange="toggleAllOutput(this)"></th>'
     + '<th style="padding:6px 8px">Date</th>'
@@ -348,6 +334,7 @@ function toggleOutputRow(cb) {
 
 // ── Build Input Tax table ─────────────────────────────────────────────────
 function buildInputTable() {
+  document.getElementById('input-loading').style.display = 'none';
   var tbody = '<thead><tr style="color:var(--text3);border-bottom:1px solid var(--border)">'
     + '<th style="padding:6px 8px;width:36px"><input type="checkbox" title="Toggle all" onchange="toggleAllInput(this)"></th>'
     + '<th style="padding:6px 8px">Date</th>'

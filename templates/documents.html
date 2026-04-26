@@ -36,7 +36,7 @@
       {% for inv in inv_rows %}
       <tr>
         <td style="font-size:11px;font-family:var(--mono);color:var(--text3)">
-          {{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
+          {{ inv.invoice_date_display if inv.invoice_date_display else (inv.invoice_date or '—') }}</td>
         <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
         <td style="font-weight:500">{{ inv.customer_name }}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:11px">{{ inv.currency }} {{ "%.2f"|format(inv.subtotal) }}</td>

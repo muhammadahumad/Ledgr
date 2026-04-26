@@ -72,9 +72,9 @@
         <td style="font-weight:500;color:var(--text)">
           {{ inv.customer_name }}</td>
         <td style="color:var(--text3);font-size:11px">
-          {{ inv.invoice_date.strftime('%d %b %Y') if inv.invoice_date else '—' }}</td>
+          {{ inv.invoice_date_display if inv.invoice_date_display is defined and inv.invoice_date_display else (inv.invoice_date or '—') }}</td>
         <td style="color:var(--text3);font-size:11px">
-          {{ inv.due_date.strftime('%d %b %Y') if inv.due_date else '—' }}</td>
+          {{ inv.due_date_display if inv.due_date_display is defined and inv.due_date_display else (inv.due_date or '—') }}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">
           {{ inv.currency }} {{ "%.2f"|format(inv.subtotal) }}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">
