@@ -609,30 +609,33 @@ class User(db.Model):
             try: db.session.commit()
             except: pass
     def can_upload(self):
+        """Check if user can upload. Always fail open on errors."""
         try:
-            # Check user plan first
+            # Check user plan
             user_plan = self.get_plan()
             if user_plan.get('unlimited_scans') or user_plan.get('uploads', 0) >= 99999:
                 return True
-            # Also check business plan - if any business is paid, allow uploads
+            # Check any associated business plan
             try:
-                from sqlalchemy import text as _text
-                result = db.session.execute(_text(
-                    "SELECT plan FROM businesses b "
+                rows = db.session.execute(db.text(
+                    "SELECT b.plan FROM businesses b "
                     "JOIN user_businesses ub ON b.id = ub.business_id "
-                    "WHERE ub.user_id = :uid LIMIT 5"
+                    "WHERE ub.user_id = :uid"
                 ), {"uid": self.id}).fetchall()
-                for row in result:
-                    biz_plan = PLANS.get(row[0] or 'free', PLANS['free'])
-                    if biz_plan.get('unlimited_scans') or biz_plan.get('uploads', 0) >= 99999:
+                for row in rows:
+                    bp = PLANS.get(row[0] or 'free', PLANS['free'])
+                    if bp.get('unlimited_scans') or bp.get('uploads', 0) >= 99999:
                         return True
             except:
-                pass
-            # Fall back to user upload count
+                db.session.rollback()
+                return True  # DB error -> allow upload
+            # Count this month's uploads
             self._reset_uploads()
-            return (self.uploads_this_month or 0) < user_plan.get('uploads', 10)
+            used = self.uploads_this_month or 0
+            limit = user_plan.get('uploads', 10)
+            return used < limit
         except:
-            return True  # fail open - never block uploads on error
+            return True  # Always fail open
     def uploads_remaining(self):
         self._reset_uploads()
         p = self.get_plan()
@@ -4884,8 +4887,7 @@ def report_gst_return():
             "subtotal, tax_amount, total_amount, doc_type, currency "
             "FROM documents WHERE business_id=:bid "
             "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
-            "AND COALESCE(invoice_date, created_at::date)>=:s "
-            "AND COALESCE(invoice_date, created_at::date)<=:e "
+            "AND (invoice_date IS NULL OR (invoice_date>=:s AND invoice_date<=:e)) "
             "ORDER BY COALESCE(invoice_date"
         ), {"bid":business.id,"s":str(start),"e":str(end)}).fetchall()
         bill_rows_detail = [{
