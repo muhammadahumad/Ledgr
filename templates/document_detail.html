@@ -1,291 +1,306 @@
-{% extends "base.html" %}{% block title %}{{ doc.doc_type }} — {{ doc.vendor_name }}{% endblock %}
+{% extends "base.html" %}{% block title %}Bill — {{ doc.invoice_number or doc.id }} — LEDGR{% endblock %}
 {% block content %}
 <div class="topbar">
   <div>
-    <div class="page-title">{{ doc.doc_type }} — {{ doc.vendor_name or 'Document' }}</div>
-    <div class="page-sub">
-      {{ doc.invoice_date.strftime('%d %b %Y') if doc.invoice_date else doc.created_at.strftime('%d %b %Y') }}
-      {% if doc.invoice_number %} · {{ doc.invoice_number }}{% endif %}
-    </div>
+    <div class="page-title">{{ doc.doc_type or 'Bill' }} — {{ doc.invoice_number or ('DOC-' ~ doc.id) }}</div>
+    <div class="page-sub">{{ doc.vendor_name or 'Unknown Vendor' }}</div>
   </div>
   <div style="display:flex;gap:8px">
-    <button class="btn" onclick="exportDoc()">📥 Export CSV</button>
+    <a href="/documents" class="btn">← All Bills</a>
     <button class="btn" onclick="window.print()">🖨 Print</button>
-    <a href="/documents" class="btn">← Back</a>
+    <button class="btn" style="color:var(--amber);border-color:var(--amber)"
+      onclick="editDoc()">✏ Edit</button>
+    <button class="btn" style="color:var(--red);border-color:var(--red)"
+      onclick="deleteDoc({{ doc.id }})">🗑 Delete</button>
   </div>
 </div>
 
-<div class="content" style="max-width:900px">
-<div style="display:grid;grid-template-columns:{% if doc.file_data %}1fr 1fr{% else %}1fr{% endif %};gap:14px">
+<div class="content" style="max-width:860px">
+  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px">
 
-  <!-- Left: Document Details -->
-  <div>
-    <div class="card" style="margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <div class="card-title" style="margin:0">Document Details</div>
-        <button class="btn btn-sm" onclick="toggleEdit()">✏️ Edit</button>
-      </div>
-
-      <!-- View Mode -->
-      <div id="view-mode">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
-          <div><div class="field-label">Type</div>
-            <span class="badge badge-gray">{{ doc.doc_type }}</span></div>
-          <div><div class="field-label">Payment Status</div>
-            <span class="badge badge-{% if doc.payment_status=='PAID' %}green{% elif doc.payment_status=='PARTIAL' %}amber{% else %}gray{% endif %}">
-              {{ doc.payment_status or 'UNPAID' }}</span></div>
-          <div><div class="field-label">Vendor</div>
-            <div style="font-weight:600;color:var(--text)">{{ doc.vendor_name or '—' }}</div></div>
-          <div><div class="field-label">Vendor TIN / Tax ID</div>
-            <div style="color:var(--mint);font-family:var(--mono);font-size:11px">{{ doc.vendor_tax_id or '—' }}</div></div>
-          <div><div class="field-label">Invoice / Ref Number</div>
-            <div style="font-family:var(--mono)">{{ doc.invoice_number or '—' }}</div></div>
-          <div><div class="field-label">Invoice Date</div>
-            <div>{{ doc.invoice_date.strftime('%d %b %Y') if doc.invoice_date else '—' }}</div></div>
-          <div><div class="field-label">Due Date</div>
-            <div>{{ doc.due_date.strftime('%d %b %Y') if doc.due_date else '—' }}</div></div>
-          <div><div class="field-label">Currency</div>
-            <div>{{ doc.currency or '—' }}</div></div>
+    <!-- Left: Bill details -->
+    <div>
+      <!-- Header card -->
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+          <div>
+            <div class="field-label">Vendor</div>
+            <div style="font-weight:600;font-size:15px;color:var(--text)">{{ doc.vendor_name or '—' }}</div>
+            {% if doc.vendor_tax_id %}
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">TIN: {{ doc.vendor_tax_id }}</div>
+            {% endif %}
+          </div>
+          <div style="text-align:right">
+            <span class="badge badge-{% if doc.payment_status=='PAID' %}green{% elif doc.payment_status=='PARTIAL' %}amber{% else %}red{% endif %}" style="font-size:12px">
+              {{ doc.payment_status or 'UNPAID' }}
+            </span>
+            <div style="font-size:11px;color:var(--text3);margin-top:4px">{{ doc.doc_type or 'BILL' }}</div>
+          </div>
         </div>
 
-        <!-- Amounts -->
-        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
-            <span style="color:var(--text3)">Subtotal (excl. tax)</span>
-            <span style="font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.subtotal or 0) }}</span>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;padding-top:14px;border-top:1px solid var(--border)">
+          <div>
+            <div class="field-label">Invoice #</div>
+            <div style="font-family:var(--mono);font-size:13px;color:var(--mint)">{{ doc.invoice_number or '—' }}</div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
-            <span style="color:var(--text3)">Tax (GST/VAT)</span>
-            <span style="color:var(--amber);font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.tax_amount or 0) }}</span>
+          <div>
+            <div class="field-label">Invoice Date</div>
+            <div style="font-size:13px">{{ doc.invoice_date.strftime('%d %b %Y') if doc.invoice_date else '—' }}</div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:16px;font-weight:700;margin-top:6px">
-            <span>Total</span>
-            <span style="color:var(--mint);font-family:var(--mono)">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount or 0) }}</span>
+          <div>
+            <div class="field-label">Due Date</div>
+            <div style="font-size:13px">{{ doc.due_date.strftime('%d %b %Y') if doc.due_date else '—' }}</div>
           </div>
         </div>
       </div>
 
-      <!-- Edit Mode -->
-      <div id="edit-mode" style="display:none">
-        <div class="field-row">
-          <div><div class="field-label">Vendor Name</div>
-            <input class="field-input" id="e-vendor" value="{{ doc.vendor_name or '' }}"></div>
-          <div><div class="field-label">Vendor TIN / Tax ID</div>
-            <input class="field-input" id="e-taxid" value="{{ doc.vendor_tax_id or '' }}"></div>
+      <!-- Line items -->
+      {% if line_items %}
+      <div class="card" style="margin-bottom:14px;padding:0">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+          <div class="card-title" style="margin:0">Line Items</div>
         </div>
-        <div class="field-row">
-          <div><div class="field-label">Invoice Number</div>
-            <input class="field-input" id="e-invno" value="{{ doc.invoice_number or '' }}"></div>
-          <div><div class="field-label">Invoice Date</div>
-            <input class="field-input" type="date" id="e-date"
-              value="{{ doc.invoice_date.strftime('%Y-%m-%d') if doc.invoice_date else '' }}"></div>
-        </div>
-        <div class="field-row">
-          <div><div class="field-label">Due Date</div>
-            <input class="field-input" type="date" id="e-due"
-              value="{{ doc.due_date.strftime('%Y-%m-%d') if doc.due_date else '' }}"></div>
-          <div><div class="field-label">Currency</div>
-            <input class="field-input" id="e-currency" value="{{ doc.currency or 'MVR' }}"></div>
-        </div>
-        <div class="field-row">
-          <div><div class="field-label">Subtotal (excl. tax)</div>
-            <input class="field-input" type="number" step="0.01" id="e-sub"
-              value="{{ '%.2f'|format(doc.subtotal or 0) }}"></div>
-          <div><div class="field-label">Tax Amount</div>
-            <input class="field-input" type="number" step="0.01" id="e-tax"
-              value="{{ '%.2f'|format(doc.tax_amount or 0) }}"></div>
-        </div>
-        <div class="field-group">
-          <div class="field-label">Total (incl. tax)</div>
-          <input class="field-input" type="number" step="0.01" id="e-total"
-            value="{{ '%.2f'|format(doc.total_amount or 0) }}">
-          <div style="font-size:10px;color:var(--text3);margin-top:3px">
-            Auto-calculates: Subtotal + Tax = Total
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
-          <button class="btn" onclick="toggleEdit()">Cancel</button>
-        </div>
-        <div id="edit-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+        <table class="table">
+          <thead><tr>
+            <th>Description</th>
+            <th>Tax</th>
+            <th style="text-align:right">Net</th>
+            <th style="text-align:right">Tax Amt</th>
+            <th style="text-align:right">Total</th>
+          </tr></thead>
+          <tbody>
+          {% for li in line_items %}
+          <tr>
+            <td style="font-size:12px">{{ li.desc or li.get('description','—') }}</td>
+            <td style="font-size:11px">
+              <span class="badge badge-gray">{{ li.get('tax_code','STD') }}</span>
+            </td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px">
+              {{ doc.currency }} {{ "%.2f"|format(li.get('net', li.get('sub', 0))|float) }}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">
+              {{ "%.2f"|format(li.get('tax', li.get('tax_amount', 0))|float) }}</td>
+            <td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:600">
+              {{ doc.currency }} {{ "%.2f"|format(li.get('gross', li.get('total', 0))|float) }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
-    </div>
-
-    <!-- Line Items (from CSV import or AI extraction) -->
-    {% set line_data = [] %}
-    {% if doc.raw_ai_data and doc.raw_ai_data != '{}' %}
-      {% set parsed = doc.raw_ai_data|from_json %}
-      {% if parsed and parsed.line_items %}
-        {% set line_data = parsed.line_items %}
       {% endif %}
-    {% endif %}
 
-    {% if line_data %}
-    <div class="card" style="padding:0;margin-bottom:14px">
-      <div style="padding:10px 16px;border-bottom:1px solid var(--border);font-weight:600;font-size:12px">
-        Line Items ({{ line_data|length }})
+      <!-- Totals -->
+      <div class="card" style="margin-bottom:14px">
+        <div style="display:flex;justify-content:flex-end">
+          <table style="font-size:13px;border-collapse:collapse;min-width:280px">
+            <tr>
+              <td style="padding:5px 14px;color:var(--text3)">Subtotal (net)</td>
+              <td style="padding:5px 0;text-align:right;font-family:var(--mono)">
+                {{ doc.currency }} {{ "%.2f"|format(doc.subtotal or 0) }}</td>
+            </tr>
+            <tr>
+              <td style="padding:5px 14px;color:var(--amber)">{{ tax.tax_name }} ({{ (tax.tax_rate * 100)|int }}%)</td>
+              <td style="padding:5px 0;text-align:right;font-family:var(--mono);color:var(--amber)">
+                {{ doc.currency }} {{ "%.2f"|format(doc.tax_amount or 0) }}</td>
+            </tr>
+            <tr style="font-weight:700;font-size:16px;border-top:2px solid var(--border)">
+              <td style="padding:8px 14px">Total</td>
+              <td style="padding:8px 0;text-align:right;font-family:var(--mono);color:var(--mint)">
+                {{ doc.currency }} {{ "%.2f"|format(doc.total_amount or 0) }}</td>
+            </tr>
+          </table>
+        </div>
       </div>
-      <table class="table">
-        <thead><tr>
-          <th>Description</th>
-          <th style="text-align:right">Subtotal</th>
-          <th style="text-align:right">Tax</th>
-          <th style="text-align:right">Total</th>
-          <th>Account</th>
-        </tr></thead>
-        <tbody>
-        {% for li in line_data %}
-        <tr>
-          <td style="font-size:12px">{{ li.description or '—' }}</td>
-          <td style="text-align:right;font-family:var(--mono);font-size:11px">
-            {{ doc.currency }} {{ "%.2f"|format(li.amount|float) }}</td>
-          <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">
-            {{ doc.currency }} {{ "%.2f"|format(li.tax|float) }}</td>
-          <td style="text-align:right;font-family:var(--mono);font-size:11px;font-weight:600">
-            {{ doc.currency }} {{ "%.2f"|format(li.total|float) }}</td>
-          <td style="font-size:10px;font-family:var(--mono);color:var(--mint)">
-            {{ li.account_code or '—' }}</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endif %}
 
-    <!-- Journal entries linked to this document -->
-    {% set journals = doc.journal_entry|list if doc.journal_entry is iterable else [] %}
-    <div class="card" style="margin-bottom:14px">
-      <div class="card-title">Journal Postings</div>
-      {% if doc.ledger_posted %}
-      <div style="font-size:11px;color:var(--mint);margin-bottom:8px">✓ Posted to double-entry ledger</div>
-      {% endif %}
-      <!-- Show linked journal via reference number -->
-      {% set je = none %}
-      {% if doc.invoice_number %}
-        {% for entry in journals %}{% set je = entry %}{% endfor %}
-      {% endif %}
-      {% if doc.ledger_posted %}
-      <div style="font-size:12px;color:var(--text3)">
-        This document has been posted to the journal. View in
-        <a href="/journal" style="color:var(--mint)">Journal →</a>
+      <!-- Journal entries -->
+      {% if journal_entries %}
+      <div class="card" style="margin-bottom:14px;padding:0">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+          <div class="card-title" style="margin:0">✓ Posted to Ledger</div>
+          <a href="/journal" style="font-size:11px;color:var(--mint)">View Journal →</a>
+        </div>
+        <table class="table">
+          <thead><tr>
+            <th>Date</th><th>Description</th><th>Account</th>
+            <th style="text-align:right">Debit</th>
+            <th style="text-align:right">Credit</th>
+          </tr></thead>
+          <tbody>
+          {% for je in journal_entries %}
+            {% for line in je.lines %}
+            <tr>
+              <td style="font-size:11px;color:var(--text3)">{{ je.date.strftime('%d %b %Y') if je.date else '—' }}</td>
+              <td style="font-size:11px">{{ line.description or je.description }}</td>
+              <td style="font-size:11px;font-family:var(--mono)">{{ line.account.code if line.account else '—' }} {{ line.account.name if line.account else '' }}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--mint)">
+                {% if line.debit and line.debit > 0 %}{{ "%.2f"|format(line.debit) }}{% else %}—{% endif %}</td>
+              <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--red)">
+                {% if line.credit and line.credit > 0 %}{{ "%.2f"|format(line.credit) }}{% else %}—{% endif %}</td>
+            </tr>
+            {% endfor %}
+          {% endfor %}
+          </tbody>
+        </table>
       </div>
       {% else %}
-      <div style="font-size:12px;color:var(--text3)">Not yet posted to ledger.</div>
+      <div class="card" style="margin-bottom:14px;padding:12px 16px;font-size:12px;color:var(--text3)">
+        ⚠ Not yet posted to ledger.
+        <button class="btn btn-sm btn-primary" style="margin-left:8px" onclick="repostDoc({{ doc.id }})">Post Now</button>
+      </div>
       {% endif %}
     </div>
-  </div>
 
-  <!-- Right: File Preview -->
-  {% if doc.file_data %}
-  <div>
-    <div class="card">
-      <div class="card-title">Uploaded Document</div>
-      {% if doc.file_type and 'pdf' in doc.file_type %}
-        <div style="text-align:center;padding:20px;color:var(--text3)">
-          <div style="font-size:40px;margin-bottom:8px">📄</div>
-          PDF stored
-          <div style="margin-top:12px">
-            <button class="btn btn-sm btn-primary" onclick="downloadFile()">Download PDF</button>
+    <!-- Right: Scanned image + meta -->
+    <div>
+      <!-- Original scan -->
+      {% if doc.file_data %}
+      <div class="card" style="margin-bottom:14px;padding:12px">
+        <div class="card-title" style="margin-bottom:8px">📎 Original Document</div>
+        {% if doc.file_type and 'pdf' in doc.file_type %}
+        <div style="padding:20px;text-align:center;background:var(--bg);border-radius:8px;color:var(--text3);font-size:12px">
+          📄 PDF Document<br>
+          <a href="data:{{ doc.file_type }};base64,{{ doc.file_data }}" 
+             download="bill-{{ doc.invoice_number or doc.id }}.pdf"
+             class="btn btn-sm" style="margin-top:8px">Download PDF</a>
+        </div>
+        {% else %}
+        <img src="data:{{ doc.file_type or 'image/jpeg' }};base64,{{ doc.file_data }}"
+             style="width:100%;border-radius:8px;border:1px solid var(--border);cursor:pointer"
+             onclick="this.style.transform=this.style.transform?'':'scale(2.5) translateY(40%)'"
+             title="Click to zoom">
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;text-align:center">Click to zoom</div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Meta -->
+      <div class="card" style="margin-bottom:14px;padding:14px">
+        <div class="card-title" style="margin-bottom:10px">Details</div>
+        <div style="font-size:11px;display:grid;gap:8px">
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--text3)">Created</span>
+            <span>{{ doc.created_at.strftime('%d %b %Y %H:%M') if doc.created_at else '—' }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--text3)">Currency</span>
+            <span style="font-family:var(--mono)">{{ doc.currency or tax.currency }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--text3)">AI Processed</span>
+            <span>{{ '✓ Yes' if doc.raw_ai_data else 'Manual' }}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="color:var(--text3)">Ledger Status</span>
+            <span style="color:{% if journal_entries %}var(--mint){% else %}var(--amber){% endif %}">
+              {{ '✓ Posted' if journal_entries else 'Pending' }}</span>
           </div>
         </div>
-      {% else %}
-        <img src="data:{{ doc.file_type }};base64,{{ doc.file_data }}"
-          style="width:100%;border-radius:7px;border:1px solid var(--border)" alt="Document">
-        <div style="margin-top:8px">
-          <button class="btn btn-sm" onclick="downloadFile()">Download Image</button>
+      </div>
+
+      <!-- Actions -->
+      <div class="card" style="padding:14px">
+        <div class="card-title" style="margin-bottom:10px">Actions</div>
+        <div style="display:grid;gap:8px">
+          <button class="btn" onclick="editDoc()" style="width:100%">✏ Edit Details</button>
+          {% if not journal_entries %}
+          <button class="btn btn-primary" onclick="repostDoc({{ doc.id }})" style="width:100%">
+            📒 Post to Ledger
+          </button>
+          {% endif %}
+          <button class="btn" style="width:100%;color:var(--red);border-color:var(--red)"
+            onclick="deleteDoc({{ doc.id }})">🗑 Delete Bill</button>
         </div>
-      {% endif %}
+      </div>
     </div>
   </div>
-  {% endif %}
+</div>
 
+<!-- Edit Modal -->
+<div id="edit-doc-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-title">Edit Bill
+      <button class="modal-close" onclick="document.getElementById('edit-doc-modal').style.display='none'">×</button>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Vendor Name</div>
+        <input class="field-input" id="ed-vendor" value="{{ doc.vendor_name or '' }}"></div>
+      <div><div class="field-label">Tax ID / TIN</div>
+        <input class="field-input" id="ed-tin" value="{{ doc.vendor_tax_id or '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Invoice #</div>
+        <input class="field-input" id="ed-invnum" value="{{ doc.invoice_number or '' }}"></div>
+      <div><div class="field-label">Invoice Date</div>
+        <input class="field-input" type="date" id="ed-date"
+          value="{{ doc.invoice_date.strftime('%Y-%m-%d') if doc.invoice_date else '' }}"></div>
+    </div>
+    <div class="field-row">
+      <div><div class="field-label">Subtotal (net)</div>
+        <input class="field-input" type="number" step="0.01" id="ed-sub"
+          value="{{ doc.subtotal or 0 }}" oninput="edCalc()"></div>
+      <div><div class="field-label">Tax Amount</div>
+        <input class="field-input" type="number" step="0.01" id="ed-tax"
+          value="{{ doc.tax_amount or 0 }}" oninput="edCalc()"></div>
+    </div>
+    <div><div class="field-label">Total</div>
+      <input class="field-input" type="number" step="0.01" id="ed-total"
+        value="{{ doc.total_amount or 0 }}" readonly style="background:var(--bg);font-weight:700"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+      <button class="btn" onclick="document.getElementById('edit-doc-modal').style.display='none'">Cancel</button>
+    </div>
+    <div id="ed-msg" style="display:none;margin-top:8px;font-size:12px;padding:8px;border-radius:6px"></div>
+  </div>
 </div>
-</div>
+
 {% endblock %}
-
 {% block scripts %}<script>
-function toggleEdit() {
-  var v = document.getElementById('view-mode');
-  var e = document.getElementById('edit-mode');
-  if (v.style.display === 'none') { v.style.display='block'; e.style.display='none'; }
-  else { v.style.display='none'; e.style.display='block'; }
+function editDoc() {
+  document.getElementById('edit-doc-modal').style.display = 'flex';
 }
-
-// Auto-calculate total
-['e-sub','e-tax'].forEach(function(id) {
-  var el = document.getElementById(id);
-  if (el) el.addEventListener('input', function() {
-    var sub = parseFloat(document.getElementById('e-sub').value)||0;
-    var tax = parseFloat(document.getElementById('e-tax').value)||0;
-    document.getElementById('e-total').value = (sub+tax).toFixed(2);
-  });
-});
-
+function edCalc() {
+  var sub = parseFloat(document.getElementById('ed-sub').value)||0;
+  var tax = parseFloat(document.getElementById('ed-tax').value)||0;
+  document.getElementById('ed-total').value = (sub+tax).toFixed(2);
+}
 function saveEdit() {
-  var btn = event.target; btn.disabled=true; btn.textContent='Saving...';
-  var sub = parseFloat(document.getElementById('e-sub').value)||0;
-  var tax = parseFloat(document.getElementById('e-tax').value)||0;
+  var msg = document.getElementById('ed-msg');
   fetch('/api/document/{{ doc.id }}/update', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
+    method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
-      vendor_name:    document.getElementById('e-vendor').value,
-      vendor_tax_id:  document.getElementById('e-taxid').value,
-      invoice_number: document.getElementById('e-invno').value,
-      invoice_date:   document.getElementById('e-date').value,
-      due_date:       document.getElementById('e-due').value,
-      currency:       document.getElementById('e-currency').value,
-      subtotal:       sub,
-      tax_amount:     tax,
-      total_amount:   sub + tax
+      vendor_name:    document.getElementById('ed-vendor').value,
+      vendor_tax_id:  document.getElementById('ed-tin').value,
+      invoice_number: document.getElementById('ed-invnum').value,
+      invoice_date:   document.getElementById('ed-date').value,
+      subtotal:       parseFloat(document.getElementById('ed-sub').value)||0,
+      tax_amount:     parseFloat(document.getElementById('ed-tax').value)||0,
+      total_amount:   parseFloat(document.getElementById('ed-total').value)||0
     })
   }).then(r=>r.json()).then(res=>{
-    if(res.ok) { location.reload(); }
-    else {
-      var m = document.getElementById('edit-msg');
-      m.style.display='block'; m.style.color='var(--red)';
-      m.textContent = 'Error: ' + res.error;
-      btn.disabled=false; btn.textContent='Save Changes';
+    msg.style.display='block';
+    if(res.ok){
+      msg.style.cssText='display:block;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);color:var(--mint);padding:8px;border-radius:6px;font-size:12px';
+      msg.textContent='✓ Saved. Reloading…';
+      setTimeout(function(){location.reload();},1000);
+    } else {
+      msg.style.cssText='display:block;background:rgba(239,68,68,.1);color:var(--red);padding:8px;border-radius:6px;font-size:12px';
+      msg.textContent='Error: '+res.error;
     }
   });
 }
-
-function exportDoc() {
-  var lines = [
-    ['LEDGR Document Export'],
-    ['Type','{{ doc.doc_type }}'],
-    ['Vendor','{{ doc.vendor_name }}'],
-    ['Vendor TIN','{{ doc.vendor_tax_id or "" }}'],
-    ['Invoice #','{{ doc.invoice_number or "" }}'],
-    ['Date','{{ doc.invoice_date.strftime("%d/%m/%Y") if doc.invoice_date else "" }}'],
-    ['Subtotal','{{ "%.2f"|format(doc.subtotal or 0) }}'],
-    ['Tax','{{ "%.2f"|format(doc.tax_amount or 0) }}'],
-    ['Total','{{ "%.2f"|format(doc.total_amount or 0) }}'],
-    ['Currency','{{ doc.currency or "MVR" }}']
-  ];
-  var csv = lines.map(function(r){
-    return r.map(function(c){return '"'+String(c||'').replace(/"/g,'""')+'"';}).join(',');
-  }).join('\n');
-  var blob = new Blob([csv],{type:'text/csv'});
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'doc-{{ doc.id }}.csv';
-  a.click();
+function deleteDoc(id) {
+  if(!confirm('Delete this bill? This will also reverse the journal entry.')) return;
+  fetch('/api/document/'+id+'/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({force:true})
+  }).then(r=>r.json()).then(res=>{
+    if(res.ok) window.location.href='/documents';
+    else alert('Error: '+res.error);
+  });
 }
-
-function downloadFile() {
-  var b64 = '{{ doc.file_data|default("") }}';
-  if (!b64) { alert('No file stored'); return; }
-  var mime = '{{ doc.file_type or "image/jpeg" }}';
-  var ext  = mime.indexOf('pdf') >= 0 ? 'pdf' : 'jpg';
-  var byteStr = atob(b64);
-  var ab = new ArrayBuffer(byteStr.length);
-  var ia = new Uint8Array(ab);
-  for(var i=0;i<byteStr.length;i++) ia[i]=byteStr.charCodeAt(i);
-  var blob = new Blob([ab],{type:mime});
-  var url  = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href=url; a.download='doc-{{ doc.id }}.'+ext; a.click();
-  setTimeout(function(){URL.revokeObjectURL(url);},1000);
+function repostDoc(id) {
+  fetch('/api/document/'+id+'/post',{method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      if(res.ok){alert('Posted to ledger ✓'); location.reload();}
+      else alert('Error: '+res.error);
+    });
 }
 </script>{% endblock %}
