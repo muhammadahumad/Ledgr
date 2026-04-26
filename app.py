@@ -1991,21 +1991,22 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
             # r[14] = COALESCE(c.name, buyer_legal_name, 'Unknown Customer') from JOIN
             cust_name = r[14] if len(r) > 14 and r[14] else (r[11] or "Unknown Customer")
             rows.append({
-                "id": r[0], "invoice_number": r[1] or f"INV-{r[0]}",
-                "customer_id": r[2],
-                "invoice_date": str(r[3]) if r[3] else "",
-                "due_date":     str(r[4]) if r[4] else "",
-                "currency": r[5] or "MVR",
-                "subtotal": float(r[6] or 0),
-                "tax_amount": float(r[7] or 0),
-                "total_amount": float(r[8] or 0),
-                "amount_paid": float(r[9] or 0),
-                "status": r[10] or "SENT",
-                "buyer_legal_name": r[11] or "",
-                "notes": r[12] or "",
-                "created_at": str(r[13]) if r[13] else "",
-                "customer": None,
-                "customer_name": cust_name
+                "id":             int(r[0]),
+                "invoice_number": str(r[1] or f"INV-{r[0]}"),
+                "customer_id":    int(r[2]) if r[2] else None,
+                "invoice_date":   r[3].strftime('%Y-%m-%d') if r[3] and hasattr(r[3],'strftime') else str(r[3] or ""),
+                "due_date":       r[4].strftime('%Y-%m-%d') if r[4] and hasattr(r[4],'strftime') else str(r[4] or ""),
+                "currency":       str(r[5] or "MVR"),
+                "subtotal":       round(float(r[6] or 0), 2),
+                "tax_amount":     round(float(r[7] or 0), 2),
+                "total_amount":   round(float(r[8] or 0), 2),
+                "amount_paid":    round(float(r[9] or 0), 2),
+                "status":         str(r[10] or "SENT"),
+                "buyer_legal_name": str(r[11] or ""),
+                "notes":          str(r[12] or ""),
+                "created_at":     str(r[13] or ""),
+                "customer":       None,
+                "customer_name":  str(cust_name or "Unknown")
             })
         return rows
     except Exception as ex:
@@ -4828,11 +4829,17 @@ def report_gst_return():
             "AND invoice_date>=:s AND invoice_date<=:e "
             "ORDER BY invoice_date"
         ), {"bid":business.id,"s":str(start),"e":str(end)}).fetchall()
-        bill_rows_detail = [{"invoice_number":r[0] or "","invoice_date":str(r[1]) if r[1] else "",
-            "vendor_name":r[2] or "","vendor_tax_id":r[3] or "",
-            "subtotal":float(r[4] or 0),"tax_amount":float(r[5] or 0),
-            "total_amount":float(r[6] or 0),"doc_type":r[7] or "BILL","currency":r[8] or "MVR"}
-            for r in bill_rows_detail]
+        bill_rows_detail = [{
+            "invoice_number": str(r[0] or ""),
+            "invoice_date":   r[1].strftime('%Y-%m-%d') if r[1] and hasattr(r[1],'strftime') else str(r[1] or ""),
+            "vendor_name":    str(r[2] or ""),
+            "vendor_tax_id":  str(r[3] or ""),
+            "subtotal":       round(float(r[4] or 0), 2),
+            "tax_amount":     round(float(r[5] or 0), 2),
+            "total_amount":   round(float(r[6] or 0), 2),
+            "doc_type":       str(r[7] or "BILL"),
+            "currency":       str(r[8] or "MVR")
+            } for r in bill_rows_detail]
     except:
         db.session.rollback()
         bill_rows_detail = []
