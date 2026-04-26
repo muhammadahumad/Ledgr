@@ -4815,6 +4815,27 @@ def report_gst_return():
     else:
         due_date = date(end.year, end.month+1, 28)
 
+    # Fetch rows for inline drill-down (no AJAX needed)
+    inv_rows_detail = get_invoices_raw(business.id, start=start, end=end,
+                                       exclude_statuses=['VOID','DRAFT'])
+    try:
+        bill_rows_detail = db.session.execute(db.text(
+            "SELECT invoice_number, invoice_date, vendor_name, vendor_tax_id, "
+            "subtotal, tax_amount, total_amount, doc_type, currency "
+            "FROM documents WHERE business_id=:bid "
+            "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "AND invoice_date>=:s AND invoice_date<=:e "
+            "ORDER BY invoice_date"
+        ), {"bid":business.id,"s":str(start),"e":str(end)}).fetchall()
+        bill_rows_detail = [{"invoice_number":r[0],"invoice_date":str(r[1]),
+            "vendor_name":r[2],"vendor_tax_id":r[3],
+            "subtotal":float(r[4] or 0),"tax_amount":float(r[5] or 0),
+            "total_amount":float(r[6] or 0),"doc_type":r[7],"currency":r[8]}
+            for r in bill_rows_detail]
+    except:
+        db.session.rollback()
+        bill_rows_detail = []
+
     return render_template("report_gst.html",
         user=user, business=business, tax=tax,
         period=period, period_label=period_label,
@@ -4822,7 +4843,9 @@ def report_gst_return():
         total_supplies=total_supplies, exempt_supplies=exempt_supplies,
         taxable_supplies=taxable_supplies, output_tax=output_tax,
         total_purchases=total_purchases, input_tax=input_tax,
-        net_tax=net_tax)
+        net_tax=net_tax,
+        inv_rows=inv_rows_detail,
+        bill_rows=bill_rows_detail)
 
 
 
