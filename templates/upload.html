@@ -599,27 +599,60 @@ function buildScanForm(res) {
   if (accEl && catMap[cat]) accEl.value = catMap[cat];
 }
 function saveScanResult() {
-  var docId = document.getElementById('sr-doc-id').value;
-  var sub = parseFloat(document.getElementById('sr-sub').value)||0;
-  var tax = parseFloat(document.getElementById('sr-tax').value)||0;
-  fetch('/api/document/'+docId+'/update', {
+  var docId   = document.getElementById('sr-doc-id').value;
+  var sub     = parseFloat(document.getElementById('sr-sub').value)||0;
+  var tax     = parseFloat(document.getElementById('sr-tax').value)||0;
+  var accEl   = document.getElementById('sr-account');
+  var accCode = accEl ? accEl.value : '6900';
+  var btn     = document.querySelector('[onclick="saveScanResult()"]');
+  var m       = document.getElementById('scan-save-msg');
+
+  if (!docId) { alert('No document ID — please try scanning again.'); return; }
+  if (btn) { btn.disabled=true; btn.textContent='Posting to ledger…'; }
+
+  // Call /confirm — updates document AND posts journal entry
+  fetch('/api/document/'+docId+'/confirm', {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
-      vendor_name:   document.getElementById('sr-vendor').value,
-      vendor_tax_id: document.getElementById('sr-tin').value,
-      invoice_number:document.getElementById('sr-invno').value,
-      invoice_date:  document.getElementById('sr-date').value,
-      subtotal:      sub, tax_amount:tax, total_amount: sub+tax
+      vendor_name:    (document.getElementById('sr-vendor')||{}).value||'',
+      vendor_tax_id:  (document.getElementById('sr-tin')||{}).value||'',
+      invoice_number: (document.getElementById('sr-invno')||{}).value||'',
+      invoice_date:   (document.getElementById('sr-date')||{}).value||'',
+      subtotal:       sub,
+      tax_amount:     tax,
+      total_amount:   parseFloat((document.getElementById('sr-total')||{}).textContent)||sub+tax,
+      account_code:   accCode
     })
   }).then(r=>r.json()).then(res=>{
-    var m=document.getElementById('scan-save-msg');
     m.style.display='block';
-    if(res.ok){
-      m.style.color='var(--mint)';
-      m.innerHTML='✓ Saved. <a href="/documents/'+docId+'" style="color:var(--mint)">View bill →</a>';
+    if (res.ok) {
+      m.style.cssText='display:block;background:rgba(16,185,129,.1);border:1px solid rgba(16,185,129,.3);'+
+        'color:var(--mint);padding:12px 16px;border-radius:8px;font-size:13px;margin-top:12px';
+      m.innerHTML =
+        '<div style="font-weight:700;margin-bottom:8px">✅ Bill confirmed & posted to ledger</div>'+
+        '<div style="font-size:12px;color:var(--text2);margin-bottom:10px">'+
+          'Vendor: '+(document.getElementById('sr-vendor')||{}).value+
+          ' &nbsp;|&nbsp; Amount: '+CCY+' '+(sub+tax).toFixed(2)+
+        '</div>'+
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">'+
+          '<a href="/documents/'+docId+'" class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)">'+
+            '📄 View Bill</a>'+
+          '<a href="/upload" class="btn btn-sm">📷 Scan Another</a>'+
+          '<a href="/documents" class="btn btn-sm">📋 All Bills</a>'+
+          '<a href="/reports/gst-return" class="btn btn-sm">🧾 GST Report</a>'+
+        '</div>';
+      if (btn) btn.style.display='none';
     } else {
-      m.style.color='var(--red)'; m.textContent='Error: '+res.error;
+      m.style.cssText='display:block;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);'+
+        'color:var(--red);padding:12px 16px;border-radius:8px;font-size:13px;margin-top:12px';
+      m.textContent='Error: '+res.error;
+      if (btn) { btn.disabled=false; btn.textContent='✓ Confirm & Post to Ledger'; }
     }
+  }).catch(function(err){
+    m.style.display='block';
+    m.style.color='var(--red)';
+    m.textContent='Network error: '+err.message;
+    if (btn) { btn.disabled=false; btn.textContent='✓ Confirm & Post to Ledger'; }
   });
 }
 
