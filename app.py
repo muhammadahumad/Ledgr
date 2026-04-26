@@ -8822,7 +8822,10 @@ def api_document_confirm(doc_id):
 
     # Post journal entry with confirmed data
     try:
-        account_code = data.get("account_code") or "6900"
+        # Use provided account, or business default, or fallback to 6900
+        account_code = (data.get("account_code") or 
+                       getattr(business, 'default_expense_account', None) or 
+                       "6900")
         journal_lines = [
             {"account_code": account_code, "debit": subtotal, "credit": 0,
              "description": doc.vendor_name or ""},
