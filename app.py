@@ -1684,7 +1684,7 @@ def extract_with_ai(file_b64, media_type, region='MV'):
     content = ({'type':'document','source':{'type':'base64','media_type':'application/pdf','data':file_b64}}
                if media_type=='application/pdf' else
                {'type':'image','source':{'type':'base64','media_type':media_type,'data':file_b64}})
-    body = json.dumps({'model':'claude-sonnet-4-6','max_tokens':2048,
+    body = json.dumps({'model':'claude-sonnet-4-5-20251001','max_tokens':2048,
                        'system': (
                            'You are LEDGR, a financial document extraction assistant. '
                            'Your ONLY job is to extract structured financial data from the provided document image and return valid JSON. '
@@ -4853,7 +4853,7 @@ def report_gst_return():
             "SELECT COALESCE(SUM(total_amount),0) FROM documents "
             "WHERE business_id=:bid AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
             "AND invoice_date>=:s AND invoice_date<=:e"
-        ), {"bid":business.id,"s":str(start),"e":str(end)}).scalar() or 0)
+        ), {"bid":business.id}).scalar() or 0)
     except:
         db.session.rollback()
         total_purchases = 0.0
@@ -4864,7 +4864,7 @@ def report_gst_return():
             "SELECT COALESCE(SUM(tax_amount),0) FROM documents "
             "WHERE business_id=:bid AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
             "AND invoice_date>=:s AND invoice_date<=:e AND tax_amount>0"
-        ), {"bid":business.id,"s":str(start),"e":str(end)}).scalar() or 0)
+        ), {"bid":business.id}).scalar() or 0)
     except:
         db.session.rollback()
         input_tax = round(total_purchases * tax["tax_rate"] / (1 + tax["tax_rate"]), 2)
@@ -4887,9 +4887,8 @@ def report_gst_return():
             "subtotal, tax_amount, total_amount, doc_type, currency "
             "FROM documents WHERE business_id=:bid "
             "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
-            "AND (invoice_date IS NULL OR (invoice_date>=:s AND invoice_date<=:e)) "
             "ORDER BY COALESCE(invoice_date"
-        ), {"bid":business.id,"s":str(start),"e":str(end)}).fetchall()
+        ), {"bid":business.id}).fetchall()
         bill_rows_detail = [{
             "invoice_number": str(r[0] or ""),
             "invoice_date":   r[1].strftime('%Y-%m-%d') if r[1] and hasattr(r[1],'strftime') else str(r[1] or ""),
@@ -9037,7 +9036,7 @@ YOUR ROLE: Answer financial questions in simple friendly language. Flag issues p
     messages.append({'role':'user','content':message})
     db.session.add(AIConversation(business_id=business.id, user_id=user.id, role='user', message=message))
     try:
-        body = json.dumps({'model':'claude-sonnet-4-6','max_tokens':1024,'system':system,'messages':messages}).encode()
+        body = json.dumps({'model':'claude-sonnet-4-5-20251001','max_tokens':1024,'system':system,'messages':messages}).encode()
         req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
                                      headers={'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'})
         with urllib.request.urlopen(req, timeout=60) as resp:
