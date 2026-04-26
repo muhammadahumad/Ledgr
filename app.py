@@ -25,6 +25,24 @@ def inject_globals():
     from datetime import date
     return {"today": date.today()}
 
+
+# Number formatting filter - consistent across all templates
+@app.template_filter('money')
+def money_filter(value, currency=''):
+    try:
+        v = float(value or 0)
+        formatted = '{:,.2f}'.format(v)
+        return f'{currency} {formatted}' if currency else formatted
+    except:
+        return '0.00'
+
+@app.template_filter('num')
+def num_filter(value):
+    try:
+        return '{:,.2f}'.format(float(value or 0))
+    except:
+        return '0.00'
+
 # ── Field-level encryption for sensitive data ──────────────────────────
 _FIELD_KEY = os.environ.get('FIELD_ENCRYPT_KEY', '').encode()
 
@@ -1651,6 +1669,13 @@ def extract_with_ai(file_b64, media_type, region='MV'):
         return json.loads(m.group())
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
+
+@app.route("/home")
+@app.route("/about")
+def landing_page():
+    """Public landing page — no login required"""
+    return render_template("landing.html")
+
 @app.route('/')
 def index():
     return redirect(url_for('dashboard') if 'user_id' in session else url_for('login'))
@@ -9316,8 +9341,23 @@ def document_detail(doc_id):
             raw = _json.loads(doc.raw_ai_data)
             line_items = raw.get('line_items', [])
     except: pass
+    # Load journal entries
+    try:
+        journal_entries = JournalEntry.query.filter_by(document_id=doc.id).all()
+    except:
+        db.session.rollback()
+        journal_entries = []
+    # Parse line items
+    import json as _json
+    line_items = []
+    try:
+        if doc.raw_ai_data:
+            raw = _json.loads(doc.raw_ai_data)
+            line_items = raw.get('line_items', raw.get('items', []))
+    except: pass
     return render_template("document_detail.html", user=user, business=business,
                            doc=doc, tax=business.tax_rules(),
+                           journal_entries=journal_entries, line_items=line_items,
                            journal_entries=journal_entries,
                            line_items=line_items)
 
