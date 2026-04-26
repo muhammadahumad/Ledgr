@@ -1993,16 +1993,17 @@ def get_invoices_raw(business_id, start=None, end=None, exclude_statuses=None):
             rows.append({
                 "id": r[0], "invoice_number": r[1] or f"INV-{r[0]}",
                 "customer_id": r[2],
-                "invoice_date": r[3], "due_date": r[4],
+                "invoice_date": str(r[3]) if r[3] else "",
+                "due_date":     str(r[4]) if r[4] else "",
                 "currency": r[5] or "MVR",
                 "subtotal": float(r[6] or 0),
                 "tax_amount": float(r[7] or 0),
                 "total_amount": float(r[8] or 0),
                 "amount_paid": float(r[9] or 0),
                 "status": r[10] or "SENT",
-                "buyer_legal_name": r[11],
-                "notes": r[12],
-                "created_at": r[13],
+                "buyer_legal_name": r[11] or "",
+                "notes": r[12] or "",
+                "created_at": str(r[13]) if r[13] else "",
                 "customer": None,
                 "customer_name": cust_name
             })
@@ -4827,10 +4828,10 @@ def report_gst_return():
             "AND invoice_date>=:s AND invoice_date<=:e "
             "ORDER BY invoice_date"
         ), {"bid":business.id,"s":str(start),"e":str(end)}).fetchall()
-        bill_rows_detail = [{"invoice_number":r[0],"invoice_date":str(r[1]),
-            "vendor_name":r[2],"vendor_tax_id":r[3],
+        bill_rows_detail = [{"invoice_number":r[0] or "","invoice_date":str(r[1]) if r[1] else "",
+            "vendor_name":r[2] or "","vendor_tax_id":r[3] or "",
             "subtotal":float(r[4] or 0),"tax_amount":float(r[5] or 0),
-            "total_amount":float(r[6] or 0),"doc_type":r[7],"currency":r[8]}
+            "total_amount":float(r[6] or 0),"doc_type":r[7] or "BILL","currency":r[8] or "MVR"}
             for r in bill_rows_detail]
     except:
         db.session.rollback()
