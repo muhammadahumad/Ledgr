@@ -4613,7 +4613,7 @@ def api_settings_update():
                   "tax_registration_number","gst_sector","gst_sector_type",
                   "bank_name","bank_account_name","bank_account_number","bank_swift",
                   "bank_iban","pension_portal","base_currency","invoice_prefix",
-                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_user","smtp_pass","smtp_from","stripe_secret_key","stripe_publishable_key","stripe_webhook_secret","myinvois_client_id","myinvois_client_secret","myinvois_tin","default_revenue_account","default_cogs_account","default_expense_account"]
+                  "invoice_notes","invoice_terms","ayrshare_api_key","smtp_host","smtp_port","smtp_user","smtp_pass","smtp_from","stripe_secret_key","stripe_publishable_key","stripe_webhook_secret","myinvois_client_id","myinvois_client_secret","myinvois_tin","default_revenue_account","default_cogs_account","default_expense_account"]
     for f in str_fields:
         if f in data and hasattr(business, f):
             setattr(business, f, str(data[f]).strip() if data[f] else "")
