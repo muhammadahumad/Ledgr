@@ -1,0 +1,84 @@
+{% extends "base.html" %}{% block title %}Cash Flow Forecast — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">💰 Cash Flow Forecast</div>
+    <div class="page-sub">30 / 60 / 90 day projection — as of {{ today.strftime('%d %b %Y') }}</div></div>
+  <div><a href="/reports" class="btn">← Reports</a></div>
+</div>
+<div class="content">
+
+  <!-- 30/60/90 Day buckets -->
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px">
+    {% for days, label in [(30,'30 Days'),(60,'60 Days'),(90,'90 Days')] %}
+    {% set b = buckets[days] %}
+    <div class="card" style="padding:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:12px">
+        Next {{ label }}
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
+        <span style="color:var(--mint)">↓ Expected In</span>
+        <span style="font-family:var(--mono);font-weight:600;color:var(--mint)">{{ tax.currency }} {{ "{:,.2f}".format(b.in) }}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:13px">
+        <span style="color:var(--red)">↑ Expected Out</span>
+        <span style="font-family:var(--mono);font-weight:600;color:var(--red)">{{ tax.currency }} {{ "{:,.2f}".format(b.out) }}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border);font-weight:700;font-size:16px">
+        <span>Net</span>
+        <span style="font-family:var(--mono);color:{% if b.net >= 0 %}var(--mint){% else %}var(--red){% endif %}">
+          {{ tax.currency }} {{ "{:,.2f}".format(b.net) }}
+        </span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <!-- Outstanding receivables -->
+    <div class="card" style="padding:0">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div class="card-title" style="margin:0;color:var(--mint)">↓ Expected Inflows</div>
+        <div style="font-size:11px;color:var(--text3)">Invoices awaiting payment</div>
+      </div>
+      {% if receivables %}
+      <table class="table">
+        <thead><tr><th>Due</th><th>Amount</th></tr></thead>
+        <tbody>
+        {% for r in receivables[:15] %}
+        <tr>
+          <td style="font-size:11px">{{ r[0] or '—' }}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--mint)">{{ r[2] }} {{ "{:,.2f}".format(r[1]|float) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">No outstanding receivables</div>
+      {% endif %}
+    </div>
+
+    <!-- Outstanding payables -->
+    <div class="card" style="padding:0">
+      <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+        <div class="card-title" style="margin:0;color:var(--red)">↑ Expected Outflows</div>
+        <div style="font-size:11px;color:var(--text3)">Bills due for payment</div>
+      </div>
+      {% if payables %}
+      <table class="table">
+        <thead><tr><th>Due</th><th>Amount</th></tr></thead>
+        <tbody>
+        {% for r in payables[:15] %}
+        <tr>
+          <td style="font-size:11px">{{ r[0] or '—' }}</td>
+          <td style="font-family:var(--mono);font-size:11px;color:var(--red)">{{ r[2] }} {{ "{:,.2f}".format(r[1]|float) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">No outstanding payables</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,52 +1,87 @@
-{% extends "base.html" %}{% block title %}Admin — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Admin — LEDGR{% endblock %}
+{% block content %}
 <div class="topbar">
-  <div><div class="page-title">Admin Panel</div><div class="page-sub">Platform management · LEDGR Global</div></div>
+  <div><div class="page-title">⚡ LEDGR Admin</div>
+    <div class="page-sub">All clients, usage, and platform health</div></div>
 </div>
 <div class="content">
-  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
-    <div class="stat-card"><div class="stat-label">Total Businesses</div><div class="stat-value">{{ total_businesses }}</div></div>
-    <div class="stat-card"><div class="stat-label">Total Users</div><div class="stat-value">{{ total_users }}</div></div>
-    <div class="stat-card"><div class="stat-label">Total Invoices</div><div class="stat-value">{{ total_invoices }}</div></div>
-    <div class="stat-card"><div class="stat-label">Total Documents</div><div class="stat-value">{{ total_documents }}</div></div>
+
+  <!-- Stats row -->
+  {% if stats %}
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px">
+    <div class="card" style="padding:14px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:var(--mint);font-family:var(--mono)">{{ stats[0] or 0 }}</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Businesses</div>
+    </div>
+    <div class="card" style="padding:14px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:var(--accent);font-family:var(--mono)">{{ stats[1] or 0 }}</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Users</div>
+    </div>
+    <div class="card" style="padding:14px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:var(--amber);font-family:var(--mono)">${{ stats[2] or 0 }}</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">MRR</div>
+    </div>
+    <div class="card" style="padding:14px;text-align:center">
+      <div style="font-size:28px;font-weight:800;color:var(--red);font-family:var(--mono)">{{ tickets|length }}</div>
+      <div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Open Tickets</div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- All businesses -->
+  <div class="card" style="padding:0;margin-bottom:16px">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+      <div class="card-title" style="margin:0">All Clients</div>
+    </div>
+    <table class="table">
+      <thead><tr><th>Business</th><th>Region</th><th>Plan</th><th>Users</th><th>Invoices</th><th>Documents</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for b in businesses %}
+      <tr>
+        <td style="font-weight:600">{{ b[1] }}</td>
+        <td><span class="badge badge-gray">{{ b[2] or 'MV' }}</span></td>
+        <td><span class="badge badge-{% if b[3] in ['pro','business','paid_client'] %}green{% else %}gray{% endif %}">{{ b[3] or 'free' }}</span></td>
+        <td style="font-family:var(--mono);font-size:12px">{{ b[4] }}</td>
+        <td style="font-family:var(--mono);font-size:12px">{{ b[5] }}</td>
+        <td style="font-family:var(--mono);font-size:12px">{{ b[6] }}</td>
+        <td>
+          <button class="btn btn-sm" onclick="impersonate({{ b[0] }})">👁 View</button>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
   </div>
 
-  <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px">
-    <div class="card" style="padding:0">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border)"><div class="card-title" style="margin:0">Recent Businesses</div></div>
-      <table class="table">
-        <thead><tr><th>Business</th><th>Region</th><th>Plan</th><th>Modules</th></tr></thead>
-        <tbody>
-        {% for b in recent_businesses %}
-        <tr>
-          <td style="font-weight:500;color:var(--text)">{{ b.name }}</td>
-          <td><span class="badge badge-gray" style="font-size:10px">{{ b.region or 'MV' }}</span></td>
-          <td style="font-size:11px;color:var(--text3)">—</td>
-          <td style="font-size:10px;color:var(--text3)">
-            {% if b.has_pos %}POS {% endif %}
-            {% if b.has_inventory %}INV {% endif %}
-            {% if b.has_payroll %}HR {% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+  <!-- Open support tickets -->
+  {% if tickets %}
+  <div class="card" style="padding:0">
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+      <div class="card-title" style="margin:0">🎫 Open Support Tickets</div>
     </div>
-    <div class="card">
-      <div class="card-title">Plan Distribution</div>
-      {% for plan, count in plan_counts.items() %}
-      <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
-        <span style="text-transform:capitalize;color:var(--text2)">{{ plan }}</span>
-        <span style="font-family:var(--mono);font-weight:600">{{ count }}</span>
-      </div>
+    <table class="table">
+      <thead><tr><th>Subject</th><th>Priority</th><th>Date</th></tr></thead>
+      <tbody>
+      {% for t in tickets %}
+      <tr>
+        <td style="font-weight:500">{{ t.subject }}</td>
+        <td><span style="font-size:11px;color:{% if t.priority=='urgent' %}var(--red){% elif t.priority=='high' %}var(--amber){% else %}var(--text3){% endif %}">{{ t.priority }}</span></td>
+        <td style="font-size:11px;color:var(--text3)">{{ t.created_at.strftime('%d %b %Y') if t.created_at else '—' }}</td>
+      </tr>
       {% endfor %}
-    </div>
+      </tbody>
+    </table>
   </div>
-  <div class="card" style="margin-top:14px">
-    <div class="card-title">Admin Tools</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <a href="/admin/tax-rules" class="btn">🌍 Tax Rules</a>
-      <a href="/admin" class="btn">👤 Users</a>
-    </div>
-  </div>
+  {% endif %}
 </div>
 {% endblock %}
+{% block scripts %}<script>
+function impersonate(bizId) {
+  if (!confirm('Switch to this client account?')) return;
+  fetch('/api/admin/impersonate/'+bizId, {method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      if(res.ok) window.location.href=res.redirect;
+      else alert('Error: '+res.error);
+    });
+}
+</script>{% endblock %}

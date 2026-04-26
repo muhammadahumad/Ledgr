@@ -1,0 +1,93 @@
+{% extends "base.html" %}{% block title %}{{ bpt.name }} — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">{{ bpt.name }} — {{ year }}</div>
+    <div class="page-sub">{{ bpt.authority }} · {{ business.display_name() }}</div></div>
+  <div style="display:flex;gap:8px">
+    <button onclick="window.print()" class="btn">🖨 Print</button>
+    <a href="/reports" class="btn">← Reports</a>
+  </div>
+</div>
+<div class="content" style="max-width:700px">
+
+  <!-- Year selector -->
+  <div class="card" style="margin-bottom:14px;padding:12px 16px">
+    <form method="get" style="display:flex;gap:10px;align-items:flex-end">
+      <div><div class="field-label">Tax Year</div>
+        <select class="select-input" name="year" onchange="this.form.submit()">
+          {% for y in years %}<option value="{{ y }}" {% if y==year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+        </select></div>
+      <button type="submit" class="btn btn-primary">Apply</button>
+    </form>
+  </div>
+
+  <!-- BPT Calculation -->
+  <div class="card" style="max-width:700px;margin:0 auto">
+    <div style="text-align:center;padding-bottom:16px;border-bottom:2px solid var(--border);margin-bottom:20px">
+      <div style="font-size:16px;font-weight:700">{{ business.display_name() }}</div>
+      <div style="font-size:14px;font-weight:700;margin-top:8px;color:var(--text)">
+        {{ bpt.name | upper }} RETURN — {{ year }}
+      </div>
+      <div style="font-size:11px;color:var(--text3)">{{ start.strftime('%d %b %Y') }} to {{ end.strftime('%d %b %Y') }}</div>
+      <div style="font-size:11px;color:var(--red);margin-top:4px">Filing due: {{ due_date.strftime('%d %b %Y') }}</div>
+    </div>
+
+    <!-- P&L Summary -->
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--mint);margin-bottom:8px">
+      Profit & Loss Summary
+    </div>
+    {% macro calc_row(label, value, color='var(--text)') %}
+    <div style="display:flex;justify-content:space-between;padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">
+      <span style="font-size:13px;color:var(--text2)">{{ label }}</span>
+      <span style="font-family:var(--mono);font-weight:700;color:{{ color }}">
+        {{ tax.currency }} {{ "{:,.2f}".format(value) }}
+      </span>
+    </div>
+    {% endmacro %}
+
+    {{ calc_row('Total Revenue', revenue, 'var(--mint)') }}
+    {{ calc_row('Total Allowable Expenses', expenses, 'var(--red)') }}
+
+    <div style="display:flex;justify-content:space-between;padding:14px;border:2px solid var(--border);border-radius:8px;margin-bottom:14px;font-weight:700;font-size:16px">
+      <span>Net Profit / (Loss)</span>
+      <span style="font-family:var(--mono);color:{% if net_profit > 0 %}var(--mint){% else %}var(--red){% endif %}">
+        {{ tax.currency }} {{ "{:,.2f}".format(net_profit) }}
+      </span>
+    </div>
+
+    <!-- BPT Calculation -->
+    <div style="font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin:14px 0 8px">
+      {{ bpt.name }} Calculation
+    </div>
+    <div style="background:var(--bg);border-radius:8px;padding:14px;margin-bottom:14px;font-size:12px;color:var(--text2);line-height:1.7">
+      {{ bpt.notes }}
+    </div>
+    {{ calc_row('Net Profit', net_profit) }}
+    {{ calc_row('Less: Exemption', exemption, 'var(--text3)') }}
+    {{ calc_row('Taxable Profit', taxable) }}
+
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;
+      background:{% if tax_payable > 0 %}rgba(239,68,68,.08){% else %}rgba(16,185,129,.08){% endif %};
+      border:2px solid {% if tax_payable > 0 %}var(--red){% else %}var(--mint){% endif %};
+      border-radius:10px;margin-top:14px">
+      <div>
+        <div style="font-weight:700;font-size:13px">{{ bpt.name }} Payable to {{ bpt.authority }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ (bpt.rate * 100)|round(0)|int }}% of taxable profit</div>
+      </div>
+      <div style="font-family:var(--mono);font-weight:700;font-size:24px;color:{% if tax_payable > 0 %}var(--red){% else %}var(--mint){% endif %}">
+        {{ tax.currency }} {{ "{:,.2f}".format(tax_payable) }}
+      </div>
+    </div>
+
+    {% if net_profit <= 0 %}
+    <div style="margin-top:12px;padding:12px;background:rgba(16,185,129,.08);border-radius:8px;font-size:12px;color:var(--mint)">
+      ✓ No {{ bpt.name }} payable — business is operating at a loss this year.
+    </div>
+    {% elif taxable <= 0 %}
+    <div style="margin-top:12px;padding:12px;background:rgba(16,185,129,.08);border-radius:8px;font-size:12px;color:var(--mint)">
+      ✓ No {{ bpt.name }} payable — profit is within the exemption threshold.
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

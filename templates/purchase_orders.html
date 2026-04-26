@@ -1,227 +1,88 @@
-{% extends "base.html" %}{% block title %}Purchase Orders — LEDGR{% endblock %}{% block content %}
+{% extends "base.html" %}{% block title %}Purchase Orders — LEDGR{% endblock %}
+{% block content %}
 <div class="topbar">
   <div><div class="page-title">Purchase Orders</div>
-  <div class="page-sub">{{ purchase_orders|length }} orders · complete AP cycle</div></div>
-  <button class="btn btn-primary" onclick="openModal('new-po-modal')">+ New PO</button>
+    <div class="page-sub">Order from suppliers, convert to bills on receipt</div></div>
+  <div><button class="btn btn-primary" onclick="document.getElementById('new-po-modal').style.display='flex'">+ New PO</button></div>
 </div>
 <div class="content">
-
-  <!-- Summary strip -->
-  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
-    {% set draft_pos = purchase_orders|selectattr('status','eq','DRAFT')|list %}
-    {% set sent_pos = purchase_orders|selectattr('status','eq','SENT')|list %}
-    {% set received_pos = purchase_orders|selectattr('status','eq','RECEIVED')|list %}
-    {% set total_value = purchase_orders|sum(attribute='total_amount') %}
-    <div class="stat-card"><div class="stat-label">Total Orders</div><div class="stat-value">{{ purchase_orders|length }}</div></div>
-    <div class="stat-card" style="border-color:rgba(245,158,11,.3)"><div class="stat-label">Pending / Sent</div><div class="stat-value" style="color:var(--amber)">{{ (draft_pos|length) + (sent_pos|length) }}</div></div>
-    <div class="stat-card" style="border-color:rgba(16,185,129,.3)"><div class="stat-label">Received</div><div class="stat-value" style="color:var(--mint)">{{ received_pos|length }}</div></div>
-    <div class="stat-card"><div class="stat-label">Total Value</div><div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ "%.0f"|format(total_value|float) }}</div></div>
-  </div>
-
   <div class="card" style="padding:0">
-    {% if purchase_orders %}
     <table class="table">
-      <thead><tr>
-        <th>PO Number</th><th>Supplier</th><th>Items</th>
-        <th style="text-align:right">Total</th><th>Expected</th>
-        <th>Status</th><th></th>
-      </tr></thead>
+      <thead><tr><th>PO #</th><th>Supplier</th><th>Order Date</th><th>Expected</th><th>Status</th><th style="text-align:right">Total</th><th>Actions</th></tr></thead>
       <tbody>
-      {% for po in purchase_orders %}
-      {% set items = po.items|from_json if po.items else [] %}
+      {% for po in pos %}
       <tr>
-        <td style="font-family:var(--mono);font-weight:600;color:var(--text)">{{ po.po_number }}</td>
-        <td style="font-size:12px;color:var(--text2)">{{ po.supplier.name if po.supplier else '—' }}</td>
-        <td style="font-size:11px;color:var(--text3)">{{ items|length }} line{{ 's' if items|length != 1 }}</td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ po.currency }} {{ "%.2f"|format(po.total_amount|float) }}</td>
-        <td style="font-size:11px;color:var(--text3)">{{ po.expected_date.strftime('%d %b %Y') if po.expected_date else '—' }}</td>
+        <td style="font-family:var(--mono);font-weight:600;color:var(--accent);font-size:11px">{{ po[1] }}</td>
+        <td style="font-weight:500">{{ po[7] }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ po[2] or '—' }}</td>
+        <td style="font-size:11px;color:var(--text3)">{{ po[3] or '—' }}</td>
+        <td><span class="badge badge-{% if po[4]=='RECEIVED' %}green{% elif po[4]=='SENT' %}amber{% elif po[4]=='CANCELLED' %}red{% else %}gray{% endif %}">{{ po[4] }}</span></td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ po[6] }} {{ "{:,.2f}".format(po[5]|float) }}</td>
         <td>
-          <span class="badge badge-{% if po.status=='RECEIVED' %}green{% elif po.status=='SENT' %}blue{% elif po.status=='CANCELLED' %}red{% else %}gray{% endif %}" style="font-size:10px">
-            {{ po.status }}
-          </span>
-        </td>
-        <td>
-          <div style="display:flex;gap:4px">
-            {% if po.status == 'DRAFT' %}
-            <button class="btn btn-sm btn-primary" onclick="sendPO({{ po.id }}, '{{ po.po_number }}')">Send</button>
-            {% endif %}
-            {% if po.status in ['DRAFT','SENT'] %}
-            <button class="btn btn-sm" onclick="receivePO({{ po.id }}, '{{ po.po_number }}')" style="color:var(--mint);border-color:var(--mint)">Receive</button>
-            <button class="btn btn-sm" onclick="cancelPO({{ po.id }}, '{{ po.po_number }}')" style="color:var(--red);border-color:var(--red)">Cancel</button>
-            {% endif %}
-            {% if po.status == 'RECEIVED' %}
-            <span style="font-size:11px;color:var(--text3)">{{ po.received_date.strftime('%d %b') if po.received_date else 'Done' }}</span>
-            {% endif %}
-          </div>
+          {% if po[4] not in ['RECEIVED','CANCELLED'] %}
+          <button class="btn btn-sm btn-primary" onclick="convertPO({{ po[0] }})">✓ Received</button>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}
+      {% if not pos %}
+      <tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text3)">No purchase orders yet</td></tr>
+      {% endif %}
       </tbody>
     </table>
-    {% else %}
-    <div style="text-align:center;padding:60px;color:var(--text3)">
-      <div style="font-size:36px;margin-bottom:12px">📋</div>
-      <div style="font-weight:500;color:var(--text2);margin-bottom:6px">No purchase orders yet</div>
-      <div style="font-size:12px;margin-bottom:16px">Create POs to order from suppliers, track delivery, and auto-update stock on receipt</div>
-      <button class="btn btn-primary" onclick="openModal('new-po-modal')">Create First PO</button>
-    </div>
-    {% endif %}
   </div>
 </div>
 
-<!-- New PO Modal -->
-<div id="new-po-modal" class="modal-overlay">
-  <div class="modal" style="max-width:640px">
-    <div class="modal-title">New Purchase Order <button class="modal-close" onclick="closeModal('new-po-modal')">×</button></div>
-
+<div id="new-po-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-title">New Purchase Order
+      <button class="modal-close" onclick="document.getElementById('new-po-modal').style.display='none'">×</button>
+    </div>
     <div class="field-row">
-      <div style="flex:2"><div class="field-label">Supplier</div>
-        <select class="select-input" id="po-supplier">
-          <option value="">Select supplier...</option>
+      <div><div class="field-label">Supplier *</div>
+        <select class="select-input" id="po-sup"><option value="">— Select —</option>
           {% for s in suppliers %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div><div class="field-label">Expected Delivery</div>
+        </select></div>
+      <div><div class="field-label">Order Date</div>
         <input class="field-input" type="date" id="po-date"></div>
     </div>
-
-    <!-- Line items -->
-    <div style="margin:12px 0 6px;font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase">Order Items</div>
-    <div id="po-items"></div>
-    <button class="btn btn-sm" onclick="addPOItem()" style="margin-bottom:12px">+ Add Item</button>
-
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:var(--bg);border-radius:8px;margin-bottom:12px">
-      <span style="font-size:12px;color:var(--text2)">Order Total</span>
-      <span style="font-family:var(--mono);font-size:18px;font-weight:700;color:var(--mint)" id="po-total">{{ tax.currency }} 0.00</span>
+    <div class="field-row">
+      <div><div class="field-label">Expected Delivery</div>
+        <input class="field-input" type="date" id="po-expected"></div>
+      <div><div class="field-label">Total Amount</div>
+        <input class="field-input" type="number" step="0.01" id="po-total"></div>
     </div>
-
-    <div class="field-group"><div class="field-label">Notes</div>
-      <input class="field-input" id="po-notes" placeholder="Delivery instructions, payment terms..."></div>
-
-    <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn btn-primary" onclick="createPO()">Create Purchase Order</button>
-      <button class="btn" onclick="closeModal('new-po-modal')">Cancel</button>
+    <div><div class="field-label">Notes</div>
+      <textarea class="field-input" id="po-notes" rows="2"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-primary" onclick="createPO()">Create PO</button>
+      <button class="btn" onclick="document.getElementById('new-po-modal').style.display='none'">Cancel</button>
     </div>
-    <div id="po-msg" style="margin-top:8px;font-size:12px;display:none"></div>
+    <div id="po-msg" style="display:none;margin-top:8px;font-size:12px"></div>
   </div>
 </div>
 {% endblock %}
-
 {% block scripts %}<script>
-var currency = '{{ tax.currency }}';
-var poItems = [];
-
-var PRODUCTS = [
-  {% for p in products %}
-  {id:{{ p.id }},name:{{ p.name|tojson }},cost:{{ p.unit_cost|float }},sku:{{ (p.sku or '')|tojson }}}{% if not loop.last %},{% endif %}
-  {% endfor %}
-];
-
-function addPOItem() {
-  var idx = poItems.length;
-  poItems.push({product_id:null,name:'',qty:1,unit_cost:0,total:0});
-  var container = document.getElementById('po-items');
-  var row = document.createElement('div');
-  row.id = 'po-row-'+idx;
-  row.style.cssText = 'display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:6px;margin-bottom:6px;align-items:center';
-  row.innerHTML = `
-    <select class="select-input" style="font-size:11px" onchange="selectProduct(${idx},this.value)">
-      <option value="">Select product...</option>
-      ${PRODUCTS.map(p=>'<option value="'+p.id+'">'+p.name+(p.sku?' ('+p.sku+')':'')+'</option>').join('')}
-      <option value="custom">-- Enter manually --</option>
-    </select>
-    <input class="field-input" type="number" placeholder="Qty" id="po-qty-${idx}" value="1" style="font-size:12px" oninput="calcPORow(${idx})">
-    <input class="field-input" type="number" placeholder="Unit cost" id="po-cost-${idx}" value="0" step="0.01" style="font-size:12px" oninput="calcPORow(${idx})">
-    <div style="font-family:var(--mono);font-size:12px;font-weight:600;color:var(--mint);text-align:right" id="po-row-total-${idx}">${currency} 0.00</div>
-    <button onclick="removePOItem(${idx})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">×</button>`;
-  container.appendChild(row);
-  updatePOTotal();
-}
-
-function selectProduct(idx, val) {
-  if(!val || val==='custom') return;
-  var p = PRODUCTS.find(x=>x.id==val);
-  if(p) {
-    document.getElementById('po-cost-'+idx).value = p.cost;
-    poItems[idx] = {product_id:p.id, name:p.name, qty:1, unit_cost:p.cost, total:p.cost};
-    calcPORow(idx);
-  }
-}
-
-function calcPORow(idx) {
-  var qty = parseFloat(document.getElementById('po-qty-'+idx)?.value)||0;
-  var cost = parseFloat(document.getElementById('po-cost-'+idx)?.value)||0;
-  var total = qty * cost;
-  poItems[idx] = poItems[idx] || {};
-  poItems[idx].qty = qty;
-  poItems[idx].unit_cost = cost;
-  poItems[idx].total = total;
-  var el = document.getElementById('po-row-total-'+idx);
-  if(el) el.textContent = currency + ' ' + total.toFixed(2);
-  updatePOTotal();
-}
-
-function removePOItem(idx) {
-  var row = document.getElementById('po-row-'+idx);
-  if(row) row.remove();
-  poItems[idx] = null;
-  updatePOTotal();
-}
-
-function updatePOTotal() {
-  var total = poItems.filter(Boolean).reduce((s,i)=>s+(i.total||0),0);
-  document.getElementById('po-total').textContent = currency + ' ' + total.toFixed(2);
-}
-
+document.getElementById('po-date').value = new Date().toISOString().split('T')[0];
 function createPO() {
-  var validItems = poItems.filter(Boolean).filter(i=>i.qty>0 && i.unit_cost>=0);
-  if(!validItems.length){alert('Add at least one item');return;}
-  var btn=event.target;btn.disabled=true;btn.textContent='Creating...';
-  fetch('/api/purchase-order/create',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      supplier_id:document.getElementById('po-supplier').value||null,
-      expected_date:document.getElementById('po-date').value,
-      notes:document.getElementById('po-notes').value,
-      items:validItems
-    })
+  var total = parseFloat(document.getElementById('po-total').value)||0;
+  fetch('/api/purchase-order/create',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({supplier_id:document.getElementById('po-sup').value,
+      order_date:document.getElementById('po-date').value,
+      expected_date:document.getElementById('po-expected').value,
+      total_amount:total,subtotal:total,notes:document.getElementById('po-notes').value})
   }).then(r=>r.json()).then(res=>{
     var m=document.getElementById('po-msg');m.style.display='block';
-    if(res.ok){
-      m.style.color='var(--mint)';
-      m.textContent='✓ '+res.po_number+' created — Total: '+currency+' '+parseFloat(res.total).toFixed(2);
-      setTimeout(()=>{closeModal('new-po-modal');location.reload();},1500);
-    } else {
-      m.style.color='var(--red)';m.textContent='Error: '+res.error;
-      btn.disabled=false;btn.textContent='Create Purchase Order';
-    }
+    if(res.ok){m.style.color='var(--mint)';m.textContent='✓ PO '+res.po_number+' created';
+      setTimeout(function(){location.reload();},1000);}
+    else{m.style.color='var(--red)';m.textContent='Error: '+res.error;}
   });
 }
-
-function sendPO(id, num) {
-  if(!confirm('Mark PO '+num+' as sent to supplier?'))return;
-  fetch('/api/purchase-order/'+id+'/send',{method:'POST'})
+function convertPO(id){
+  if(!confirm('Mark as received and create a bill?'))return;
+  fetch('/api/purchase-order/'+id+'/convert-to-bill',{method:'POST'})
     .then(r=>r.json()).then(res=>{
-      if(res.ok)location.reload();
-      else alert('Error: '+res.error);
-    });
-}
-
-function receivePO(id, num) {
-  if(!confirm('Receive PO '+num+'?\n\nThis will:\n✓ Update stock levels for all items\n✓ Post journal entry (Inventory DR, AP CR)\n\nThis cannot be undone.'))return;
-  var btn=event.target;btn.disabled=true;btn.textContent='Receiving...';
-  fetch('/api/purchase-order/'+id+'/receive',{method:'POST'})
-    .then(r=>r.json()).then(res=>{
-      if(res.ok){alert('✓ '+res.message);location.reload();}
-      else{alert('Error: '+res.error);btn.disabled=false;btn.textContent='Receive';}
-    });
-}
-
-function cancelPO(id, num) {
-  if(!confirm('Cancel PO '+num+'?'))return;
-  fetch('/api/purchase-order/'+id+'/cancel',{method:'POST'})
-    .then(r=>r.json()).then(res=>{
-      if(res.ok)location.reload();
+      if(res.ok){alert('Bill created ✓');location.reload();}
       else alert('Error: '+res.error);
     });
 }

@@ -1,0 +1,65 @@
+{% extends "base.html" %}{% block title %}Recurring Invoices — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">🔄 Recurring Invoices</div>
+    <div class="page-sub">Auto-generate invoices on a schedule</div></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" onclick="document.getElementById('gen-modal').style.display='flex'">▶ Generate Due</button>
+    <button class="btn" onclick="document.getElementById('new-rec-modal').style.display='flex'">+ New Template</button>
+  </div>
+</div>
+<div class="content">
+  <div class="card" style="padding:0">
+    <table class="table">
+      <thead><tr><th>Name</th><th>Customer</th><th>Frequency</th><th>Next Date</th><th>Status</th><th style="text-align:right">Amount</th></tr></thead>
+      <tbody>
+      {% for r in recurrings %}
+      <tr>
+        <td style="font-weight:600">{{ r.name }}</td>
+        <td>{{ r.customer_id }}</td>
+        <td><span class="badge badge-gray">{{ r.frequency }}</span></td>
+        <td style="font-size:11px;color:{% if r.next_date and r.next_date <= today %}var(--red){% else %}var(--text3){% endif %}">
+          {{ r.next_date or '—' }}</td>
+        <td><span class="badge badge-{% if r.is_active %}green{% else %}gray{% endif %}">
+          {% if r.is_active %}Active{% else %}Paused{% endif %}</span></td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ tax.currency }} {{ "{:,.2f}".format(r.total_amount|float) }}</td>
+      </tr>
+      {% endfor %}
+      {% if not recurrings %}
+      <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">No recurring invoices set up yet</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Generate modal -->
+<div id="gen-modal" class="modal-overlay" style="display:none">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-title">Generate Due Invoices
+      <button class="modal-close" onclick="document.getElementById('gen-modal').style.display='none'">×</button>
+    </div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">
+      This will generate invoices for all recurring templates that are due today or overdue.
+    </p>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-primary" onclick="generateRecurring()">Generate Now</button>
+      <button class="btn" onclick="document.getElementById('gen-modal').style.display='none'">Cancel</button>
+    </div>
+    <div id="gen-msg" style="display:none;margin-top:10px;font-size:12px"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script>
+var today = new Date().toISOString().split('T')[0];
+function generateRecurring() {
+  fetch('/api/recurring/generate',{method:'POST'})
+    .then(r=>r.json()).then(res=>{
+      var m=document.getElementById('gen-msg');m.style.display='block';
+      if(res.ok){m.style.color='var(--mint)';
+        m.textContent=res.count+' invoice(s) generated: '+res.generated.join(', ');
+        setTimeout(function(){location.reload();},2000);}
+      else{m.style.color='var(--red)';m.textContent='Error: '+res.error;}
+    });
+}
+</script>{% endblock %}

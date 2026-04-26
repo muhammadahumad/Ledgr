@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% block title %}Export Data — LEDGR{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">📦 Export Your Data</div>
+    <div class="page-sub">Download all your records for backup and legal compliance</div></div>
+</div>
+<div class="content" style="max-width:700px">
+
+  <div class="card" style="margin-bottom:16px;padding:20px">
+    <div class="card-title">Full Data Export</div>
+    <p style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:16px">
+      Download a complete backup of all your business records as a ZIP file. 
+      This includes all invoices, bills, journal entries, customers, suppliers, 
+      and your chart of accounts. Keep this file in a safe place — you are 
+      legally required to retain financial records for a minimum of 5 years.
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">
+      {% for label, desc in [
+        ('📄 invoices.csv', 'All sales invoices with amounts and status'),
+        ('📄 bills_and_expenses.csv', 'All bills, receipts and expenses'),
+        ('📄 journal.csv', 'Complete double-entry ledger journal'),
+        ('📄 customers.csv', 'Customer database with contacts'),
+        ('📄 suppliers.csv', 'Supplier database with TIN numbers'),
+        ('📄 chart_of_accounts.csv', 'All accounts with current balances'),
+      ] %}
+      <div style="display:flex;gap:10px;padding:10px;background:var(--bg);border-radius:8px;font-size:12px">
+        <span>{{ label }}</span>
+        <span style="color:var(--text3)">{{ desc }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <a href="/api/export/full" class="btn btn-primary" style="width:100%;text-align:center;padding:13px;font-size:15px;font-weight:700">
+      📥 Download Full Export (.zip)
+    </a>
+    <p style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">
+      {{ business.display_name() }} · Exported on demand · Retain for 5+ years
+    </p>
+  </div>
+
+  <div class="card" style="padding:16px;background:rgba(245,158,11,.05);border-color:rgba(245,158,11,.3)">
+    <div style="font-weight:600;font-size:13px;color:var(--amber);margin-bottom:8px">⚖ Legal Retention Requirements</div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.7">
+      {% if business.region == 'MV' %}Maldives (MIRA): Financial records must be retained for 15 years.{% endif %}
+      {% if business.region == 'AE' %}UAE (FTA): VAT records must be retained for 5 years.{% endif %}
+      {% if business.region == 'SA' %}Saudi Arabia (ZATCA): Financial records must be retained for 10 years.{% endif %}
+      {% if business.region == 'GB' %}UK (HMRC): Business records must be retained for 6 years.{% endif %}
+      {% if business.region == 'AU' %}Australia (ATO): Financial records must be retained for 5 years.{% endif %}
+      We recommend exporting quarterly and storing securely offline or in cloud storage.
+    </div>
+  </div>
+</div>
+{% endblock %}

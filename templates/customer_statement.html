@@ -1,0 +1,88 @@
+{% extends "base.html" %}{% block title %}Statement — {{ customer.name }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><div class="page-title">Account Statement</div>
+    <div class="page-sub">{{ customer.name }}</div></div>
+  <div style="display:flex;gap:8px">
+    <a href="{{ wa_url }}" target="_blank" class="btn btn-primary" style="background:#25d366;border:none">💬 WhatsApp</a>
+    <button onclick="window.print()" class="btn">🖨 Print</button>
+    <a href="/customers" class="btn">← Back</a>
+  </div>
+</div>
+<div class="content" style="max-width:750px">
+
+  <!-- Period selector -->
+  <div class="card" style="margin-bottom:14px;padding:12px 16px">
+    <form method="get" style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+      <div><div class="field-label">From</div>
+        <input class="field-input" type="date" name="start" value="{{ start }}"></div>
+      <div><div class="field-label">To</div>
+        <input class="field-input" type="date" name="end" value="{{ end }}"></div>
+      <button type="submit" class="btn btn-primary">Apply</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <!-- Header -->
+    <div style="display:flex;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:14px">
+      <div>
+        <div style="font-weight:700;font-size:16px">{{ business.display_name() }}</div>
+        {% if business.tax_registration_number %}
+        <div style="font-size:11px;color:var(--text3)">TIN: {{ business.tax_registration_number }}</div>{% endif %}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:20px;font-weight:800;color:var(--accent)">STATEMENT</div>
+        <div style="font-size:12px;color:var(--text2);font-weight:600">{{ customer.name }}</div>
+        <div style="font-size:11px;color:var(--text3)">{{ start }} to {{ end }}</div>
+      </div>
+    </div>
+
+    <!-- Invoices table -->
+    {% if invoices %}
+    <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px">
+      <thead><tr style="border-bottom:2px solid var(--border);color:var(--text3);font-size:11px;text-transform:uppercase">
+        <th style="padding:8px 0;text-align:left">Invoice #</th>
+        <th style="padding:8px;text-align:left">Date</th>
+        <th style="padding:8px;text-align:left">Due</th>
+        <th style="padding:8px;text-align:right">Amount</th>
+        <th style="padding:8px;text-align:right">Paid</th>
+        <th style="padding:8px;text-align:right">Balance</th>
+        <th style="padding:8px">Status</th>
+      </tr></thead>
+      <tbody>
+      {% for r in invoices %}
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:8px 0;font-family:var(--mono);color:var(--mint);font-size:11px">{{ r[0] or '—' }}</td>
+        <td style="padding:8px;font-size:11px;color:var(--text3)">{{ r[1] or '—' }}</td>
+        <td style="padding:8px;font-size:11px;color:var(--text3)">{{ r[2] or '—' }}</td>
+        <td style="padding:8px;text-align:right;font-family:var(--mono)">{{ r[6] }} {{ "{:,.2f}".format(r[3]|float) }}</td>
+        <td style="padding:8px;text-align:right;font-family:var(--mono);color:var(--mint)">{{ "{:,.2f}".format(r[4]|float) }}</td>
+        <td style="padding:8px;text-align:right;font-family:var(--mono);font-weight:600;
+          color:{% if r[3]|float > r[4]|float %}var(--red){% else %}var(--mint){% endif %}">
+          {{ "{:,.2f}".format((r[3]|float)-(r[4]|float)) }}</td>
+        <td style="padding:8px"><span class="badge badge-{% if r[5]=='PAID' %}green{% elif r[5]=='VOID' %}gray{% else %}amber{% endif %}">{{ r[5] }}</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Totals -->
+    <div style="display:flex;justify-content:flex-end">
+      <table style="font-size:13px;border-collapse:collapse;min-width:300px">
+        <tr><td style="padding:5px 16px;color:var(--text3)">Total Invoiced</td>
+          <td style="padding:5px 0;text-align:right;font-family:var(--mono)">{{ tax.currency }} {{ "{:,.2f}".format(total_invoiced) }}</td></tr>
+        <tr><td style="padding:5px 16px;color:var(--mint)">Total Paid</td>
+          <td style="padding:5px 0;text-align:right;font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "{:,.2f}".format(total_paid) }}</td></tr>
+        <tr style="border-top:2px solid var(--border);font-weight:700;font-size:18px">
+          <td style="padding:10px 16px;color:{% if balance_due > 0 %}var(--red){% else %}var(--mint){% endif %}">
+            Balance Due</td>
+          <td style="padding:10px 0;text-align:right;font-family:var(--mono);
+            color:{% if balance_due > 0 %}var(--red){% else %}var(--mint){% endif %}">
+            {{ tax.currency }} {{ "{:,.2f}".format(balance_due) }}</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
