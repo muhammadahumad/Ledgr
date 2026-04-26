@@ -515,23 +515,87 @@ function runScan() {
   reader.readAsDataURL(currentFile);
 }
 function buildScanForm(res) {
-  var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  var html = '';
+  
+  // Confidence badge
+  var conf = res.confidence || (res.extracted && res.extracted.confidence) || '';
+  if (conf) {
+    var confColor = conf==='high'?'var(--mint)':conf==='medium'?'var(--amber)':'var(--red)';
+    html += '<div style="margin-bottom:12px;font-size:11px;color:'+confColor+'">AI Confidence: '+conf.toUpperCase()+'</div>';
+  }
+
+  // Main fields grid
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">';
   var fields = [
-    {id:'sr-vendor', label:'Vendor Name', val:res.vendor_name||''},
-    {id:'sr-tin', label:'Vendor TIN', val:res.vendor_tax_id||''},
-    {id:'sr-invno', label:'Invoice Number', val:res.invoice_number||''},
-    {id:'sr-date', label:'Invoice Date', val:res.invoice_date||'', type:'date'},
-    {id:'sr-sub', label:'Subtotal (excl GST)', val:(res.subtotal||0).toFixed(2)},
-    {id:'sr-tax', label:'GST Amount', val:(res.tax_amount||0).toFixed(2)},
+    {id:'sr-vendor', label:'Vendor Name *', val:res.vendor_name||''},
+    {id:'sr-tin',    label:'Vendor TIN',    val:res.vendor_tax_id||''},
+    {id:'sr-invno',  label:'Invoice Number',val:res.invoice_number||''},
+    {id:'sr-date',   label:'Invoice Date',  val:res.invoice_date||'', type:'date'},
+    {id:'sr-sub',    label:'Net Amount (excl GST)', val:(res.subtotal||0).toFixed(2)},
+    {id:'sr-tax',    label:'GST Amount',    val:(res.tax_amount||0).toFixed(2)},
   ];
   fields.forEach(function(f){
     html+='<div><div class="field-label">'+f.label+'</div>'+
-      '<input class="field-input" id="'+f.id+'" value="'+f.val+'"'+(f.type?' type="'+f.type+'"':'')+'>'+
+      '<input class="field-input" id="'+f.id+'" value="'+f.val+'"'+
+      (f.type?' type="'+f.type+'"':'')+' style="width:100%">'+
       '</div>';
   });
-  html+='</div>';
-  html+='<input type="hidden" id="sr-doc-id" value="'+res.document_id+'">';
-  document.getElementById('scan-result-form').innerHTML=html;
+  html += '</div>';
+
+  // Total (read-only)
+  var total = (res.total_amount||0);
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;'+
+    'padding:10px 14px;background:var(--bg);border-radius:8px;margin-bottom:12px">'+
+    '<span style="font-weight:600">Total</span>'+
+    '<span style="font-family:var(--mono);font-weight:700;color:var(--mint)">'+
+    (res.currency||CCY)+' '+total.toFixed(2)+'</span></div>';
+
+  // Line items
+  var items = res.line_items || (res.extracted && res.extracted.line_items) || [];
+  if (items && items.length > 0) {
+    html += '<div style="margin-bottom:12px"><div class="field-label" style="margin-bottom:6px">Line Items</div>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px">';
+    html += '<tr style="color:var(--text3);border-bottom:1px solid var(--border)">'+
+      '<th style="padding:5px 0;text-align:left">Description</th>'+
+      '<th style="padding:5px 8px;text-align:right">Qty</th>'+
+      '<th style="padding:5px 0;text-align:right">Total</th></tr>';
+    items.forEach(function(item){
+      var desc = item.description || item.desc || '';
+      var qty  = item.quantity || item.qty || 1;
+      var tot  = (item.total || item.unit_price || 0).toFixed(2);
+      html += '<tr style="border-bottom:1px solid var(--border)">'+
+        '<td style="padding:6px 0;font-size:11px">'+desc+'</td>'+
+        '<td style="padding:6px 8px;text-align:right">'+qty+'</td>'+
+        '<td style="padding:6px 0;text-align:right;font-family:var(--mono)">'+tot+'</td></tr>';
+    });
+    html += '</table></div>';
+  }
+
+  // Account selection
+  html += '<div style="margin-bottom:12px"><div class="field-label">Post to Account *</div>'+
+    '<select class="select-input" id="sr-account" style="width:100%">'+
+    '<option value="6900">6900 — General Expenses</option>'+
+    '<option value="5400">5400 — Office Supplies</option>'+
+    '<option value="5300">5300 — Utilities</option>'+
+    '<option value="5200">5200 — Rent</option>'+
+    '<option value="5100">5100 — Payroll Costs</option>'+
+    '<option value="5700">5700 — Travel</option>'+
+    '<option value="1200">1200 — Inventory</option>'+
+    '</select></div>';
+
+  // Auto-select account based on category
+  var cat = res.category || (res.extracted && res.extracted.category) || '';
+  var catMap = {
+    'Office Supplies':'5400','Utilities':'5300','Travel':'5700',
+    'Inventory Purchase':'1200','Payroll':'5100','Other':'6900'
+  };
+
+  html += '<input type="hidden" id="sr-doc-id" value="'+res.document_id+'">';
+  document.getElementById('scan-result-form').innerHTML = html;
+
+  // Auto-select account after DOM is built
+  var accEl = document.getElementById('sr-account');
+  if (accEl && catMap[cat]) accEl.value = catMap[cat];
 }
 function saveScanResult() {
   var docId = document.getElementById('sr-doc-id').value;
