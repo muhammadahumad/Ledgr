@@ -8848,6 +8848,48 @@ def api_document_confirm(doc_id):
         db.session.rollback()
         return jsonify({"ok": False, "error": f"Failed to post: {str(e)[:200]}"})
 
+
+@app.route("/api/debug/last-scan")
+@login_required
+def api_debug_last_scan():
+    """Show what AI extracted for the last scanned document"""
+    business, err = api_business_guard()
+    if err: return err
+    try:
+        result = db.session.execute(db.text(
+            "SELECT id, vendor_name, vendor_tax_id, invoice_number, "
+            "invoice_date, subtotal, tax_amount, total_amount, status, "
+            "raw_ai_data, created_at "
+            "FROM documents WHERE business_id=:bid "
+            "ORDER BY id DESC LIMIT 1"
+        ), {"bid": business.id}).fetchone()
+        if not result:
+            return jsonify({"ok": False, "error": "No documents found"})
+        import json as _json
+        raw = None
+        try:
+            raw = _json.loads(result[9]) if result[9] else None
+        except: pass
+        return jsonify({
+            "ok": True,
+            "doc": {
+                "id": result[0],
+                "vendor_name": result[1],
+                "vendor_tax_id": result[2],
+                "invoice_number": result[3],
+                "invoice_date": str(result[4]) if result[4] else None,
+                "subtotal": float(result[5] or 0),
+                "tax_amount": float(result[6] or 0),
+                "total_amount": float(result[7] or 0),
+                "status": result[8],
+                "created_at": str(result[10]),
+                "raw_ai_extracted": raw
+            }
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:300]})
+
 @app.route('/admin')
 @login_required
 @admin_required
