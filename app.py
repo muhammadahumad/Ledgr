@@ -8760,6 +8760,94 @@ def api_invoice_whatsapp(inv_id):
     if err: return err
     return redirect(url_for("invoice_detail", inv_id=inv_id))
 
+
+@app.route("/api/document/<int:doc_id>/confirm", methods=["POST"])
+@login_required
+def api_document_confirm(doc_id):
+    """
+    Confirm scanned document after user review.
+    Updates document with corrected data, then posts journal entry.
+    This is the ONLY place journal entries are created for scanned documents.
+    """
+    business, err = api_business_guard()
+    if err: return err
+    db.session.rollback()
+
+    doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
+    if not doc:
+        return jsonify({"ok": False, "error": "Document not found"})
+
+    data = request.get_json() or {}
+    tax = business.tax_rules()
+
+    # Update document with confirmed (user-verified) data
+    if data.get("vendor_name"):    doc.vendor_name    = data["vendor_name"].strip()
+    if data.get("vendor_tax_id"):  doc.vendor_tax_id  = data["vendor_tax_id"].strip()
+    if data.get("invoice_number"): doc.invoice_number = data["invoice_number"].strip()
+    if data.get("invoice_date"):
+        try:
+            doc.invoice_date = datetime.strptime(data["invoice_date"], "%Y-%m-%d").date()
+        except: pass
+    if data.get("subtotal") is not None:
+        doc.subtotal = round(float(data["subtotal"] or 0), 2)
+    if data.get("tax_amount") is not None:
+        doc.tax_amount = round(float(data["tax_amount"] or 0), 2)
+    if data.get("total_amount") is not None:
+        doc.total_amount = round(float(data["total_amount"] or 0), 2)
+    if data.get("account_code"):
+        doc.account_code = data["account_code"]
+
+    # Derive missing amounts
+    subtotal   = float(doc.subtotal or 0)
+    tax_amount = float(doc.tax_amount or 0)
+    total      = float(doc.total_amount or 0)
+    if total == 0 and subtotal > 0:
+        total = subtotal + tax_amount
+        doc.total_amount = total
+    if subtotal == 0 and total > 0:
+        subtotal = total - tax_amount
+        doc.subtotal = subtotal
+
+    doc.status = "PROCESSED"
+
+    # Match to supplier if possible
+    if doc.vendor_tax_id and not doc.supplier_id:
+        try:
+            supplier = db.session.execute(db.text(
+                "SELECT id FROM suppliers WHERE business_id=:bid AND tax_id=:tin LIMIT 1"
+            ), {"bid": business.id, "tin": doc.vendor_tax_id}).fetchone()
+            if supplier:
+                doc.supplier_id = supplier[0]
+        except: db.session.rollback()
+
+    # Post journal entry with confirmed data
+    try:
+        account_code = data.get("account_code") or "6900"
+        journal_lines = [
+            {"account_code": account_code, "debit": subtotal, "credit": 0,
+             "description": doc.vendor_name or ""},
+            {"account_code": "2000", "debit": 0, "credit": total,
+             "description": doc.vendor_name or ""},
+        ]
+        if tax_amount > 0:
+            journal_lines.insert(1, {
+                "account_code": "2210", "debit": tax_amount, "credit": 0,
+                "description": f"{tax.get('tax_name','Tax')} input tax"
+            })
+        post_journal(
+            business.id, current_user().id,
+            f"{doc.doc_type} — {doc.vendor_name}",
+            doc.invoice_number or f"DOC-{doc.id}",
+            "PURCHASE", journal_lines, doc.id,
+            entry_date=doc.invoice_date
+        )
+        db.session.commit()
+        return jsonify({"ok": True, "document_id": doc.id,
+                       "message": "Document confirmed and posted to ledger."})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": f"Failed to post: {str(e)[:200]}"})
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -8943,42 +9031,9 @@ def api_upload():
         db.session.add(doc)
         db.session.flush()  # get doc.id
 
-        # ── Double-entry journal posting ──────────────────────────────────
-        # Category -> expense account mapping (universal)
-        cat_to_account = {
-            'Office Supplies': '5400', 'Utilities': '5300',
-            'Travel': '5700',          'Meals': '5800',
-            'Professional Services': '5600', 'Inventory': '1200',
-            'Payroll': '5100',         'Tax': '6200',
-            'Rent': '5200',            'Other': '6900',
-        }
-        expense_code = cat_to_account.get(extracted.get('category', 'Other'), '6900')
-
-        # Build journal lines
-        # DR Expense (net) | DR Input Tax | CR Accounts Payable (gross)
-        journal_lines = [
-            {'account_code': expense_code, 'debit': subtotal,  'credit': 0,
-             'description': extracted.get('vendor_name', '')},
-            {'account_code': '2000',       'debit': 0,         'credit': total_amt,
-             'description': extracted.get('vendor_name', '')},
-        ]
-        if tax_amt > 0:
-            journal_lines.insert(1, {
-                'account_code': '2210', 'debit': tax_amt, 'credit': 0,
-                'description': f"{tax_info.get('tax_name','Tax')} on purchase"
-            })
-
-        try:
-            post_journal(
-                business.id, user.id,
-                f"{doc.doc_type} — {doc.vendor_name}",
-                doc.invoice_number or f"DOC-{doc.id}",
-                'PURCHASE', journal_lines, doc.id,
-                entry_date=inv_date
-            )
-        except Exception as je:
-            print(f'Journal posting error: {je}')  # non-fatal
-
+        # Journal posting happens AFTER user confirms the extracted data
+        # See /api/document/<id>/confirm endpoint
+        doc.status = 'DRAFT'  # Mark as draft until user confirms
         user.increment_uploads()
         db.session.commit()
 
