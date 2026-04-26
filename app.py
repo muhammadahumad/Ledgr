@@ -9,7 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 
 app = Flask(__name__)
-app.config['LEDGR_VERSION'] = 'v2025-04-25-FINAL'  # deployment marker
+app.config['LEDGR_VERSION'] = 'v2026-04-26-STABLE'  # deployment marker
 
 
 @app.after_request
@@ -8350,6 +8350,20 @@ def report_aged_payables():
 
     return render_template("report_aged_ap.html", user=user, business=business,
                            tax=tax, today=today, buckets=buckets, totals=totals)
+
+
+class SupportTicket(db.Model):
+    __tablename__ = 'support_tickets'
+    id          = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'), nullable=False)
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    subject     = db.Column(db.String(300), nullable=False)
+    message     = db.Column(db.Text, nullable=False)
+    status      = db.Column(db.String(30), default='open')
+    priority    = db.Column(db.String(20), default='normal')
+    admin_reply = db.Column(db.Text)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+    last_reply_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 # ════════════════════════════════════════════════════════════════════════════
