@@ -8694,13 +8694,26 @@ def invoice_detail(inv_id):
         "customer_email": result[15] or "",
         "customer_phone": result[16] or "",
     }
-    # Parse line items
+    # Parse line items from stored JSON
     line_items = []
     try:
         if result[11]:
             items = _json.loads(result[11])
-            line_items = items if isinstance(items, list) else []
+            if isinstance(items, list) and len(items) > 0:
+                line_items = items
     except: pass
+    
+    # If no line items stored, synthesize from totals so invoice shows something
+    if not line_items and (float(result[7] or 0) > 0):
+        total = float(result[7] or 0)
+        tax   = float(result[6] or 0)
+        sub   = float(result[5] or 0) or (total - tax)
+        line_items = [{
+            "desc":  "Services rendered",
+            "qty":   1,
+            "price": sub,
+            "total": sub
+        }]
     
     # WhatsApp message
     sep = "-" * 25
