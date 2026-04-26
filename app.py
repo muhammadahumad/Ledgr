@@ -304,11 +304,44 @@ INDUSTRY_COA = {
 }
 
 PLANS = {
-    'free':       {'name':'Free',       'price':0,  'uploads':10,    'businesses':1,     'ai_scans':10},
-    'pro':        {'name':'Pro',        'price':15, 'uploads':500,   'businesses':10,    'ai_scans':500},
-    'business':   {'name':'Business',   'price':35, 'uploads':99999, 'businesses':99999, 'ai_scans':99999},
-    'paid_client':{'name':'Paid Client','price':0,  'uploads':99999, 'businesses':99999, 'ai_scans':99999,
-                   'unlimited_scans':True, 'priority_support':True},
+    # Starter — Free
+    'free': {
+        'name': 'Starter', 'price': 0,
+        'ai_scans': 10, 'uploads': 10,
+        'businesses': 1, 'pos_terminals': 1,
+        'warehouses': 0, 'hr': False,
+        'social_media': False, 'priority_support': False,
+        'description': 'Perfect for solo operators getting organised.'
+    },
+    # Growth — $15/mo
+    'pro': {
+        'name': 'Growth', 'price': 15,
+        'ai_scans': 100, 'uploads': 500,
+        'businesses': 5, 'pos_terminals': 3,
+        'warehouses': 1, 'hr': True,
+        'social_media': True, 'priority_support': False,
+        'description': 'For businesses moving beyond the basics.'
+    },
+    # Scale — $25/mo
+    'business': {
+        'name': 'Scale', 'price': 25,
+        'ai_scans': 99999, 'uploads': 99999,
+        'businesses': 99999, 'pos_terminals': 99999,
+        'warehouses': 3, 'hr': True,
+        'social_media': True, 'priority_support': True,
+        'unlimited_scans': True,
+        'description': 'The full solution for multi-location operations.'
+    },
+    # Internal — for direct clients
+    'paid_client': {
+        'name': 'Scale', 'price': 0,
+        'ai_scans': 99999, 'uploads': 99999,
+        'businesses': 99999, 'pos_terminals': 99999,
+        'warehouses': 99999, 'hr': True,
+        'social_media': True, 'priority_support': True,
+        'unlimited_scans': True,
+        'description': 'Managed client account.'
+    },
 }
 
 # ── Employment Rules per Country (2026) ──────────────────────────────────────
@@ -9326,21 +9359,6 @@ def document_detail(doc_id):
     db.session.rollback()
     doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
     if not doc: return redirect(url_for("documents"))
-    # Load related journal entries
-    try:
-        journal_entries = JournalEntry.query.filter_by(
-            document_id=doc.id).all()
-    except:
-        db.session.rollback()
-        journal_entries = []
-    # Parse line items from raw_ai_data
-    import json as _json
-    line_items = []
-    try:
-        if doc.raw_ai_data:
-            raw = _json.loads(doc.raw_ai_data)
-            line_items = raw.get('line_items', [])
-    except: pass
     # Load journal entries
     try:
         journal_entries = JournalEntry.query.filter_by(document_id=doc.id).all()
@@ -9357,7 +9375,6 @@ def document_detail(doc_id):
     except: pass
     return render_template("document_detail.html", user=user, business=business,
                            doc=doc, tax=business.tax_rules(),
-                           journal_entries=journal_entries, line_items=line_items,
                            journal_entries=journal_entries,
                            line_items=line_items)
 
