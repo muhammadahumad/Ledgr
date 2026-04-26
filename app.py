@@ -1681,9 +1681,14 @@ def extract_with_ai(file_b64, media_type, region='MV'):
         '"compliance_data":{"irn":null,"qr_code":null,"supply_type":"standard","uuid":null,"hs_code":null}}'
         " category options: Office Supplies, Utilities, Travel, Meals, Professional Services, Inventory Purchase, Payroll, Tax Payment, Other"
     )
-    content = ({'type':'document','source':{'type':'base64','media_type':'application/pdf','data':file_b64}}
-               if media_type=='application/pdf' else
-               {'type':'image','source':{'type':'base64','media_type':media_type,'data':file_b64}})
+    # For PDFs and images - always use image type for compatibility
+    # PDF: convert approach, images: direct
+    if media_type == 'application/pdf':
+        content = {'type':'document','source':{'type':'base64','media_type':'application/pdf','data':file_b64}}
+        extra_headers = {'anthropic-beta': 'pdfs-2024-09-25'}
+    else:
+        content = {'type':'image','source':{'type':'base64','media_type':media_type,'data':file_b64}}
+        extra_headers = {}
     body = json.dumps({'model':'claude-sonnet-4-5-20251001','max_tokens':2048,
                        'system': (
                            'You are LEDGR, a financial document extraction assistant. '
@@ -1696,7 +1701,7 @@ def extract_with_ai(file_b64, media_type, region='MV'):
                        ),
                        'messages':[{'role':'user','content':[content,{'type':'text','text':prompt}]}]}).encode()
     req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
-                                 headers={'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'})
+                                 headers={**{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'}, **extra_headers})
     with urllib.request.urlopen(req, timeout=60) as resp:
         result = json.loads(resp.read())
         text = result['content'][0]['text']
@@ -4886,7 +4891,7 @@ def report_gst_return():
             "subtotal, tax_amount, total_amount, doc_type, currency "
             "FROM documents WHERE business_id=:bid "
             "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
-            "ORDER BY COALESCE(invoice_date"
+            "ORDER BY COALESCE(invoice_date, created_at::date) DESC"
         ), {"bid":business.id}).fetchall()
         bill_rows_detail = [{
             "invoice_number": str(r[0] or ""),
@@ -9037,7 +9042,7 @@ YOUR ROLE: Answer financial questions in simple friendly language. Flag issues p
     try:
         body = json.dumps({'model':'claude-sonnet-4-5-20251001','max_tokens':1024,'system':system,'messages':messages}).encode()
         req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
-                                     headers={'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'})
+                                     headers={**{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'}, **extra_headers})
         with urllib.request.urlopen(req, timeout=60) as resp:
             result = json.loads(resp.read())
             reply = result['content'][0]['text']
