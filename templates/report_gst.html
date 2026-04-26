@@ -72,7 +72,16 @@
         document.getElementById('p-'+val).style.display='block';
       }
       if(['month','quarter','year'].indexOf(val)>=0){
-        document.getElementById('period-form').submit();
+        // Clear stale params and submit cleanly
+        var form = document.getElementById('period-form');
+        var newForm = document.createElement('form');
+        newForm.method = 'get';
+        newForm.action = window.location.pathname;
+        var inp = document.createElement('input');
+        inp.type='hidden'; inp.name='period'; inp.value=val;
+        newForm.appendChild(inp);
+        document.body.appendChild(newForm);
+        newForm.submit();
       }
     }
     </script>
@@ -212,8 +221,8 @@ var END      = "{{ end }}";
 
 // ── Inline data from server ──────────────────────────────────────────────
 try {
-  var INV_ROWS  = {{ inv_rows | tojson if inv_rows else '[]' }};
-  var BILL_ROWS = {{ bill_rows | tojson if bill_rows else '[]' }};
+  var INV_ROWS  = {{ inv_rows | tojson(indent=None) if inv_rows is not none else '[]' | safe }};
+  var BILL_ROWS = {{ bill_rows | tojson(indent=None) if bill_rows is not none else '[]' | safe }};
   console.log('LEDGR GST: INV_ROWS loaded:', INV_ROWS.length, 'invoices');
   console.log('LEDGR GST: BILL_ROWS loaded:', BILL_ROWS.length, 'bills');
 } catch(e) {
