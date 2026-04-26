@@ -4844,16 +4844,31 @@ def report_gst_return():
         db.session.rollback()
         bill_rows_detail = []
 
+    # Pre-serialize to JSON string to avoid Decimal/date issues in tojson filter
+    import json as _json
+    class _Enc(_json.JSONEncoder):
+        def default(self, o):
+            from decimal import Decimal
+            if isinstance(o, Decimal): return float(o)
+            if hasattr(o, 'strftime'): return o.strftime('%Y-%m-%d')
+            if hasattr(o, 'isoformat'): return o.isoformat()
+            return str(o)
+    inv_rows_json  = _json.dumps(inv_rows_detail,  cls=_Enc)
+    bill_rows_json = _json.dumps(bill_rows_detail, cls=_Enc)
+
     return render_template("report_gst.html",
         user=user, business=business, tax=tax,
         period=period, period_label=period_label,
         start=start, end=end, today=today, due_date=due_date,
-        total_supplies=total_supplies, exempt_supplies=exempt_supplies,
-        taxable_supplies=taxable_supplies, output_tax=output_tax,
-        total_purchases=total_purchases, input_tax=input_tax,
-        net_tax=net_tax,
-        inv_rows=inv_rows_detail,
-        bill_rows=bill_rows_detail)
+        total_supplies=float(total_supplies),
+        exempt_supplies=float(exempt_supplies),
+        taxable_supplies=float(taxable_supplies),
+        output_tax=float(output_tax),
+        total_purchases=float(total_purchases),
+        input_tax=float(input_tax),
+        net_tax=float(net_tax),
+        inv_rows_json=inv_rows_json,
+        bill_rows_json=bill_rows_json)
 
 
 
