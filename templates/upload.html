@@ -235,6 +235,14 @@
 </datalist>
 
 {% endblock %}
+
+<!-- Hidden server-rendered accounts list for JS access -->
+<select id="all-accounts-select" style="display:none">
+  {% for a in accounts %}
+  <option value="{{ a.code }}">{{ a.code }} — {{ a.name }}</option>
+  {% endfor %}
+</select>
+
 {% block scripts %}<script>
 var TAX_RATE = {{ tax.tax_rate }};
 var CCY = "{{ tax.currency }}";
@@ -571,11 +579,17 @@ function buildScanForm(res) {
     html += '</table></div>';
   }
 
-  // Account selection - uses ALL accounts from chart of accounts
-  html += '<div style="margin-bottom:12px"><div class="field-label">Post to Account *</div>'+
-    '<select class="select-input" id="sr-account" style="width:100%">'+
-    ALL_ACCOUNTS_HTML+
-    '</select></div>';
+  // Account selection - clone the hidden server-rendered select
+  var hiddenSel = document.getElementById('all-accounts-select');
+  var accHtml = '<div style="margin-bottom:12px"><div class="field-label">Post to Account *</div>'+
+    '<select class="select-input" id="sr-account" style="width:100%">';
+  if (hiddenSel) {
+    for (var i=0; i<hiddenSel.options.length; i++) {
+      accHtml += '<option value="'+hiddenSel.options[i].value+'">'+hiddenSel.options[i].text+'</option>';
+    }
+  }
+  accHtml += '</select></div>';
+  html += accHtml;
 
   // Auto-select account based on AI category
   var cat = res.category || (res.extracted && res.extracted.category) || '';
