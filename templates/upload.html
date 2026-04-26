@@ -329,7 +329,7 @@ function addLineItem(desc, sub, tax, acc) {
   tr.style.borderBottom = '1px solid var(--border)';
 
   var accOpts = expenseAccounts.map(function(a){
-    return '<option value="'+a.code+'"'+(a.code===(acc||'5010')?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
+    return '<option value="'+a.code+'"'+(a.code===(acc||(expenseAccounts[0]&&expenseAccounts[0].code)||'5010')?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
   }).join('');
 
   tr.innerHTML = '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px" '+
@@ -571,19 +571,13 @@ function buildScanForm(res) {
     html += '</table></div>';
   }
 
-  // Account selection
+  // Account selection - uses ALL accounts from chart of accounts
   html += '<div style="margin-bottom:12px"><div class="field-label">Post to Account *</div>'+
     '<select class="select-input" id="sr-account" style="width:100%">'+
-    '<option value="6900">6900 — General Expenses</option>'+
-    '<option value="5400">5400 — Office Supplies</option>'+
-    '<option value="5300">5300 — Utilities</option>'+
-    '<option value="5200">5200 — Rent</option>'+
-    '<option value="5100">5100 — Payroll Costs</option>'+
-    '<option value="5700">5700 — Travel</option>'+
-    '<option value="1200">1200 — Inventory</option>'+
+    ALL_ACCOUNTS_HTML+
     '</select></div>';
 
-  // Auto-select account based on category
+  // Auto-select account based on AI category
   var cat = res.category || (res.extracted && res.extracted.category) || '';
   var catMap = {
     'Office Supplies':'5400','Utilities':'5300','Travel':'5700',

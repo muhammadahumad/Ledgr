@@ -299,7 +299,7 @@ function buildOutput() {
   var tbody = document.getElementById('output-tbody');
   tbody.innerHTML = '';
   INV_ROWS.forEach(function(r, i) {
-    var tax = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount * 0.08 / 1.08 * 100)/100;
+    var tax = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount * TAX_RATE / (1 + TAX_RATE) * 100)/100;
     var sub = r.subtotal > 0 ? r.subtotal : r.total_amount - tax;
     var tr = document.createElement('tr');
     tr.id = 'orow-'+i;
@@ -370,7 +370,7 @@ function updateTotals(type) {
   rows.forEach(function(r, i) {
     if (excluded[type].includes(i)) return;
     if (type==='output') {
-      var t = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount*0.08/1.08*100)/100;
+      var t = r.tax_amount > 0 ? r.tax_amount : Math.round(r.total_amount*TAX_RATE/(1+TAX_RATE)*100)/100;
       var s = r.subtotal > 0 ? r.subtotal : r.total_amount - t;
       sub+=s; tax+=t; gross+=r.total_amount;
     } else {
@@ -394,7 +394,7 @@ function exportCSV(type) {
     lines.push('Status,Date,Invoice #,Customer,Taxable (excl GST),GST,Total');
     rows.forEach(function(r,i){
       var incl = excluded.output.includes(i) ? 'EXCLUDED' : 'INCLUDED';
-      var t = r.tax_amount>0?r.tax_amount:Math.round(r.total_amount*0.08/1.08*100)/100;
+      var t = r.tax_amount>0?r.tax_amount:Math.round(r.total_amount*TAX_RATE/(1+TAX_RATE)*100)/100;
       var s = r.subtotal>0?r.subtotal:r.total_amount-t;
       lines.push([incl,r.invoice_date,r.invoice_number,'"'+r.customer_name+'"',
         s.toFixed(2),t.toFixed(2),r.total_amount.toFixed(2)].join(','));
