@@ -16,7 +16,7 @@
   <div style="margin-bottom:14px;display:flex;flex-direction:column;gap:6px">
     {% if total_overdue > 0 %}
     <div style="padding:10px 14px;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:8px;display:flex;align-items:center;justify-content:space-between">
-      <div style="font-size:12px;color:var(--red);font-weight:600">⚠ {{ overdue_count }} overdue invoice{{ 's' if overdue_count > 1 }} — {{ tax.currency }} {{ "%.2f"|format(total_overdue) }} outstanding</div>
+      <div style="font-size:12px;color:var(--red);font-weight:600">⚠ {{ overdue_count }} overdue invoice{{ 's' if overdue_count > 1 }} — {{ tax.currency }} {{ total_overdue|num }} outstanding</div>
       <a href="/receive" class="btn btn-sm" style="color:var(--red);border-color:var(--red)">Collect →</a>
     </div>
     {% endif %}
@@ -38,34 +38,34 @@
   <div class="stat-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px">
     <div class="stat-card" style="border-color:rgba(16,185,129,.3)">
       <div class="stat-label">Cash & Bank</div>
-      <div class="stat-value" style="color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(total_cash) }}</div>
+      <div class="stat-value" style="color:var(--mint)">{{ tax.currency }} {{ total_cash|num }}</div>
       <div class="stat-sub">
         {% for ba in bank_accounts[:2] %}
-        <div style="font-size:10px">{{ ba.bank_name }}: {{ ba.currency }} {{ "%.0f"|format(ba.current_balance or 0) }}</div>
+        <div style="font-size:10px">{{ ba.bank_name }}: {{ ba.currency }} {{ ba.current_balance or 0|num }}</div>
         {% endfor %}
       </div>
     </div>
     <div class="stat-card">
       <div class="stat-label">This Month Revenue</div>
-      <div class="stat-value" style="font-size:20px;color:var(--mint)">{{ tax.currency }} {{ "%.0f"|format(month_revenue) }}</div>
+      <div class="stat-value" style="font-size:20px;color:var(--mint)">{{ tax.currency }} {{ month_revenue|num }}</div>
       <div class="stat-sub" style="color:{% if month_profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
-        Net: {{ tax.currency }} {{ "%.0f"|format(month_profit) }}
+        Net: {{ tax.currency }} {{ month_profit|num }}
       </div>
     </div>
     <div class="stat-card" style="border-color:rgba(239,68,68,.2)">
       <div class="stat-label">Receivables (AR)</div>
       <div class="stat-value" style="font-size:20px;color:{% if total_ar > 0 %}var(--amber){% else %}var(--text3){% endif %}">
-        {{ tax.currency }} {{ "%.0f"|format(total_ar) }}
+        {{ tax.currency }} {{ total_ar|num }}
       </div>
       <div class="stat-sub">
-        {% if total_overdue > 0 %}<span style="color:var(--red)">{{ tax.currency }} {{ "%.0f"|format(total_overdue) }} overdue</span>
+        {% if total_overdue > 0 %}<span style="color:var(--red)">{{ tax.currency }} {{ total_overdue|num }} overdue</span>
         {% else %}All current{% endif %}
       </div>
     </div>
     <div class="stat-card" style="border-color:rgba(239,68,68,.2)">
       <div class="stat-label">Payables (AP)</div>
       <div class="stat-value" style="font-size:20px;color:{% if total_ap > 0 %}var(--red){% else %}var(--text3){% endif %}">
-        {{ tax.currency }} {{ "%.0f"|format(total_ap) }}
+        {{ tax.currency }} {{ total_ap|num }}
       </div>
       <div class="stat-sub">{{ unpaid_bills_count }} unpaid bill{{ 's' if unpaid_bills_count != 1 }}</div>
     </div>
@@ -76,7 +76,7 @@
     {% if business.has_pos %}
     <div class="stat-card">
       <div class="stat-label">⚡ POS Today</div>
-      <div class="stat-value" style="font-size:20px">{{ tax.currency }} {{ "%.2f"|format(today_pos) }}</div>
+      <div class="stat-value" style="font-size:20px">{{ tax.currency }} {{ today_pos|num }}</div>
       <div class="stat-sub"><a href="/pos" style="color:var(--mint);text-decoration:none">Open POS →</a></div>
     </div>
     {% endif %}
@@ -87,13 +87,13 @@
     </div>
     <div class="stat-card">
       <div class="stat-label">All-time Revenue</div>
-      <div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ "%.0f"|format(total_revenue) }}</div>
-      <div class="stat-sub">Expenses: {{ tax.currency }} {{ "%.0f"|format(total_expense) }}</div>
+      <div class="stat-value" style="font-size:18px">{{ tax.currency }} {{ total_revenue|num }}</div>
+      <div class="stat-sub">Expenses: {{ tax.currency }} {{ total_expense|num }}</div>
     </div>
     <div class="stat-card" style="border-color:{% if net_profit >= 0 %}rgba(16,185,129,.3){% else %}rgba(239,68,68,.3){% endif %}">
       <div class="stat-label">Net Profit</div>
       <div class="stat-value" style="font-size:18px;color:{% if net_profit >= 0 %}var(--mint){% else %}var(--red){% endif %}">
-        {{ tax.currency }} {{ "%.0f"|format(net_profit) }}
+        {{ tax.currency }} {{ net_profit|num }}
       </div>
       <div class="stat-sub"><a href="/reports/pl" style="color:var(--mint);text-decoration:none">P&L Report →</a></div>
     </div>
@@ -139,7 +139,7 @@
           </div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:var(--mono);font-weight:600;font-size:12px">{{ tax.currency }} {{ "%.2f"|format(inv.total_amount or 0) }}</div>
+          <div style="font-family:var(--mono);font-weight:600;font-size:12px">{{ tax.currency }} {{ inv.total_amount or 0|num }}</div>
           <span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='PARTIAL' %}amber{% else %}gray{% endif %}" style="font-size:9px">{{ inv.status }}</span>
         </div>
       </div>
@@ -192,7 +192,7 @@
             <div style="font-size:12px;font-weight:500;color:var(--text)">{{ doc.vendor_name or 'Unknown' }}</div>
             <div style="font-size:10px;color:var(--text3)">{{ doc.doc_type }} · {{ doc.created_at.strftime('%d %b') if doc.created_at else '—' }}</div>
           </div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--text2)">{{ tax.currency }} {{ "%.2f"|format(doc.total_amount or 0) }}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--text2)">{{ tax.currency }} {{ doc.total_amount or 0|num }}</div>
         </div>
         {% endfor %}
         {% else %}

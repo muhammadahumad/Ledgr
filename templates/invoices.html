@@ -76,11 +76,11 @@
         <td style="color:var(--text3);font-size:11px">
           {{ inv.due_date_display if inv.due_date_display is defined and inv.due_date_display else (inv.due_date or '—') }}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:12px">
-          {{ inv.currency }} {{ "%.2f"|format(inv.subtotal) }}</td>
+          {{ inv.currency }} {{ inv.subtotal|num }}</td>
         <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">
-          {{ "%.2f"|format(inv.tax_amount) }}</td>
+          {{ inv.tax_amount|num }}</td>
         <td style="text-align:right;font-family:var(--mono);font-weight:700">
-          {{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
+          {{ inv.currency }} {{ inv.total_amount|num }}</td>
         <td>
           <span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='VOID' %}red{% elif inv.status=='OVERDUE' %}red{% else %}amber{% endif %}">
             {{ inv.status }}</span>
@@ -89,7 +89,7 @@
           <div style="display:flex;gap:4px;flex-wrap:wrap">
             <a href="/invoices/{{ inv.id }}" class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)">View</a>
             <a href="/invoices/{{ inv.id }}" class="btn btn-sm" style="background:#25d366;color:#fff;border:none" title="WhatsApp Share">💬</a>
-            <button class="btn btn-sm" onclick="editInv({{ inv.id }}, '{{ inv.invoice_number }}', '{{ inv.customer_name }}', '{{ inv.status }}', {{ inv.total_amount }}, {{ inv.tax_amount }}, {{ inv.subtotal }}, '{{ inv.invoice_date }}', {{ inv.customer_id or 'null' }})">
+            <button class="btn btn-sm" onclick="editInv({{ inv.id }}, '{{ inv.invoice_number }}', '{{ inv.customer_name }}', '{{ inv.status }}', {{ inv.total_amount|num }}, {{ inv.tax_amount|num }}, {{ inv.subtotal|num }}, '{{ inv.invoice_date }}', {{ inv.customer_id or 'null' }})">
               ✏ Edit</button>
             {% if inv.status != 'PAID' %}
             <button class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)"

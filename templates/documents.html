@@ -39,9 +39,9 @@
           {{ inv.invoice_date_display if inv.invoice_date_display else (inv.invoice_date or '—') }}</td>
         <td style="font-family:var(--mono);color:var(--mint);font-size:11px">{{ inv.invoice_number }}</td>
         <td style="font-weight:500">{{ inv.customer_name }}</td>
-        <td style="text-align:right;font-family:var(--mono);font-size:11px">{{ inv.currency }} {{ "%.2f"|format(inv.subtotal) }}</td>
-        <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">{{ inv.currency }} {{ "%.2f"|format(inv.tax_amount) }}</td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ inv.currency }} {{ "%.2f"|format(inv.total_amount) }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px">{{ inv.currency }} {{ inv.subtotal|num }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-size:11px;color:var(--amber)">{{ inv.currency }} {{ inv.tax_amount|num }}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:600">{{ inv.currency }} {{ inv.total_amount|num }}</td>
         <td><span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='VOID' %}red{% else %}amber{% endif %}">{{ inv.status }}</span></td>
         <td><a href="/invoices" class="btn btn-sm">View All →</a></td>
       </tr>
@@ -63,8 +63,8 @@
         <td><span class="badge badge-gray" style="font-size:10px">{{ doc.doc_type }}</span></td>
         <td style="color:var(--text);font-weight:500">{{ doc.vendor_name or '—' }}</td>
         <td style="font-family:var(--mono);font-size:11px;color:var(--text3)">{{ doc.invoice_number or '—' }}</td>
-        <td style="text-align:right;font-family:var(--mono);font-weight:500">{{ doc.currency }} {{ "%.2f"|format(doc.total_amount) }}</td>
-        <td style="color:var(--amber);font-family:var(--mono);font-size:11px">{% if doc.tax_amount > 0 %}{{ "%.2f"|format(doc.tax_amount) }}{% else %}—{% endif %}</td>
+        <td style="text-align:right;font-family:var(--mono);font-weight:500">{{ doc.currency }} {{ doc.total_amount|num }}</td>
+        <td style="color:var(--amber);font-family:var(--mono);font-size:11px">{% if doc.tax_amount > 0 %}{{ doc.tax_amount|num }}{% else %}—{% endif %}</td>
         <td><span class="badge badge-{% if doc.status=='PROCESSED' %}green{% else %}amber{% endif %}">{{ doc.status }}</span></td>
         <td style="color:var(--text3);font-size:11px">{{ doc.posted_to_account_name or '—' }}</td>
         <td>
