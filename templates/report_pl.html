@@ -100,13 +100,13 @@
       {% for item in revenue_items %}
       <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px">
         <span style="color:var(--text2)">{{ item.code }} — {{ item.name }}</span>
-        <span style="font-family:var(--mono);color:var(--text)">{{ tax.currency }} {{ "%.2f"|format(item.amount) }}</span>
+        <span style="font-family:var(--mono);color:var(--text)">{{ tax.currency }} {{ item.amount|num }}</span>
       </div>
       {% endfor %}
       {% if not revenue_items %}<div style="font-size:12px;color:var(--text3);padding:6px 0">No revenue recorded for this period</div>{% endif %}
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border);font-weight:700;font-size:13px">
         <span>Total Revenue</span>
-        <span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(total_revenue) }}</span>
+        <span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ total_revenue|num }}</span>
       </div>
     </div>
 
@@ -117,18 +117,18 @@
       {% for item in cogs_items %}
       <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px">
         <span style="color:var(--text2)">{{ item.code }} — {{ item.name }}</span>
-        <span style="font-family:var(--mono);color:var(--text)">({{ tax.currency }} {{ "%.2f"|format(item.amount) }})</span>
+        <span style="font-family:var(--mono);color:var(--text)">({{ tax.currency }} {{ item.amount|num }})</span>
       </div>
       {% endfor %}
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border);font-weight:700;font-size:13px">
         <span>Total COGS</span>
-        <span style="font-family:var(--mono);color:var(--red)">({{ tax.currency }} {{ "%.2f"|format(total_cogs) }})</span>
+        <span style="font-family:var(--mono);color:var(--red)">({{ tax.currency }} {{ total_cogs|num }})</span>
       </div>
     </div>
     <!-- Gross Profit -->
     <div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:7px;font-weight:700;font-size:14px;margin-bottom:16px">
       <span>Gross Profit</span>
-      <span style="font-family:var(--mono);color:{% if gross_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ tax.currency }} {{ "%.2f"|format(gross_profit) }}</span>
+      <span style="font-family:var(--mono);color:{% if gross_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ tax.currency }} {{ gross_profit|num }}</span>
     </div>
     {% endif %}
 
@@ -139,12 +139,12 @@
       {% for item in opex_items %}
       <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:13px">
         <span style="color:var(--text2)">{{ item.code }} — {{ item.name }}</span>
-        <span style="font-family:var(--mono);color:var(--text)">({{ tax.currency }} {{ "%.2f"|format(item.amount) }})</span>
+        <span style="font-family:var(--mono);color:var(--text)">({{ tax.currency }} {{ item.amount|num }})</span>
       </div>
       {% endfor %}
       <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--border);font-weight:700;font-size:13px">
         <span>Total Operating Expenses</span>
-        <span style="font-family:var(--mono);color:var(--red)">({{ tax.currency }} {{ "%.2f"|format(total_opex) }})</span>
+        <span style="font-family:var(--mono);color:var(--red)">({{ tax.currency }} {{ total_opex|num }})</span>
       </div>
     </div>
     {% endif %}
@@ -152,7 +152,7 @@
     <!-- NET PROFIT -->
     <div style="display:flex;justify-content:space-between;padding:14px 16px;border:2px solid {% if net_profit>=0 %}var(--mint){% else %}var(--red){% endif %};border-radius:9px;font-weight:700;font-size:16px;margin-top:8px">
       <span style="color:var(--text)">NET {{ 'PROFIT' if net_profit >= 0 else 'LOSS' }}</span>
-      <span style="font-family:var(--mono);color:{% if net_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ tax.currency }} {{ "%.2f"|format(net_profit|abs) }}</span>
+      <span style="font-family:var(--mono);color:{% if net_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ tax.currency }} {{ net_profit|abs|num }}</span>
     </div>
 
     <!-- Footer -->

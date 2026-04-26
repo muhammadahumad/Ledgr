@@ -99,13 +99,13 @@
         {% if item.amount != 0 %}
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
           <span style="color:var(--text2)">{{ item.code }} {{ item.name }}</span>
-          <span style="font-family:var(--mono)">{{ "%.2f"|format(item.amount) }}</span>
+          <span style="font-family:var(--mono)">{{ item.amount|num }}</span>
         </div>
         {% endif %}
         {% endfor %}
         <div style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid var(--border);font-weight:700;font-size:13px;margin-top:4px">
           <span>Total Assets</span>
-          <span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ "%.2f"|format(total_assets) }}</span>
+          <span style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} {{ total_assets|num }}</span>
         </div>
       </div>
 
@@ -116,13 +116,13 @@
         {% if item.amount != 0 %}
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
           <span style="color:var(--text2)">{{ item.code }} {{ item.name }}</span>
-          <span style="font-family:var(--mono)">{{ "%.2f"|format(item.amount) }}</span>
+          <span style="font-family:var(--mono)">{{ item.amount|num }}</span>
         </div>
         {% endif %}
         {% endfor %}
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-weight:600;font-size:12px">
           <span>Total Liabilities</span>
-          <span style="font-family:var(--mono);color:var(--red)">{{ "%.2f"|format(total_liabilities) }}</span>
+          <span style="font-family:var(--mono);color:var(--red)">{{ total_liabilities|num }}</span>
         </div>
 
         <div style="font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em;padding:8px 0 6px;border-bottom:2px solid var(--blue);color:var(--blue);margin-top:10px">Equity</div>
@@ -130,22 +130,22 @@
         {% if item.amount != 0 %}
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
           <span style="color:var(--text2)">{{ item.code }} {{ item.name }}</span>
-          <span style="font-family:var(--mono)">{{ "%.2f"|format(item.amount) }}</span>
+          <span style="font-family:var(--mono)">{{ item.amount|num }}</span>
         </div>
         {% endif %}
         {% endfor %}
         <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12px">
           <span style="color:var(--text2)">Current Year P&L</span>
-          <span style="font-family:var(--mono);color:{% if current_year_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ "%.2f"|format(current_year_profit) }}</span>
+          <span style="font-family:var(--mono);color:{% if current_year_profit>=0 %}var(--mint){% else %}var(--red){% endif %}">{{ current_year_profit|num }}</span>
         </div>
         <div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--border);font-weight:600;font-size:12px">
           <span>Total Equity</span>
-          <span style="font-family:var(--mono)">{{ "%.2f"|format(total_equity) }}</span>
+          <span style="font-family:var(--mono)">{{ total_equity|num }}</span>
         </div>
 
         <div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:7px;font-weight:700;font-size:13px;margin-top:8px;border:1px solid var(--border)">
           <span>Total Liabilities + Equity</span>
-          <span style="font-family:var(--mono)">{{ tax.currency }} {{ "%.2f"|format(total_liabilities + total_equity) }}</span>
+          <span style="font-family:var(--mono)">{{ tax.currency }} {{ total_liabilities + total_equity|num }}</span>
         </div>
       </div>
     </div>
@@ -153,7 +153,7 @@
     <!-- Balance check -->
     {% set diff = total_assets - (total_liabilities + total_equity) %}
     {% if diff|abs > 1 %}
-    <div class="alert alert-warn" style="margin-top:12px;font-size:11px">⚠ Balance sheet difference of {{ tax.currency }} {{ "%.2f"|format(diff|abs) }} — check opening balances or unposted entries</div>
+    <div class="alert alert-warn" style="margin-top:12px;font-size:11px">⚠ Balance sheet difference of {{ tax.currency }} {{ diff|abs|num }} — check opening balances or unposted entries</div>
     {% else %}
     <div style="text-align:center;margin-top:12px;font-size:11px;color:var(--mint)">✓ Balance sheet is balanced</div>
     {% endif %}

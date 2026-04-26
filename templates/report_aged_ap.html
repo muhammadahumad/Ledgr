@@ -14,7 +14,7 @@
     <div class="card" style="padding:14px;text-align:center;border-top:3px solid {{color}}">
       <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">{{label}}</div>
       <div style="font-weight:700;font-size:16px;color:{{color}};font-family:var(--mono)">
-        {{ tax.currency }} {{ "%.2f"|format(totals[key]) }}</div>
+        {{ tax.currency }} {{ totals[key]|num }}</div>
       <div style="font-size:10px;color:var(--text3);margin-top:3px">{{ buckets[key]|length }} bill(s)</div>
     </div>
     {% endfor %}
@@ -22,7 +22,7 @@
   <div class="card" style="padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center">
     <div style="font-weight:700;font-size:14px">Total Payable</div>
     <div style="font-weight:700;font-size:20px;color:var(--red);font-family:var(--mono)">
-      {{ tax.currency }} {{ "%.2f"|format(totals.total) }}</div>
+      {{ tax.currency }} {{ totals.total|num }}</div>
   </div>
   {% for key,label,color in [('current','Current','var(--mint)'),('1_30','1–30 Days','var(--amber)'),('31_60','31–60 Days','#f97316'),('61_90','61–90 Days','var(--red)'),('over_90','Over 90 Days','#7f1d1d')] %}
   {% if buckets[key] %}
@@ -30,7 +30,7 @@
     <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
       <div style="font-weight:600;font-size:13px;color:{{color}}">{{label}}</div>
       <div style="font-weight:700;font-family:var(--mono);color:{{color}}">
-        {{ tax.currency }} {{ "%.2f"|format(totals[key]) }}</div>
+        {{ tax.currency }} {{ totals[key]|num }}</div>
     </div>
     <table class="table">
       <thead><tr><th>Ref #</th><th>Supplier</th><th>Bill Date</th><th>Due Date</th>
@@ -45,7 +45,7 @@
         <td style="font-size:11px;color:{{color}};font-weight:600">
           {% if b.days_overdue > 0 %}{{ b.days_overdue }}d{% else %}—{% endif %}</td>
         <td style="text-align:right;font-family:var(--mono);font-weight:700">
-          {{ b.currency }} {{ "%.2f"|format(b.total) }}</td>
+          {{ b.currency }} {{ b.total|num }}</td>
       </tr>
       {% endfor %}
       </tbody>

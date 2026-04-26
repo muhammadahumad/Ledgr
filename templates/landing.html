@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LEDGR Global — One Platform. Every Business.</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --dark:#0a0a0f;--surface:#13131a;--card:#1a1a24;
+  --border:#2a2a3a;--text:#f0f0f5;--text2:#a0a0b5;--text3:#606075;
+  --mint:#10b981;--accent:#6366f1;--amber:#f59e0b;--red:#ef4444;
+  --mono:'JetBrains Mono',monospace;
+}
+body{background:var(--dark);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;line-height:1.6;overflow-x:hidden}
+
+/* NAV */
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:60px}
+.logo{font-size:20px;font-weight:800;color:var(--mint);letter-spacing:-.5px}
+.logo span{color:var(--text2);font-weight:400;font-size:13px;margin-left:6px}
+.nav-links{display:flex;gap:24px;align-items:center}
+.nav-links a{color:var(--text2);text-decoration:none;font-size:13px;transition:.2s}
+.nav-links a:hover{color:var(--text)}
+.btn-nav{background:var(--mint);color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;transition:.2s}
+.btn-nav:hover{background:#059669;color:#fff}
+
+/* HERO */
+.hero{padding:130px 24px 80px;text-align:center;max-width:900px;margin:0 auto;position:relative}
+.hero-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.3);color:#818cf8;padding:6px 14px;border-radius:20px;font-size:11px;font-weight:600;margin-bottom:24px;text-transform:uppercase;letter-spacing:.06em}
+.hero h1{font-size:clamp(36px,7vw,72px);font-weight:800;line-height:1.1;margin-bottom:20px;letter-spacing:-2px}
+.hero h1 .accent{color:var(--mint)}
+.hero p{font-size:clamp(16px,2.5vw,20px);color:var(--text2);max-width:600px;margin:0 auto 36px;line-height:1.7}
+.hero-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn-primary{background:var(--mint);color:#fff;padding:14px 28px;border-radius:10px;font-size:15px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:8px;transition:.2s}
+.btn-primary:hover{background:#059669;transform:translateY(-1px)}
+.btn-secondary{background:transparent;color:var(--text);padding:14px 28px;border-radius:10px;font-size:15px;font-weight:600;text-decoration:none;border:1px solid var(--border);transition:.2s}
+.btn-secondary:hover{border-color:var(--text3)}
+
+/* GRID BG */
+.hero::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse 80% 50% at 50% -20%,rgba(99,102,241,.15),transparent);pointer-events:none;z-index:-1}
+
+/* STATS */
+.stats{display:flex;justify-content:center;gap:48px;padding:40px 24px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.stat{text-align:center}
+.stat-num{font-size:32px;font-weight:800;color:var(--mint);font-family:var(--mono)}
+.stat-label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+
+/* SECTION */
+section{padding:80px 24px;max-width:1100px;margin:0 auto}
+.section-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.1em;color:var(--accent);margin-bottom:12px}
+.section-title{font-size:clamp(28px,4vw,42px);font-weight:800;letter-spacing:-1px;line-height:1.2;margin-bottom:16px}
+.section-sub{font-size:16px;color:var(--text2);max-width:560px;line-height:1.7}
+
+/* FEATURES */
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;margin-top:48px}
+.feature-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;transition:.2s}
+.feature-card:hover{border-color:rgba(99,102,241,.4);transform:translateY(-2px)}
+.feature-icon{font-size:28px;margin-bottom:14px}
+.feature-card h3{font-size:16px;font-weight:700;margin-bottom:8px}
+.feature-card p{font-size:13px;color:var(--text2);line-height:1.6}
+.feature-tag{display:inline-block;background:rgba(16,185,129,.1);color:var(--mint);font-size:10px;font-weight:600;padding:2px 8px;border-radius:4px;margin-top:10px;text-transform:uppercase;letter-spacing:.04em}
+
+/* HOW IT WORKS */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:24px;margin-top:48px;position:relative}
+.step{text-align:center;padding:24px}
+.step-num{width:48px;height:48px;background:linear-gradient(135deg,var(--accent),var(--mint));border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;margin:0 auto 16px;color:#fff}
+.step h3{font-size:15px;font-weight:700;margin-bottom:8px}
+.step p{font-size:13px;color:var(--text2);line-height:1.6}
+
+/* COMPARISON */
+.comparison{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:48px}
+.comp-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px}
+.comp-card.ledgr{border-color:var(--mint);background:rgba(16,185,129,.05)}
+.comp-title{font-size:13px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.comp-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.comp-row:last-child{border:none;font-weight:700;font-size:15px;padding-top:12px}
+.cross{color:var(--red)}
+.check{color:var(--mint)}
+
+/* PRICING */
+.pricing-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;margin-top:48px}
+.plan{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;position:relative}
+.plan.popular{border-color:var(--mint);background:linear-gradient(135deg,rgba(16,185,129,.08),var(--card))}
+.plan-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--mint);color:#fff;font-size:10px;font-weight:700;padding:4px 14px;border-radius:20px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap}
+.plan-name{font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.06em}
+.plan-price{font-size:42px;font-weight:800;margin:8px 0;line-height:1}
+.plan-price span{font-size:16px;font-weight:400;color:var(--text2)}
+.plan-desc{font-size:12px;color:var(--text3);margin-bottom:20px}
+.plan-features{list-style:none;margin-bottom:24px}
+.plan-features li{font-size:13px;padding:7px 0;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;color:var(--text2)}
+.plan-features li::before{content:'✓';color:var(--mint);font-weight:700;flex-shrink:0}
+.plan-btn{display:block;text-align:center;padding:12px;border-radius:10px;font-size:14px;font-weight:700;text-decoration:none;transition:.2s}
+.plan-btn.primary{background:var(--mint);color:#fff}
+.plan-btn.primary:hover{background:#059669}
+.plan-btn.secondary{background:transparent;border:1px solid var(--border);color:var(--text)}
+.plan-btn.secondary:hover{border-color:var(--text3)}
+.ai-badge{background:rgba(99,102,241,.15);color:#818cf8;font-size:10px;padding:2px 7px;border-radius:4px;margin-left:auto;flex-shrink:0}
+
+/* COUNTRIES */
+.countries{display:flex;flex-wrap:wrap;gap:12px;margin-top:24px}
+.country{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 16px;font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px}
+
+/* FOOTER */
+footer{background:var(--surface);border-top:1px solid var(--border);padding:48px 24px;text-align:center}
+footer .logo{font-size:24px;margin-bottom:8px}
+footer p{font-size:13px;color:var(--text3);margin-bottom:24px}
+.footer-links{display:flex;gap:24px;justify-content:center;flex-wrap:wrap}
+.footer-links a{color:var(--text3);text-decoration:none;font-size:13px;transition:.2s}
+.footer-links a:hover{color:var(--text)}
+
+@media(max-width:600px){
+  .comparison{grid-template-columns:1fr}
+  .nav-links{display:none}
+  .stats{gap:24px}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <div class="logo">LEDGR <span>Global</span></div>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#countries">Countries</a>
+  </div>
+  <a href="/login" class="btn-nav">Sign In →</a>
+</nav>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-badge">🤖 AI-Powered Accounting</div>
+  <h1>One Platform.<br><span class="accent">Every Business.</span></h1>
+  <p>Accounting, POS, Inventory, Payroll, and AI document scanning — built for businesses in the Maldives, UAE, Saudi Arabia, and beyond.</p>
+  <div class="hero-cta">
+    <a href="/register" class="btn-primary">🚀 Start Free — No Card Needed</a>
+    <a href="#how" class="btn-secondary">See how it works →</a>
+  </div>
+</div>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat"><div class="stat-num">$0.01</div><div class="stat-label">Per AI Scan</div></div>
+  <div class="stat"><div class="stat-num">8+</div><div class="stat-label">Countries Supported</div></div>
+  <div class="stat"><div class="stat-num">1-Click</div><div class="stat-label">Bill to Ledger</div></div>
+  <div class="stat"><div class="stat-num">100%</div><div class="stat-label">Double-Entry Accurate</div></div>
+</div>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="section-label">What's inside</div>
+  <div class="section-title">Everything your business needs.<br>Nothing you don't.</div>
+  <div class="section-sub">LEDGR replaces 4-5 separate subscriptions with one clean, AI-powered platform.</div>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">🤖</div>
+      <h3>AI Document Scanner</h3>
+      <p>Photograph any bill or invoice. AI extracts vendor, amounts, tax ID, and line items — then posts to the double-entry ledger automatically.</p>
+      <span class="feature-tag">Powered by Claude</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <h3>Full Accounting Suite</h3>
+      <p>Double-entry journals, chart of accounts, P&L, balance sheet, cash flow — professional-grade accounting built in from day one.</p>
+      <span class="feature-tag">Free on all plans</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🧾</div>
+      <h3>GST / VAT Compliance</h3>
+      <p>MIRA (Maldives), ZATCA (Saudi), UAE FTA, MyInvois (Malaysia). Automated tax returns with drill-down transaction detail.</p>
+      <span class="feature-tag">Multi-country</span>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🛒</div>
+      <h3>Point of Sale</h3>
+      <p>Fast, clean POS terminal for retail and hospitality. Service charge, multi-location, inventory sync, real-time ledger posting.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📦</div>
+      <h3>Inventory Management</h3>
+      <p>Stock tracking, expiry dates, multi-warehouse, purchase orders. Every movement posts to the ledger automatically.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">👥</div>
+      <h3>HR & Payroll</h3>
+      <p>Employee records, payroll runs, pension contributions, leave management. Compliant with Maldives, UAE, and GCC labour rules.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📨</div>
+      <h3>Invoicing & Quotes</h3>
+      <p>Create professional invoices, send via WhatsApp or email, track payments, and post to AR automatically.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏦</div>
+      <h3>Bank Reconciliation</h3>
+      <p>Match bank statement entries to journal lines. Clear differences instantly. Full audit trail.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📱</div>
+      <h3>Works on Any Device</h3>
+      <p>Fully responsive — scan bills from your phone, check reports on tablet, manage accounts on desktop. One login, every device.</p>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background:var(--surface);max-width:100%;padding:80px 24px">
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="section-label">How it works</div>
+    <div class="section-title">From paper bill to posted ledger<br>in under 30 seconds.</div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h3>Photograph or Upload</h3>
+        <p>Take a photo of any bill, receipt, or invoice from your phone. Or drag and drop a PDF.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h3>AI Extracts Everything</h3>
+        <p>Vendor name, tax ID, invoice number, line items, GST amount — all extracted in seconds by Claude AI.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Review & Confirm</h3>
+        <p>Check the extracted data. Correct anything. Assign the right expense account and tax code.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h3>Posted & Done</h3>
+        <p>Journal entry posted. GST input tax recorded. Bill archived with original image. Reports updated instantly.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARISON -->
+<section>
+  <div class="section-label">The math is simple</div>
+  <div class="section-title">Stop paying for five apps.</div>
+  <div class="comparison">
+    <div class="comp-card">
+      <div class="comp-title"><span class="cross">✗</span> The old way</div>
+      <div class="comp-row"><span>QuickBooks</span><span>$30/mo</span></div>
+      <div class="comp-row"><span>Square POS</span><span>$29/mo</span></div>
+      <div class="comp-row"><span>Inventory software</span><span>$25/mo</span></div>
+      <div class="comp-row"><span>Payroll software</span><span>$20/mo</span></div>
+      <div class="comp-row"><span>Receipt scanner</span><span>$15/mo</span></div>
+      <div class="comp-row"><span>Total</span><span style="color:var(--red)">$119/mo</span></div>
+    </div>
+    <div class="comp-card ledgr">
+      <div class="comp-title"><span class="check">✓</span> The LEDGR way</div>
+      <div class="comp-row"><span>Full accounting suite</span><span class="check">✓</span></div>
+      <div class="comp-row"><span>AI-powered POS</span><span class="check">✓</span></div>
+      <div class="comp-row"><span>Inventory management</span><span class="check">✓</span></div>
+      <div class="comp-row"><span>HR & Payroll</span><span class="check">✓</span></div>
+      <div class="comp-row"><span>AI document scanner</span><span class="check">✓</span></div>
+      <div class="comp-row"><span>Everything above</span><span style="color:var(--mint)">$25/mo</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section id="pricing" style="background:var(--surface);max-width:100%;padding:80px 24px">
+  <div style="max-width:1100px;margin:0 auto">
+    <div class="section-label">Simple pricing</div>
+    <div class="section-title">Grow at your own pace.</div>
+    <div class="section-sub">Every plan includes full double-entry accounting. No hidden fees. Cancel anytime.</div>
+    <div class="pricing-grid">
+
+      <!-- Free -->
+      <div class="plan">
+        <div class="plan-name">Starter</div>
+        <div class="plan-price">$0 <span>/ forever</span></div>
+        <div class="plan-desc">Perfect for solo operators getting organised.</div>
+        <ul class="plan-features">
+          <li>Full accounting & ledger</li>
+          <li>1 POS terminal</li>
+          <li>Basic inventory</li>
+          <li>10 AI scans / month <span class="ai-badge">AI</span></li>
+          <li>GST / VAT returns</li>
+          <li>Invoicing & quotes</li>
+        </ul>
+        <a href="/register" class="plan-btn secondary">Get Started Free</a>
+      </div>
+
+      <!-- Growth -->
+      <div class="plan popular">
+        <div class="plan-badge">Most Popular</div>
+        <div class="plan-name">Growth</div>
+        <div class="plan-price">$15 <span>/ month</span></div>
+        <div class="plan-desc">For businesses moving beyond the basics.</div>
+        <ul class="plan-features">
+          <li>Everything in Starter</li>
+          <li>3 POS terminals (+$10 each extra)</li>
+          <li>Advanced inventory</li>
+          <li>1 warehouse module (+$10 extra)</li>
+          <li>HR & Payroll</li>
+          <li>100 AI scans / month <span class="ai-badge">AI</span></li>
+          <li>Social media management</li>
+          <li>Email support</li>
+        </ul>
+        <a href="/register" class="plan-btn primary">Start 14-Day Trial</a>
+      </div>
+
+      <!-- Scale -->
+      <div class="plan">
+        <div class="plan-name">Scale</div>
+        <div class="plan-price">$25 <span>/ month</span></div>
+        <div class="plan-desc">The full solution for multi-location operations.</div>
+        <ul class="plan-features">
+          <li>Everything in Growth</li>
+          <li>Unlimited POS terminals</li>
+          <li>3 warehouse modules (+$10 extra)</li>
+          <li>Multi-business management</li>
+          <li>Unlimited AI scans <span class="ai-badge">AI</span></li>
+          <li>Priority AI processing</li>
+          <li>Advanced compliance suite</li>
+          <li>Priority support</li>
+          <li>Custom branding</li>
+        </ul>
+        <a href="/register" class="plan-btn secondary">Get Scale Plan</a>
+      </div>
+
+    </div>
+    <p style="text-align:center;font-size:12px;color:var(--text3);margin-top:20px">
+      * AI scans powered by Claude (Anthropic). Fair use applies on unlimited plans. Annual billing saves 2 months.
+    </p>
+  </div>
+</section>
+
+<!-- COUNTRIES -->
+<section id="countries">
+  <div class="section-label">Global reach</div>
+  <div class="section-title">Built for your country's rules.</div>
+  <div class="section-sub">LEDGR understands local tax law, filing requirements, and compliance standards — built in, not bolted on.</div>
+  <div class="countries">
+    <div class="country">🇲🇻 Maldives — GST / T-GST / MIRA</div>
+    <div class="country">🇦🇪 UAE — VAT 5% / FTA</div>
+    <div class="country">🇸🇦 Saudi Arabia — VAT 15% / ZATCA / Fatoora</div>
+    <div class="country">🇲🇾 Malaysia — SST / MyInvois</div>
+    <div class="country">🇬🇧 UK — VAT 20% / MTD</div>
+    <div class="country">🇦🇺 Australia — GST 10%</div>
+    <div class="country">🇮🇳 India — GST / IRN</div>
+    <div class="country">🇸🇬 Singapore — GST 9%</div>
+  </div>
+</section>
+
+<!-- FINAL CTA -->
+<section style="text-align:center;padding:80px 24px">
+  <div class="section-title">Ready to simplify<br>your business?</div>
+  <p style="color:var(--text2);margin:16px auto 36px;max-width:480px;font-size:16px">
+    Join businesses in the Maldives and beyond using LEDGR to replace expensive software stacks with one intelligent platform.
+  </p>
+  <a href="/register" class="btn-primary" style="font-size:17px;padding:16px 36px">
+    🚀 Start Free Today — No Card Required
+  </a>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="logo">LEDGR Global</div>
+  <p>The intelligent business platform for emerging-market empires.</p>
+  <div class="footer-links">
+    <a href="/login">Sign In</a>
+    <a href="/register">Register</a>
+    <a href="#pricing">Pricing</a>
+    <a href="#features">Features</a>
+    <a href="/support">Support</a>
+  </div>
+  <p style="margin-top:24px;font-size:11px">© 2026 LEDGR Global. Built with ♥ for businesses that mean business.</p>
+</footer>
+
+</body>
+</html>
