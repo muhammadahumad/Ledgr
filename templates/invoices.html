@@ -68,7 +68,7 @@
       <tr class="inv-row" data-status="{{ inv.status }}"
           data-search="{{ inv.invoice_number }} {{ inv.customer_name }}">
         <td style="font-family:var(--mono);color:var(--mint);font-size:11px">
-          {{ inv.invoice_number }}</td>
+          <a href="/invoices/{{ inv.id }}" style="color:var(--mint);text-decoration:none;font-weight:600">{{ inv.invoice_number }}</a></td>
         <td style="font-weight:500;color:var(--text)">
           {{ inv.customer_name }}</td>
         <td style="color:var(--text3);font-size:11px">
@@ -87,6 +87,8 @@
         </td>
         <td>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <a href="/invoices/{{ inv.id }}" class="btn btn-sm" style="color:var(--mint);border-color:var(--mint)">View</a>
+            <a href="/invoices/{{ inv.id }}" class="btn btn-sm" style="background:#25d366;color:#fff;border:none" title="WhatsApp Share">💬</a>
             <button class="btn btn-sm" onclick="editInv({{ inv.id }}, '{{ inv.invoice_number }}', '{{ inv.customer_name }}', '{{ inv.status }}', {{ inv.total_amount }}, {{ inv.tax_amount }}, {{ inv.subtotal }}, '{{ inv.invoice_date }}', {{ inv.customer_id or 'null' }})">
               ✏ Edit</button>
             {% if inv.status != 'PAID' %}
