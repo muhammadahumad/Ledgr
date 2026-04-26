@@ -1721,6 +1721,75 @@ def landing_page():
     """Public landing page — no login required"""
     return render_template("landing.html")
 
+
+class AuditLog(db.Model):
+    """Every significant action logged for compliance and rollback"""
+    __tablename__ = 'audit_logs'
+    id          = db.Column(db.Integer, primary_key=True)
+    business_id = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'))
+    action      = db.Column(db.String(50))   # CREATE, UPDATE, DELETE, LOGIN, EXPORT
+    entity_type = db.Column(db.String(50))   # Invoice, Document, JournalEntry etc
+    entity_id   = db.Column(db.Integer)
+    old_values  = db.Column(db.Text)         # JSON of previous values
+    new_values  = db.Column(db.Text)         # JSON of new values
+    ip_address  = db.Column(db.String(50))
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class PurchaseOrder(db.Model):
+    """Purchase orders that convert to bills on receipt"""
+    __tablename__ = 'purchase_orders'
+    id           = db.Column(db.Integer, primary_key=True)
+    business_id  = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    supplier_id  = db.Column(db.Integer, db.ForeignKey('suppliers.id'))
+    po_number    = db.Column(db.String(50))
+    order_date   = db.Column(db.Date)
+    expected_date= db.Column(db.Date)
+    status       = db.Column(db.String(20), default='DRAFT')  # DRAFT,SENT,RECEIVED,PARTIAL,CANCELLED
+    currency     = db.Column(db.String(10), default='MVR')
+    subtotal     = db.Column(db.Numeric(15,2), default=0)
+    tax_amount   = db.Column(db.Numeric(15,2), default=0)
+    total_amount = db.Column(db.Numeric(15,2), default=0)
+    notes        = db.Column(db.Text)
+    items        = db.Column(db.Text)        # JSON line items
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class RecurringInvoice(db.Model):
+    """Template for auto-generating periodic invoices"""
+    __tablename__ = 'recurring_invoices'
+    id           = db.Column(db.Integer, primary_key=True)
+    business_id  = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    customer_id  = db.Column(db.Integer, db.ForeignKey('customers.id'))
+    name         = db.Column(db.String(200))
+    frequency    = db.Column(db.String(20))  # monthly, weekly, quarterly, yearly
+    next_date    = db.Column(db.Date)
+    end_date     = db.Column(db.Date)
+    is_active    = db.Column(db.Boolean, default=True)
+    currency     = db.Column(db.String(10), default='MVR')
+    subtotal     = db.Column(db.Numeric(15,2), default=0)
+    tax_amount   = db.Column(db.Numeric(15,2), default=0)
+    total_amount = db.Column(db.Numeric(15,2), default=0)
+    items        = db.Column(db.Text)
+    notes        = db.Column(db.Text)
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class CashFlowForecast(db.Model):
+    """Stores computed cash flow projections"""
+    __tablename__ = 'cashflow_forecasts'
+    id           = db.Column(db.Integer, primary_key=True)
+    business_id  = db.Column(db.Integer, db.ForeignKey('businesses.id'))
+    forecast_date= db.Column(db.Date)
+    period_start = db.Column(db.Date)
+    period_end   = db.Column(db.Date)
+    expected_in  = db.Column(db.Numeric(15,2), default=0)
+    expected_out = db.Column(db.Numeric(15,2), default=0)
+    net_flow     = db.Column(db.Numeric(15,2), default=0)
+    confidence   = db.Column(db.String(10), default='medium')
+    created_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
 @app.route('/')
 def index():
     return redirect(url_for('dashboard') if 'user_id' in session else url_for('login'))
@@ -8892,6 +8961,650 @@ def api_debug_last_scan():
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok": False, "error": str(e)[:300]})
+
+
+def log_action(business_id, user_id, action, entity_type, entity_id=None,
+               old_values=None, new_values=None):
+    """Log any significant action for audit trail"""
+    try:
+        import json as _j
+        entry = AuditLog(
+            business_id=business_id, user_id=user_id,
+            action=action, entity_type=entity_type, entity_id=entity_id,
+            old_values=_j.dumps(old_values) if old_values else None,
+            new_values=_j.dumps(new_values) if new_values else None,
+            ip_address=request.remote_addr if request else None
+        )
+        db.session.add(entry)
+        # Don't commit here - caller commits
+    except: pass  # Audit failure must never break the main operation
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 1: DATA EXPORT
+# ════════════════════════════════════════════════════════════
+
+@app.route("/export")
+@login_required
+def export_page():
+    user = current_user(); business = current_business()
+    return render_template("export.html", user=user, business=business,
+                          tax=business.tax_rules())
+
+
+@app.route("/api/export/full")
+@login_required
+def api_export_full():
+    """Export all business data as a ZIP file"""
+    import io, zipfile, csv
+    import json as _json
+    business, err = api_business_guard()
+    if err: return err
+    db.session.rollback()
+
+    log_action(business.id, current_user().id, 'EXPORT', 'Business', business.id)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+
+        # 1. Invoices CSV
+        try:
+            invs = db.session.execute(db.text(
+                "SELECT i.invoice_number, i.invoice_date, i.due_date, "
+                "COALESCE(c.name, i.buyer_legal_name) as customer, "
+                "i.currency, i.subtotal, i.tax_amount, i.total_amount, "
+                "i.amount_paid, i.status "
+                "FROM invoices i LEFT JOIN customers c ON i.customer_id=c.id "
+                "WHERE i.business_id=:bid ORDER BY i.invoice_date"
+            ), {"bid": business.id}).fetchall()
+            csv_buf = io.StringIO()
+            w = csv.writer(csv_buf)
+            w.writerow(['Invoice #','Date','Due Date','Customer','Currency',
+                       'Net','Tax','Total','Paid','Status'])
+            for r in invs:
+                w.writerow([str(x or '') for x in r])
+            zf.writestr('invoices.csv', csv_buf.getvalue())
+        except: db.session.rollback()
+
+        # 2. Bills/Documents CSV
+        try:
+            docs = db.session.execute(db.text(
+                "SELECT d.invoice_number, d.invoice_date, "
+                "COALESCE(s.name, d.vendor_name) as vendor, "
+                "COALESCE(d.vendor_tax_id, s.tax_id) as tin, "
+                "d.currency, d.subtotal, d.tax_amount, d.total_amount, d.doc_type "
+                "FROM documents d LEFT JOIN suppliers s ON d.supplier_id=s.id "
+                "WHERE d.business_id=:bid ORDER BY d.invoice_date"
+            ), {"bid": business.id}).fetchall()
+            csv_buf = io.StringIO()
+            w = csv.writer(csv_buf)
+            w.writerow(['Ref #','Date','Vendor','TIN','Currency','Net','Tax','Total','Type'])
+            for r in docs:
+                w.writerow([str(x or '') for x in r])
+            zf.writestr('bills_and_expenses.csv', csv_buf.getvalue())
+        except: db.session.rollback()
+
+        # 3. Journal entries CSV
+        try:
+            jlines = db.session.execute(db.text(
+                "SELECT je.date, je.reference, je.description, je.entry_type, "
+                "a.code, a.name, jl.debit, jl.credit "
+                "FROM journal_lines jl "
+                "JOIN journal_entries je ON jl.journal_entry_id=je.id "
+                "JOIN accounts a ON jl.account_id=a.id "
+                "WHERE je.business_id=:bid ORDER BY je.date, je.id"
+            ), {"bid": business.id}).fetchall()
+            csv_buf = io.StringIO()
+            w = csv.writer(csv_buf)
+            w.writerow(['Date','Reference','Description','Type','Acc Code','Account','Debit','Credit'])
+            for r in jlines:
+                w.writerow([str(x or '') for x in r])
+            zf.writestr('journal.csv', csv_buf.getvalue())
+        except: db.session.rollback()
+
+        # 4. Customers CSV
+        try:
+            custs = db.session.execute(db.text(
+                "SELECT name, email, phone, tax_id, address FROM customers "
+                "WHERE business_id=:bid ORDER BY name"
+            ), {"bid": business.id}).fetchall()
+            csv_buf = io.StringIO()
+            w = csv.writer(csv_buf)
+            w.writerow(['Name','Email','Phone','TIN','Address'])
+            for r in custs:
+                w.writerow([str(x or '') for x in r])
+            zf.writestr('customers.csv', csv_buf.getvalue())
+        except: db.session.rollback()
+
+        # 5. Suppliers CSV
+        try:
+            sups = db.session.execute(db.text(
+                "SELECT name, email, phone, tax_id, address FROM suppliers "
+                "WHERE business_id=:bid ORDER BY name"
+            ), {"bid": business.id}).fetchall()
+            csv_buf = io.StringIO()
+            w = csv.writer(csv_buf)
+            w.writerow(['Name','Email','Phone','TIN','Address'])
+            for r in sups:
+                w.writerow([str(x or '') for x in r])
+            zf.writestr('suppliers.csv', csv_buf.getvalue())
+        except: db.session.rollback()
+
+        # 6. Chart of accounts CSV
+        try:
+            accts = db.session.execute(db.text(
+                "SELECT code, name, account_type, current_balance FROM accounts "
+                "WHERE business_id=:bid ORDER BY code"
+            ), {"bid": business.id}).fetchall()
+            csv_buf = io.StringIO()
+            w = csv.writer(csv_buf)
+            w.writerow(['Code','Name','Type','Balance'])
+            for r in accts:
+                w.writerow([str(x or '') for x in r])
+            zf.writestr('chart_of_accounts.csv', csv_buf.getvalue())
+        except: db.session.rollback()
+
+        # 7. README
+        from datetime import datetime as _dt
+        readme = (
+            f"LEDGR DATA EXPORT\n"
+            f"{'=' * 40}\n"
+            f"Business: {business.display_name()}\n"
+            f"Exported: {_dt.utcnow().strftime('%Y-%m-%d %H:%M UTC')}\n"
+            f"Region: {business.region or 'MV'}\n\n"
+            f"Files included:\n"
+            f"  invoices.csv          - All sales invoices\n"
+            f"  bills_and_expenses.csv - All bills and expenses\n"
+            f"  journal.csv           - Complete double-entry journal\n"
+            f"  customers.csv         - Customer database\n"
+            f"  suppliers.csv         - Supplier database\n"
+            f"  chart_of_accounts.csv - Chart of accounts with balances\n\n"
+            f"Retain this export for a minimum of 5 years\n"
+            f"as required by law in your jurisdiction.\n"
+        )
+        zf.writestr('README.txt', readme)
+
+    db.session.commit()
+    buf.seek(0)
+    from flask import send_file
+    filename = f"LEDGR_{business.display_name().replace(' ','_')}_{date.today()}.zip"
+    return send_file(buf, mimetype='application/zip',
+                    as_attachment=True, download_name=filename)
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 2: ADMIN DASHBOARD
+# ════════════════════════════════════════════════════════════
+
+@app.route("/admin/dashboard")
+@login_required
+@admin_required
+def admin_dashboard():
+    """LEDGR admin — see all clients, usage, revenue"""
+    try:
+        businesses = db.session.execute(db.text("""
+            SELECT b.id, b.display_name, b.region, b.plan,
+                   COUNT(DISTINCT u.id) as users,
+                   COUNT(DISTINCT i.id) as invoices,
+                   COUNT(DISTINCT d.id) as documents,
+                   MAX(ul.created_at) as last_activity
+            FROM businesses b
+            LEFT JOIN user_businesses ub ON b.id=ub.business_id
+            LEFT JOIN users u ON ub.user_id=u.id
+            LEFT JOIN invoices i ON b.id=i.business_id
+            LEFT JOIN documents d ON b.id=d.business_id
+            LEFT JOIN audit_logs ul ON b.id=ul.business_id
+            GROUP BY b.id, b.display_name, b.region, b.plan
+            ORDER BY b.id DESC
+        """)).fetchall()
+    except:
+        db.session.rollback()
+        businesses = []
+
+    try:
+        stats = db.session.execute(db.text("""
+            SELECT COUNT(DISTINCT b.id) as total_businesses,
+                   COUNT(DISTINCT u.id) as total_users,
+                   SUM(CASE WHEN b.plan='pro' THEN 15
+                            WHEN b.plan='business' THEN 25
+                            WHEN b.plan='paid_client' THEN 25 ELSE 0 END) as mrr
+            FROM businesses b
+            LEFT JOIN user_businesses ub ON b.id=ub.business_id
+            LEFT JOIN users u ON ub.user_id=u.id
+        """)).fetchone()
+    except:
+        db.session.rollback()
+        stats = None
+
+    try:
+        tickets = SupportTicket.query.filter_by(status='open').order_by(
+            SupportTicket.created_at.desc()).limit(10).all()
+    except:
+        db.session.rollback()
+        tickets = []
+
+    return render_template("admin_dashboard.html",
+                          businesses=businesses, stats=stats, tickets=tickets)
+
+
+@app.route("/api/admin/impersonate/<int:biz_id>", methods=["POST"])
+@login_required
+@admin_required
+def api_admin_impersonate(biz_id):
+    """Admin: view app as a specific business"""
+    session['current_business_id'] = biz_id
+    log_action(biz_id, current_user().id, 'IMPERSONATE', 'Business', biz_id)
+    db.session.commit()
+    return jsonify({"ok": True, "redirect": "/dashboard"})
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 3: ONBOARDING WIZARD
+# ════════════════════════════════════════════════════════════
+
+@app.route("/onboarding")
+@login_required
+def onboarding():
+    user = current_user(); business = current_business()
+    # Calculate completeness score
+    score = 0
+    checks = {
+        "Business name": bool(business.display_name()),
+        "Tax ID (TIN)":  bool(business.tax_registration_number),
+        "Address":       bool(business.address_line1),
+        "Logo":          bool(getattr(business, 'logo_data', None)),
+        "Bank account":  bool(business.bank_account_number),
+        "SMTP (email)":  bool(business.smtp_host),
+        "First invoice": True,  # check below
+        "First supplier":True,
+    }
+    try:
+        inv_count = db.session.execute(db.text(
+            "SELECT COUNT(*) FROM invoices WHERE business_id=:bid"
+        ), {"bid": business.id}).scalar() or 0
+        checks["First invoice"] = inv_count > 0
+    except: db.session.rollback()
+    try:
+        sup_count = db.session.execute(db.text(
+            "SELECT COUNT(*) FROM suppliers WHERE business_id=:bid"
+        ), {"bid": business.id}).scalar() or 0
+        checks["First supplier"] = sup_count > 0
+    except: db.session.rollback()
+
+    score = int(sum(checks.values()) / len(checks) * 100)
+    return render_template("onboarding.html", user=user, business=business,
+                          tax=business.tax_rules(), checks=checks, score=score)
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 4: BPT / INCOME TAX MODULE
+# ════════════════════════════════════════════════════════════
+
+@app.route("/reports/bpt")
+@login_required
+def report_bpt():
+    """Business Profit Tax — annual income tax calculation"""
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    today = date.today()
+    year = int(request.args.get("year", today.year - 1))
+    start = date(year, 1, 1)
+    end   = date(year, 12, 31)
+
+    # Get P&L for the year
+    try:
+        revenue = float(db.session.execute(db.text(
+            "SELECT COALESCE(SUM(jl.credit-jl.debit),0) FROM journal_lines jl "
+            "JOIN journal_entries je ON jl.journal_entry_id=je.id "
+            "JOIN accounts a ON jl.account_id=a.id "
+            "WHERE je.business_id=:bid AND a.account_type='REVENUE' "
+            "AND je.date>=:s AND je.date<=:e"
+        ), {"bid":business.id,"s":str(start),"e":str(end)}).scalar() or 0)
+    except: db.session.rollback(); revenue = 0
+
+    try:
+        expenses = float(db.session.execute(db.text(
+            "SELECT COALESCE(SUM(jl.debit-jl.credit),0) FROM journal_lines jl "
+            "JOIN journal_entries je ON jl.journal_entry_id=je.id "
+            "JOIN accounts a ON jl.account_id=a.id "
+            "WHERE je.business_id=:bid AND a.account_type='EXPENSE' "
+            "AND je.date>=:s AND je.date<=:e"
+        ), {"bid":business.id,"s":str(start),"e":str(end)}).scalar() or 0)
+    except: db.session.rollback(); expenses = 0
+
+    net_profit = revenue - expenses
+
+    # BPT rates (Maldives — adjust per region)
+    bpt_rates = {
+        "MV": {"threshold": 500000, "rate": 0.15, "name": "BPT", "authority": "MIRA",
+               "exemption": 500000, "notes": "First MVR 500,000 exempt. 15% on excess."},
+        "AE": {"threshold": 375000, "rate": 0.09, "name": "Corporate Tax", "authority": "FTA",
+               "exemption": 375000, "notes": "First AED 375,000 exempt. 9% on excess."},
+        "SA": {"threshold": 0, "rate": 0.20, "name": "Zakat/CIT", "authority": "ZATCA",
+               "exemption": 0, "notes": "20% Corporate Income Tax for non-Saudi entities."},
+        "GB": {"threshold": 0, "rate": 0.25, "name": "Corporation Tax", "authority": "HMRC",
+               "exemption": 0, "notes": "25% for profits over £250,000."},
+        "MY": {"threshold": 0, "rate": 0.24, "name": "Income Tax", "authority": "LHDN",
+               "exemption": 0, "notes": "24% corporate tax rate."},
+        "AU": {"threshold": 0, "rate": 0.30, "name": "Company Tax", "authority": "ATO",
+               "exemption": 0, "notes": "30% for large companies, 25% for base rate."},
+        "SG": {"threshold": 0, "rate": 0.17, "name": "Corporate Tax", "authority": "IRAS",
+               "exemption": 0, "notes": "17% corporate tax rate."},
+    }
+    region = business.region or "MV"
+    bpt = bpt_rates.get(region, bpt_rates["MV"])
+    exemption   = float(bpt["exemption"])
+    taxable     = max(0, net_profit - exemption)
+    tax_payable = round(taxable * bpt["rate"], 2)
+    due_date    = date(year + 1, 3, 31)  # 3 months after year end (typical)
+
+    return render_template("report_bpt.html",
+        user=user, business=business, tax=tax,
+        year=year, start=start, end=end,
+        revenue=round(revenue,2), expenses=round(expenses,2),
+        net_profit=round(net_profit,2), exemption=exemption,
+        taxable=round(taxable,2), tax_payable=tax_payable,
+        bpt=bpt, due_date=due_date,
+        years=list(range(2020, today.year + 1)))
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 4: CASH FLOW FORECAST
+# ════════════════════════════════════════════════════════════
+
+@app.route("/reports/cashflow-forecast")
+@login_required
+def report_cashflow_forecast():
+    """30/60/90 day cash flow projection"""
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    today = date.today()
+
+    # Outstanding receivables (what clients owe us)
+    try:
+        receivables = db.session.execute(db.text(
+            "SELECT due_date, (total_amount - amount_paid) as outstanding, currency "
+            "FROM invoices WHERE business_id=:bid "
+            "AND status NOT IN ('PAID','VOID') AND total_amount > amount_paid "
+            "ORDER BY due_date"
+        ), {"bid": business.id}).fetchall()
+    except: db.session.rollback(); receivables = []
+
+    # Outstanding payables (what we owe suppliers)
+    try:
+        payables = db.session.execute(db.text(
+            "SELECT COALESCE(due_date, invoice_date + interval '30 days'), total_amount, currency "
+            "FROM documents WHERE business_id=:bid "
+            "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "ORDER BY due_date"
+        ), {"bid": business.id}).fetchall()
+    except: db.session.rollback(); payables = []
+
+    # Build 30/60/90 day buckets
+    buckets = {30: {"in":0,"out":0}, 60: {"in":0,"out":0}, 90: {"in":0,"out":0}}
+    for r in receivables:
+        due = r[0]
+        if isinstance(due, str):
+            try: due = datetime.strptime(due, "%Y-%m-%d").date()
+            except: continue
+        if not due: continue
+        days = (due - today).days
+        amt = float(r[1] or 0)
+        for d in [30, 60, 90]:
+            if days <= d: buckets[d]["in"] += amt
+
+    for r in payables:
+        due = r[0]
+        if hasattr(due, 'date'): due = due.date()
+        if isinstance(due, str):
+            try: due = datetime.strptime(due[:10], "%Y-%m-%d").date()
+            except: continue
+        if not due: continue
+        days = (due - today).days
+        amt = float(r[1] or 0)
+        for d in [30, 60, 90]:
+            if days <= d: buckets[d]["out"] += amt
+
+    for d in buckets:
+        buckets[d]["net"] = round(buckets[d]["in"] - buckets[d]["out"], 2)
+        buckets[d]["in"]  = round(buckets[d]["in"], 2)
+        buckets[d]["out"] = round(buckets[d]["out"], 2)
+
+    return render_template("report_cashflow_forecast.html",
+        user=user, business=business, tax=tax,
+        today=today, buckets=buckets,
+        receivables=receivables, payables=payables)
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 5: PURCHASE ORDERS
+# ════════════════════════════════════════════════════════════
+
+@app.route("/purchase-orders")
+@login_required
+def purchase_orders():
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    try:
+        pos = db.session.execute(db.text(
+            "SELECT po.id, po.po_number, po.order_date, po.expected_date, "
+            "po.status, po.total_amount, po.currency, "
+            "COALESCE(s.name, 'Unknown') as supplier_name "
+            "FROM purchase_orders po "
+            "LEFT JOIN suppliers s ON po.supplier_id=s.id "
+            "WHERE po.business_id=:bid ORDER BY po.order_date DESC"
+        ), {"bid": business.id}).fetchall()
+    except: db.session.rollback(); pos = []
+    try:
+        suppliers = Supplier.query.filter_by(business_id=business.id, is_active=True).all()
+    except: db.session.rollback(); suppliers = []
+    return render_template("purchase_orders.html", user=user, business=business,
+                          tax=tax, pos=pos, suppliers=suppliers)
+
+
+@app.route("/api/purchase-order/create", methods=["POST"])
+@login_required
+def api_po_create():
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json() or {}
+    import json as _j
+    try:
+        po = PurchaseOrder(
+            business_id=business.id,
+            supplier_id=data.get("supplier_id"),
+            po_number=data.get("po_number") or f"PO-{date.today().strftime('%Y%m%d')}-{business.id}",
+            order_date=datetime.strptime(data["order_date"], "%Y-%m-%d").date() if data.get("order_date") else date.today(),
+            expected_date=datetime.strptime(data["expected_date"], "%Y-%m-%d").date() if data.get("expected_date") else None,
+            currency=data.get("currency", business.base_currency or "MVR"),
+            subtotal=float(data.get("subtotal", 0)),
+            tax_amount=float(data.get("tax_amount", 0)),
+            total_amount=float(data.get("total_amount", 0)),
+            notes=data.get("notes", ""),
+            items=_j.dumps(data.get("items", [])),
+            status="DRAFT"
+        )
+        db.session.add(po)
+        db.session.commit()
+        log_action(business.id, current_user().id, 'CREATE', 'PurchaseOrder', po.id)
+        db.session.commit()
+        return jsonify({"ok": True, "po_id": po.id, "po_number": po.po_number})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+@app.route("/api/purchase-order/<int:po_id>/convert-to-bill", methods=["POST"])
+@login_required
+def api_po_convert(po_id):
+    """Convert a received PO into a bill and post to ledger"""
+    business, err = api_business_guard()
+    if err: return err
+    try:
+        po = PurchaseOrder.query.filter_by(id=po_id, business_id=business.id).first()
+        if not po: return jsonify({"ok": False, "error": "PO not found"})
+        tax = business.tax_rules()
+        doc = Document(
+            business_id=business.id, user_id=current_user().id,
+            doc_type="BILL", supplier_id=po.supplier_id,
+            invoice_number=po.po_number, invoice_date=date.today(),
+            currency=str(po.currency), subtotal=float(po.subtotal),
+            tax_amount=float(po.tax_amount), total_amount=float(po.total_amount),
+            raw_ai_data=po.items, status="PROCESSED"
+        )
+        db.session.add(doc)
+        db.session.flush()
+        post_journal(business.id, current_user().id,
+                    f"BILL from PO {po.po_number}", po.po_number,
+                    "PURCHASE", [
+                        {"account_code":"6900","debit":float(po.subtotal),"credit":0,"description":f"PO {po.po_number}"},
+                        {"account_code":"2000","debit":0,"credit":float(po.total_amount),"description":f"PO {po.po_number}"},
+                    ], doc.id)
+        po.status = "RECEIVED"
+        db.session.commit()
+        return jsonify({"ok": True, "document_id": doc.id})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 5: CUSTOMER STATEMENTS
+# ════════════════════════════════════════════════════════════
+
+@app.route("/customers/<int:cust_id>/statement")
+@login_required
+def customer_statement(cust_id):
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    try:
+        customer = Customer.query.filter_by(id=cust_id, business_id=business.id).first()
+        if not customer: return redirect(url_for("customers"))
+    except: db.session.rollback(); return redirect(url_for("customers"))
+
+    start_str = request.args.get("start", str(date(date.today().year, 1, 1)))
+    end_str   = request.args.get("end",   str(date.today()))
+
+    try:
+        invoices = db.session.execute(db.text(
+            "SELECT invoice_number, invoice_date, due_date, "
+            "total_amount, amount_paid, status, currency "
+            "FROM invoices WHERE business_id=:bid AND customer_id=:cid "
+            "AND invoice_date>=:s AND invoice_date<=:e ORDER BY invoice_date"
+        ), {"bid":business.id,"cid":cust_id,"s":start_str,"e":end_str}).fetchall()
+    except: db.session.rollback(); invoices = []
+
+    total_invoiced = sum(float(r[3] or 0) for r in invoices)
+    total_paid     = sum(float(r[4] or 0) for r in invoices)
+    balance_due    = total_invoiced - total_paid
+
+    # WhatsApp statement message
+    import urllib.parse as _up
+    wa_lines = [
+        f"*Account Statement — {business.display_name()}*",
+        f"Customer: {customer.name}",
+        f"Period: {start_str} to {end_str}",
+        "─" * 25,
+    ]
+    for r in invoices[-10:]:  # last 10 invoices
+        status = "✓" if r[5]=="PAID" else "●"
+        wa_lines.append(f"{status} {r[0]} | {r[2] or r[1]} | {r[6]} {float(r[3]):.2f}")
+    wa_lines += [
+        "─" * 25,
+        f"Total Invoiced: {tax['currency']} {total_invoiced:,.2f}",
+        f"Total Paid:     {tax['currency']} {total_paid:,.2f}",
+        f"*Balance Due:   {tax['currency']} {balance_due:,.2f}*",
+        f"Powered by LEDGR Global",
+    ]
+    wa_text = "\n".join(wa_lines)
+    phone = (customer.phone or "").replace("+","").replace(" ","")
+    wa_url = f"https://wa.me/{phone}?text={_up.quote(wa_text)}" if phone else "#"
+
+    return render_template("customer_statement.html",
+        user=user, business=business, tax=tax,
+        customer=customer, invoices=invoices,
+        total_invoiced=round(total_invoiced,2),
+        total_paid=round(total_paid,2),
+        balance_due=round(balance_due,2),
+        start=start_str, end=end_str, wa_url=wa_url)
+
+
+# ════════════════════════════════════════════════════════════
+# BLOCK 5: RECURRING INVOICES
+# ════════════════════════════════════════════════════════════
+
+@app.route("/recurring")
+@login_required
+def recurring_invoices():
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    try:
+        recurrings = RecurringInvoice.query.filter_by(
+            business_id=business.id).order_by(RecurringInvoice.next_date).all()
+    except: db.session.rollback(); recurrings = []
+    try:
+        customers = Customer.query.filter_by(business_id=business.id, is_active=True).all()
+    except: db.session.rollback(); customers = []
+    return render_template("recurring.html", user=user, business=business,
+                          tax=tax, recurrings=recurrings, customers=customers)
+
+
+@app.route("/api/recurring/generate", methods=["POST"])
+@login_required
+def api_recurring_generate():
+    """Generate due recurring invoices — run daily via cron or manually"""
+    business, err = api_business_guard()
+    if err: return err
+    today = date.today()
+    generated = []
+    try:
+        due = RecurringInvoice.query.filter_by(
+            business_id=business.id, is_active=True).filter(
+            RecurringInvoice.next_date <= today).all()
+        for rec in due:
+            # Create invoice from template
+            import json as _j
+            items = []
+            try: items = _j.loads(rec.items) if rec.items else []
+            except: pass
+            inv_num = f"{business.invoice_prefix or 'INV'}-{today.strftime('%Y%m%d')}-R"
+            inv = Invoice(
+                business_id=business.id,
+                customer_id=rec.customer_id,
+                invoice_number=inv_num,
+                invoice_date=today,
+                due_date=date(today.year, today.month + 1 if today.month < 12 else 1,
+                             today.day) if today.month < 12 else date(today.year+1, 1, today.day),
+                currency=str(rec.currency),
+                subtotal=float(rec.subtotal),
+                tax_amount=float(rec.tax_amount),
+                total_amount=float(rec.total_amount),
+                status="SENT", items=rec.items or "[]",
+                notes=f"Auto-generated from recurring: {rec.name}"
+            )
+            db.session.add(inv)
+            db.session.flush()
+            # Advance next_date
+            from dateutil.relativedelta import relativedelta
+            freq_map = {"monthly":relativedelta(months=1),
+                       "weekly":relativedelta(weeks=1),
+                       "quarterly":relativedelta(months=3),
+                       "yearly":relativedelta(years=1)}
+            delta = freq_map.get(rec.frequency, relativedelta(months=1))
+            rec.next_date = rec.next_date + delta
+            if rec.end_date and rec.next_date > rec.end_date:
+                rec.is_active = False
+            generated.append(inv_num)
+        db.session.commit()
+        return jsonify({"ok": True, "generated": generated, "count": len(generated)})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
 
 @app.route('/admin')
 @login_required
