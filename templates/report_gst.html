@@ -210,9 +210,17 @@ var PERIOD   = "{{ period_label }}";
 var START    = "{{ start }}";
 var END      = "{{ end }}";
 
-// ── Inline data from server (no AJAX needed) ──────────────────────────────
-var INV_ROWS = {{ inv_rows | tojson }};
-var BILL_ROWS = {{ bill_rows | tojson }};
+// ── Inline data from server ──────────────────────────────────────────────
+try {
+  var INV_ROWS  = {{ inv_rows | tojson if inv_rows else '[]' }};
+  var BILL_ROWS = {{ bill_rows | tojson if bill_rows else '[]' }};
+  console.log('LEDGR GST: INV_ROWS loaded:', INV_ROWS.length, 'invoices');
+  console.log('LEDGR GST: BILL_ROWS loaded:', BILL_ROWS.length, 'bills');
+} catch(e) {
+  console.error('LEDGR GST data error:', e);
+  var INV_ROWS = [];
+  var BILL_ROWS = [];
+}
 
 // Exclusion state
 var excludedInvoices = [];
@@ -221,16 +229,23 @@ var excludedBills    = [];
 // ── Toggle drill-down ─────────────────────────────────────────────────────
 function toggleDrillDown(type) {
   var box = document.getElementById(type + '-drilldown');
-  if (!box) return;
+  if (!box) { alert('ERROR: ' + type + '-drilldown element not found'); return; }
   if (box.style.display === 'none' || box.style.display === '') {
     box.style.display = 'block';
-    if (type === 'output' && !box.dataset.loaded) {
-      buildOutputTable();
-      box.dataset.loaded = '1';
-    }
-    if (type === 'input' && !box.dataset.loaded) {
-      buildInputTable();
-      box.dataset.loaded = '1';
+    try {
+      if (type === 'output' && !box.dataset.loaded) {
+        buildOutputTable();
+        box.dataset.loaded = '1';
+      }
+      if (type === 'input' && !box.dataset.loaded) {
+        buildInputTable();
+        box.dataset.loaded = '1';
+      }
+    } catch(e) {
+      box.innerHTML = '<div style="padding:14px;color:var(--red);font-size:12px">'
+        + '⚠ Error building table: ' + e.message + '<br>'
+        + 'INV_ROWS: ' + INV_ROWS.length + ' rows, BILL_ROWS: ' + BILL_ROWS.length + ' rows'
+        + '</div>';
     }
   } else {
     box.style.display = 'none';
