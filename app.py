@@ -4880,12 +4880,13 @@ def report_gst_return():
                                        exclude_statuses=['VOID','DRAFT'])
     try:
         bill_rows_detail = db.session.execute(db.text(
-            "SELECT invoice_number, invoice_date, vendor_name, vendor_tax_id, "
+            "SELECT invoice_number, COALESCE(invoice_date, created_at::date), vendor_name, vendor_tax_id, "
             "subtotal, tax_amount, total_amount, doc_type, currency "
             "FROM documents WHERE business_id=:bid "
             "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
-            "AND invoice_date>=:s AND invoice_date<=:e "
-            "ORDER BY invoice_date"
+            "AND COALESCE(invoice_date, created_at::date)>=:s "
+            "AND COALESCE(invoice_date, created_at::date)<=:e "
+            "ORDER BY COALESCE(invoice_date"
         ), {"bid":business.id,"s":str(start),"e":str(end)}).fetchall()
         bill_rows_detail = [{
             "invoice_number": str(r[0] or ""),
@@ -8646,6 +8647,92 @@ def api_document_post(doc_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"ok": False, "error": str(e)[:200]})
+
+
+@app.route("/invoices/<int:inv_id>")
+@login_required
+def invoice_detail(inv_id):
+    """View individual invoice with WhatsApp share"""
+    db.session.rollback()
+    user = current_user(); business = current_business()
+    tax = business.tax_rules()
+    # Use raw SQL to avoid ORM column issues
+    try:
+        result = db.session.execute(db.text(
+            "SELECT i.id, i.invoice_number, i.invoice_date, i.due_date, "
+            "i.currency, i.subtotal, i.tax_amount, i.total_amount, "
+            "i.amount_paid, i.status, i.notes, i.items, "
+            "i.buyer_legal_name, i.customer_id, "
+            "COALESCE(c.name, i.buyer_legal_name, 'Customer') as customer_name, "
+            "c.email as customer_email, c.phone as customer_phone "
+            "FROM invoices i "
+            "LEFT JOIN customers c ON i.customer_id = c.id "
+            "WHERE i.id = :id AND i.business_id = :bid"
+        ), {"id": inv_id, "bid": business.id}).fetchone()
+    except:
+        db.session.rollback()
+        return redirect(url_for("invoices"))
+    if not result:
+        return redirect(url_for("invoices"))
+    
+    import json as _json
+    # Build invoice dict
+    inv = {
+        "id":             result[0],
+        "invoice_number": result[1] or f"INV-{result[0]}",
+        "invoice_date":   result[2].strftime("%d %b %Y") if result[2] and hasattr(result[2],'strftime') else str(result[2] or ""),
+        "invoice_date_iso": result[2].strftime("%Y-%m-%d") if result[2] and hasattr(result[2],'strftime') else "",
+        "due_date":       result[3].strftime("%d %b %Y") if result[3] and hasattr(result[3],'strftime') else str(result[3] or ""),
+        "currency":       result[4] or tax["currency"],
+        "subtotal":       float(result[5] or 0),
+        "tax_amount":     float(result[6] or 0),
+        "total_amount":   float(result[7] or 0),
+        "amount_paid":    float(result[8] or 0),
+        "status":         result[9] or "SENT",
+        "notes":          result[10] or "",
+        "customer_name":  result[14] or "Customer",
+        "customer_email": result[15] or "",
+        "customer_phone": result[16] or "",
+    }
+    # Parse line items
+    line_items = []
+    try:
+        if result[11]:
+            items = _json.loads(result[11])
+            line_items = items if isinstance(items, list) else []
+    except: pass
+    
+    # WhatsApp message
+    sep = "-" * 25
+    wa_text = "*Invoice " + inv["invoice_number"] + "*\n"
+    wa_text += sep + "\n"
+    wa_text += "*" + business.display_name() + "*\n"
+    wa_text += "Date: " + inv["invoice_date"] + "\n"
+    wa_text += "Due: " + inv["due_date"] + "\n\n"
+    if line_items:
+        for item in line_items[:5]:
+            desc = str(item.get("desc") or item.get("description","Item"))
+            total = float(item.get("total") or item.get("price", 0))
+            wa_text += "- " + desc + ": " + inv["currency"] + " " + "{:,.2f}".format(total) + "\n"
+        wa_text += "\n"
+    wa_text += "Subtotal: " + inv["currency"] + " " + "{:,.2f}".format(inv["subtotal"]) + "\n"
+    wa_text += "GST: " + inv["currency"] + " " + "{:,.2f}".format(inv["tax_amount"]) + "\n"
+    wa_text += "*TOTAL: " + inv["currency"] + " " + "{:,.2f}".format(inv["total_amount"]) + "*\n"
+    wa_text += sep + "\nPowered by LEDGR Global"
+    import urllib.parse as _up
+    wa_url = "https://wa.me/" + (inv['customer_phone'].replace('+','').replace(' ','') if inv['customer_phone'] else '') + "?text=" + _up.quote(wa_text)
+    
+    return render_template("invoice_detail.html", user=user, business=business,
+                           tax=tax, inv=inv, line_items=line_items, wa_url=wa_url)
+
+
+@app.route("/api/invoice/<int:inv_id>/share-whatsapp")
+@login_required
+def api_invoice_whatsapp(inv_id):
+    """Get WhatsApp share URL for invoice"""
+    business, err = api_business_guard()
+    if err: return err
+    return redirect(url_for("invoice_detail", inv_id=inv_id))
 
 @app.route('/admin')
 @login_required
