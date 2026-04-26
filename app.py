@@ -1016,7 +1016,8 @@ class Quotation(db.Model):
     total_amount = db.Column(db.Numeric(12,2), default=0)
     status = db.Column(db.String(20), default='DRAFT')
     notes = db.Column(db.Text)
-    terms = db.Column(db.Text)                   # Payment/delivery terms
+    terms = db.Column(db.Text)
+    payment_instructions = db.Column(db.Text)                   # Payment/delivery terms
     items = db.Column(db.Text, default='[]')
     converted_invoice_id = db.Column(db.Integer, db.ForeignKey('invoices.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -2182,11 +2183,11 @@ def invoices():
 
     products_list = []
     try:
-        if business.has_inventory:
-            products_list = Product.query.filter_by(
-                business_id=business.id).filter(
-                db.or_(Product.is_active==True, Product.is_active==None)
-            ).order_by(Product.name).all()
+        # Always load products - used for quick-select even without inventory module
+        products_list = Product.query.filter_by(
+            business_id=business.id).filter(
+            db.or_(Product.is_active==True, Product.is_active==None)
+        ).order_by(Product.name).all()
     except: db.session.rollback()
 
     return render_template('invoices.html', user=user, business=business,
@@ -9606,6 +9607,36 @@ def api_recurring_generate():
         db.session.rollback()
         return jsonify({"ok": False, "error": str(e)[:200]})
 
+
+@app.route("/api/customer/quick-add", methods=["POST"])
+@login_required
+def api_customer_quick_add():
+    """Quick customer creation from invoice form"""
+    business, err = api_business_guard()
+    if err: return err
+    data = request.get_json() or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Customer name required"})
+    try:
+        cust = Customer(
+            business_id=business.id,
+            name=name,
+            phone=(data.get("phone") or "").strip(),
+            email=(data.get("email") or "").strip(),
+            tax_id=(data.get("tax_id") or "").strip(),
+            is_active=True
+        )
+        db.session.add(cust)
+        db.session.commit()
+        return jsonify({"ok": True, "customer": {
+            "id": cust.id, "name": cust.name,
+            "phone": cust.phone, "email": cust.email
+        }})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -10182,8 +10213,25 @@ def api_invoice_create():
     tax_amt = round(subtotal * tax_rate, 2)
     total = subtotal + tax_amt
     # Generate invoice number
-    count = Invoice.query.filter_by(business_id=business.id).count() + 1
-    inv_num = f"INV-{datetime.utcnow().year}-{count:04d}"
+    # Get next invoice number - continues from last used number
+    prefix = business.invoice_prefix or 'INV'
+    year   = datetime.utcnow().year
+    try:
+        last = db.session.execute(db.text(
+            "SELECT invoice_number FROM invoices WHERE business_id=:bid "
+            "ORDER BY id DESC LIMIT 1"
+        ), {"bid": business.id}).scalar()
+        if last:
+            # Extract numeric part from last invoice number
+            nums = re.findall(r'\d+', str(last))
+            last_num = int(nums[-1]) if nums else 0
+            inv_num = f"{prefix}-{year}-{last_num+1:04d}"
+        else:
+            inv_num = f"{prefix}-{year}-0001"
+    except:
+        db.session.rollback()
+        count = Invoice.query.filter_by(business_id=business.id).count() + 1
+        inv_num = f"{prefix}-{year}-{count:04d}"
     inv = Invoice(business_id=business.id, customer_id=data.get('customer_id'),
                   invoice_number=inv_num, subtotal=subtotal, tax_amount=tax_amt,
                   total_amount=total, currency=business.base_currency,
