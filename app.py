@@ -2348,29 +2348,6 @@ def bank_reconcile_old(account_id):
                            account=acct, transactions=transactions, tax=business.tax_rules())
 
 
-@app.route("/api/bank/reconcile", methods=["POST"])
-@login_required
-def api_bank_reconcile_old():
-    business, err = api_business_guard()
-    if err: return err
-    data = request.get_json()
-    account_id = data.get("account_id")
-    statement_balance = float(data.get("statement_balance", 0))
-    acct = BankAccount.query.filter_by(id=account_id, business_id=business.id).first()
-    if not acct: return jsonify({"ok":False,"error":"Account not found"})
-    # Calculate book balance from transactions
-    txns = BankTransaction.query.filter_by(bank_account_id=account_id).all()
-    book_balance = float(acct.opening_balance or 0)
-    for t in txns:
-        book_balance += float(t.credit or 0) - float(t.debit or 0)
-    variance = statement_balance - book_balance
-    acct.current_balance = statement_balance
-    db.session.commit()
-    return jsonify({"ok":True,"statement_balance":statement_balance,
-                    "book_balance":round(book_balance,2),
-                    "variance":round(variance,2),
-                    "reconciled":abs(variance) < 0.01,
-                    "currency":acct.currency})
 
 
 @app.route("/api/bank/add-account", methods=["POST"])
@@ -8514,6 +8491,44 @@ def api_bank_reconcile():
         db.session.rollback()
         return jsonify({"ok": False, "error": str(e)[:200]})
 
+
+@app.route("/api/document/<int:doc_id>/post", methods=["POST"])
+@login_required
+def api_document_post(doc_id):
+    """Post/repost a document to the journal"""
+    business, err = api_business_guard()
+    if err: return err
+    db.session.rollback()
+    doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
+    if not doc:
+        return jsonify({"ok": False, "error": "Document not found"})
+    try:
+        tax = business.tax_rules()
+        subtotal  = float(doc.subtotal or 0)
+        tax_amt   = float(doc.tax_amount or 0)
+        total_amt = float(doc.total_amount or 0)
+        if total_amt == 0: total_amt = subtotal + tax_amt
+
+        lines = [
+            {"account_code": "6900", "debit": subtotal,  "credit": 0,
+             "description": doc.vendor_name or ""},
+            {"account_code": "2000", "debit": 0, "credit": total_amt,
+             "description": doc.vendor_name or ""},
+        ]
+        if tax_amt > 0:
+            lines.insert(1, {"account_code": "2210", "debit": tax_amt, "credit": 0,
+                             "description": f"{tax.get('tax_name','Tax')} on purchase"})
+        post_journal(business.id, current_user().id,
+                    f"{doc.doc_type} — {doc.vendor_name}",
+                    doc.invoice_number or f"DOC-{doc.id}",
+                    "PURCHASE", lines, doc.id,
+                    entry_date=doc.invoice_date)
+        db.session.commit()
+        return jsonify({"ok": True, "message": "Posted to ledger"})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)[:200]})
+
 @app.route('/admin')
 @login_required
 @admin_required
@@ -9223,10 +9238,28 @@ def documents():
 @business_required
 def document_detail(doc_id):
     user = current_user(); business = current_business()
+    db.session.rollback()
     doc = Document.query.filter_by(id=doc_id, business_id=business.id).first()
     if not doc: return redirect(url_for("documents"))
+    # Load related journal entries
+    try:
+        journal_entries = JournalEntry.query.filter_by(
+            document_id=doc.id).all()
+    except:
+        db.session.rollback()
+        journal_entries = []
+    # Parse line items from raw_ai_data
+    import json as _json
+    line_items = []
+    try:
+        if doc.raw_ai_data:
+            raw = _json.loads(doc.raw_ai_data)
+            line_items = raw.get('line_items', [])
+    except: pass
     return render_template("document_detail.html", user=user, business=business,
-                           doc=doc, tax=business.tax_rules())
+                           doc=doc, tax=business.tax_rules(),
+                           journal_entries=journal_entries,
+                           line_items=line_items)
 
 
 @app.route("/api/document/<int:doc_id>/update", methods=["POST"])
