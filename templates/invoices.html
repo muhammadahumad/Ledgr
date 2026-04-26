@@ -166,42 +166,122 @@
 
 <!-- New Invoice Modal -->
 <div id="new-invoice-modal" class="modal-overlay">
-  <div class="modal" style="max-width:580px">
+  <div class="modal" style="max-width:620px;max-height:90vh;overflow-y:auto">
     <div class="modal-title">New Invoice
       <button class="modal-close" onclick="closeModal('new-invoice-modal')">×</button>
     </div>
-    <div class="field-row">
-      <div><div class="field-label">Customer *</div>
-        <select class="select-input" id="ni-customer">
+
+    <!-- Customer -->
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:10px">
+      <div style="flex:1">
+        <div class="field-label">Customer *</div>
+        <select class="select-input" id="ni-customer" style="width:100%">
           <option value="">— Select Customer —</option>
           {% for c in customers %}
-          <option value="{{ c.id }}" data-name="{{ c.name }}">{{ c.name }}</option>
+          <option value="{{ c.id }}" 
+            data-name="{{ c.name }}"
+            data-phone="{{ c.phone or '' }}"
+            data-email="{{ c.email or '' }}">{{ c.name }}</option>
           {% endfor %}
-        </select></div>
-      <div><div class="field-label">Invoice Date</div>
-        <input class="field-input" type="date" id="ni-date"></div>
+        </select>
+      </div>
+      <button class="btn btn-sm" onclick="toggleQuickCustomer()" 
+        style="white-space:nowrap;height:36px">+ New Customer</button>
     </div>
-    <div class="field-row">
+
+    <!-- Quick customer create (hidden by default) -->
+    <div id="quick-customer-panel" style="display:none;background:rgba(99,102,241,.06);
+      border:1px solid rgba(99,102,241,.2);border-radius:8px;padding:12px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--accent);margin-bottom:8px">New Customer</div>
+      <div class="field-row">
+        <div><div class="field-label">Name *</div>
+          <input class="field-input" id="qc-name" placeholder="Customer name"></div>
+        <div><div class="field-label">Phone</div>
+          <input class="field-input" id="qc-phone" placeholder="+960..."></div>
+      </div>
+      <div class="field-row">
+        <div><div class="field-label">Email</div>
+          <input class="field-input" id="qc-email" placeholder="email@example.com"></div>
+        <div><div class="field-label">TIN (if GST registered)</div>
+          <input class="field-input" id="qc-tin" placeholder="Optional"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveQuickCustomer()">Save Customer</button>
+        <button class="btn btn-sm" onclick="toggleQuickCustomer()">Cancel</button>
+      </div>
+      <div id="qc-msg" style="display:none;font-size:11px;margin-top:6px"></div>
+    </div>
+
+    <!-- Invoice meta -->
+    <div class="field-row" style="margin-bottom:10px">
       <div><div class="field-label">Invoice Number</div>
-        <input class="field-input" id="ni-num" placeholder="AK-25-XXXX"></div>
+        <input class="field-input" id="ni-num" placeholder="Auto-generated"></div>
+      <div><div class="field-label">Invoice Date *</div>
+        <input class="field-input" type="date" id="ni-date"></div>
       <div><div class="field-label">Due Date</div>
         <input class="field-input" type="date" id="ni-due"></div>
     </div>
-    <div id="ni-lines" style="margin:10px 0"></div>
-    <button class="btn btn-sm" onclick="addLine()" style="margin-bottom:10px">+ Add Line</button>
-    <div style="text-align:right;padding:8px 0;border-top:1px solid var(--border)">
-      <span style="font-size:12px;color:var(--text3)">Total: </span>
-      <span id="ni-total-display" style="font-weight:700;font-family:var(--mono);font-size:15px;color:var(--mint)">MVR 0.00</span>
+
+    <!-- Product quick-select (if products exist) -->
+    {% if products %}
+    <div style="margin-bottom:10px">
+      <div class="field-label" style="margin-bottom:6px">Quick Add Products</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for p in products %}
+        <button class="btn btn-sm" onclick="quickAddProduct('{{ p.name | replace("'","\'"  ) }}', {{ p.sale_price or p.unit_cost or 0 }})"
+          style="font-size:11px">
+          {{ p.name }} — {{ tax.currency }} {{ "{:,.2f}".format(p.sale_price or p.unit_cost or 0) }}
+        </button>
+        {% endfor %}
+      </div>
     </div>
-    <div class="field-group">
-      <div class="field-label">Notes</div>
-      <textarea class="field-input" id="ni-notes" rows="2"></textarea>
+    {% endif %}
+
+    <!-- Line items -->
+    <div style="margin-bottom:8px">
+      <div class="field-label" style="margin-bottom:6px">Line Items</div>
+      <div id="ni-lines"></div>
+      <button class="btn btn-sm" onclick="addLine()" style="margin-top:4px">+ Add Line</button>
     </div>
+
+    <!-- Totals -->
+    <div style="background:var(--bg);border-radius:8px;padding:10px 14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span style="color:var(--text3)">Subtotal</span>
+        <span id="ni-sub-display" style="font-family:var(--mono)">{{ tax.currency }} 0.00</span>
+      </div>
+      {% if business.is_tax_registered %}
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <span style="color:var(--amber)">{{ tax.tax_name }} ({{ (tax.tax_rate * 100)|int }}%)</span>
+        <span id="ni-tax-display" style="font-family:var(--mono);color:var(--amber)">{{ tax.currency }} 0.00</span>
+      </div>
+      {% endif %}
+      <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;
+        border-top:1px solid var(--border);padding-top:6px;margin-top:4px">
+        <span>Total</span>
+        <span id="ni-total-display" style="font-family:var(--mono);color:var(--mint)">{{ tax.currency }} 0.00</span>
+      </div>
+    </div>
+
+    <!-- Notes + Payment instructions -->
+    <div class="field-row" style="margin-bottom:10px">
+      <div><div class="field-label">Notes</div>
+        <textarea class="field-input" id="ni-notes" rows="2" 
+          placeholder="e.g. Thank you for your order!">{{ business.invoice_notes or '' }}</textarea></div>
+      <div><div class="field-label">Payment Instructions</div>
+        <textarea class="field-input" id="ni-payment-msg" rows="2"
+          placeholder="e.g. Transfer to BML Account...">{% if business.bank_account_number %}Bank: {{ business.bank_name or '' }}
+Acc: {{ business.bank_account_number }}
+Name: {{ business.bank_account_name or business.display_name() }}{% endif %}</textarea></div>
+    </div>
+
     <div style="display:flex;gap:8px">
-      <button class="btn btn-primary" onclick="createInvoice()">Create Invoice</button>
+      <button class="btn btn-primary" onclick="createInvoice()" id="ni-submit">
+        ✓ Create Invoice
+      </button>
       <button class="btn" onclick="closeModal('new-invoice-modal')">Cancel</button>
     </div>
-    <div id="ni-msg" style="display:none;margin-top:8px;font-size:12px;padding:8px;border-radius:6px"></div>
+    <div id="ni-msg" style="display:none;margin-top:8px;font-size:12px;padding:10px;border-radius:6px"></div>
   </div>
 </div>
 
@@ -315,9 +395,15 @@ function addLine(desc, qty, price) {
   niCalc();
 }
 function niCalc() {
-  var total = niLines.filter(Boolean).reduce(function(s,l){ return s + (l.qty * l.price); }, 0);
-  var withTax = total * (1 + TAX_RATE);
-  document.getElementById('ni-total-display').textContent = CCY + ' ' + withTax.toFixed(2);
+  var sub = niLines.filter(Boolean).reduce(function(s,l){ return s + (l.qty * l.price); }, 0);
+  var tax = IS_TAX_REGISTERED ? Math.round(sub * TAX_RATE * 100) / 100 : 0;
+  var total = sub + tax;
+  var subEl = document.getElementById('ni-sub-display');
+  var taxEl = document.getElementById('ni-tax-display');
+  var totEl = document.getElementById('ni-total-display');
+  if (subEl) subEl.textContent = CCY + ' ' + sub.toFixed(2);
+  if (taxEl) taxEl.textContent = CCY + ' ' + tax.toFixed(2);
+  if (totEl) totEl.textContent = CCY + ' ' + total.toFixed(2);
 }
 function createInvoice() {
   var custId = document.getElementById('ni-customer').value;
@@ -338,7 +424,8 @@ function createInvoice() {
       due_date:       document.getElementById('ni-due').value,
       items: lines.map(function(l){ return {desc:l.desc, qty:l.qty, price:l.price, total:l.qty*l.price}; }),
       subtotal: sub, tax_amount: tax, total_amount: total,
-      notes: document.getElementById('ni-notes').value
+      notes: document.getElementById('ni-notes').value,
+      payment_msg: (document.getElementById('ni-payment-msg')||{value:''}).value
     })
   }).then(r => r.json()).then(res => {
     msg.style.display = 'block';
@@ -356,4 +443,63 @@ function createInvoice() {
 // Set today as default date
 document.getElementById('ni-date').value = new Date().toISOString().split('T')[0];
 addLine(); // start with one empty line
+
+// ── Quick customer create ──────────────────────────────────────────────
+function toggleQuickCustomer() {
+  var p = document.getElementById('quick-customer-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function saveQuickCustomer() {
+  var name = document.getElementById('qc-name').value.trim();
+  if (!name) { alert('Customer name required'); return; }
+  var msg = document.getElementById('qc-msg');
+  fetch('/api/customer/quick-add', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      name:   name,
+      phone:  document.getElementById('qc-phone').value.trim(),
+      email:  document.getElementById('qc-email').value.trim(),
+      tax_id: document.getElementById('qc-tin').value.trim()
+    })
+  }).then(r=>r.json()).then(res=>{
+    if (res.ok) {
+      var sel = document.getElementById('ni-customer');
+      var opt = document.createElement('option');
+      opt.value = res.customer.id;
+      opt.dataset.name  = res.customer.name;
+      opt.dataset.phone = res.customer.phone || '';
+      opt.textContent = res.customer.name;
+      opt.selected = true;
+      sel.appendChild(opt);
+      document.getElementById('quick-customer-panel').style.display = 'none';
+      ['qc-name','qc-phone','qc-email','qc-tin'].forEach(function(id){
+        document.getElementById(id).value='';
+      });
+    } else {
+      msg.style.display='block'; msg.style.color='var(--red)';
+      msg.textContent = res.error || 'Failed to save customer';
+    }
+  });
+}
+
+// ── Product quick-add ──────────────────────────────────────────────────
+function quickAddProduct(name, price) {
+  // Check if product already in lines
+  var lines = document.querySelectorAll('.ni-line-desc');
+  for (var i=0; i<lines.length; i++) {
+    if (lines[i].value === name) {
+      // Increment qty
+      var qtyEl = lines[i].closest('tr').querySelector('.ni-line-qty');
+      if (qtyEl) { qtyEl.value = (parseFloat(qtyEl.value)||1) + 1; niCalc(); return; }
+    }
+  }
+  // Add new line
+  addLine(name, price);
+}
+
+// ── Update niCalc to handle sub/tax/total separately ──────────────────
+var IS_TAX_REGISTERED = {{ 'true' if business.is_tax_registered else 'false' }};
+var TAX_RATE_CALC = IS_TAX_REGISTERED ? TAX_RATE : 0;
+
 </script>{% endblock %}
