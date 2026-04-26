@@ -2991,7 +2991,7 @@ def api_bank_upload_statement_pdf():
             }
             try:
                 body = json.dumps({
-                    "model": "claude-sonnet-4-6",
+                    "model": "claude-sonnet-4-5-20251001",
                     "max_tokens": 8000,
                     "messages": [{"role":"user","content":[content,{"type":"text","text":prompt}]}]
                 }).encode()
@@ -4851,8 +4851,7 @@ def report_gst_return():
     try:
         total_purchases = float(db.session.execute(db.text(
             "SELECT COALESCE(SUM(total_amount),0) FROM documents "
-            "WHERE business_id=:bid AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
-            "AND invoice_date>=:s AND invoice_date<=:e"
+            "WHERE business_id=:bid AND doc_type IN ('BILL','EXPENSE','PURCHASE')"
         ), {"bid":business.id}).scalar() or 0)
     except:
         db.session.rollback()
@@ -9746,7 +9745,7 @@ def api_bank_upload_statement():
 
     try:
         body = json.dumps({
-            "model":"claude-sonnet-4-6",
+            "model":"claude-sonnet-4-5-20251001",
             "max_tokens":8000,
             "messages":[{"role":"user","content":[content,{"type":"text","text":prompt}]}]
         }).encode()
