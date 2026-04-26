@@ -139,7 +139,7 @@
           </div>
         </div>
         <div style="text-align:right">
-          <div style="font-family:var(--mono);font-weight:600;font-size:12px">{{ tax.currency }} {{ inv.total_amount or 0|num }}</div>
+          <div style="font-family:var(--mono);font-weight:600;font-size:12px">{{ tax.currency }} {{ inv.total_amount|num }}</div>
           <span class="badge badge-{% if inv.status=='PAID' %}green{% elif inv.status=='PARTIAL' %}amber{% else %}gray{% endif %}" style="font-size:9px">{{ inv.status }}</span>
         </div>
       </div>
@@ -192,7 +192,7 @@
             <div style="font-size:12px;font-weight:500;color:var(--text)">{{ doc.vendor_name or 'Unknown' }}</div>
             <div style="font-size:10px;color:var(--text3)">{{ doc.doc_type }} · {{ doc.created_at.strftime('%d %b') if doc.created_at else '—' }}</div>
           </div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--text2)">{{ tax.currency }} {{ doc.total_amount or 0|num }}</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--text2)">{{ tax.currency }} {{ doc.total_amount|num }}</div>
         </div>
         {% endfor %}
         {% else %}
