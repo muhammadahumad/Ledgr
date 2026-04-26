@@ -236,16 +236,12 @@
 
 {% endblock %}
 
-<!-- Hidden server-rendered accounts list for JS access -->
-<select id="all-accounts-select" style="display:none">
-  {% for a in accounts %}
-  <option value="{{ a.code }}">{{ a.code }} — {{ a.name }}</option>
-  {% endfor %}
-</select>
-
 {% block scripts %}<script>
 var TAX_RATE = {{ tax.tax_rate }};
 var CCY = "{{ tax.currency }}";
+// Account options - server rendered into JS array
+var ACCOUNT_OPTIONS = [{% for a in accounts %}{"code":"{{ a.code }}","name":"{{ a.name | replace('"', '\"') }}","type":"{{ a.account_type }}"}{% if not loop.last %},{% endif %}{% endfor %}];
+var EXPENSE_ACCOUNTS = ACCOUNT_OPTIONS.filter(function(a){ return a.code[0]==='5'||a.code[0]==='6'||a.code[0]==='4'; });
 var supplierSelected = null;
 
 // ── Tab switching ─────────────────────────────────────────────────────────
@@ -326,7 +322,7 @@ var accounts = [
   {code:"{{ a.code }}", name:"{{ a.name }}", type:"{{ a.account_type }}"},
   {% endfor %}
 ];
-var expenseAccounts = accounts.filter(function(a){return a.type==='EXPENSE'||a.type==='ASSET';});
+var ACCOUNT_OPTIONS = accounts.filter(function(a){return a.type==='EXPENSE'||a.type==='ASSET';});
 
 function addLineItem(desc, sub, tax, acc) {
   var i = lineItems.length;
@@ -336,8 +332,8 @@ function addLineItem(desc, sub, tax, acc) {
   tr.id = 'li-row-'+i;
   tr.style.borderBottom = '1px solid var(--border)';
 
-  var accOpts = expenseAccounts.map(function(a){
-    return '<option value="'+a.code+'"'+(a.code===(acc||(expenseAccounts[0]&&expenseAccounts[0].code)||'5010')?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
+  var accOpts = ACCOUNT_OPTIONS.map(function(a){
+    return '<option value="'+a.code+'"'+(a.code===(acc||(ACCOUNT_OPTIONS[0]&&ACCOUNT_OPTIONS[0].code)||'5010')?' selected':'')+'>'+a.code+' — '+a.name+'</option>';
   }).join('');
 
   tr.innerHTML = '<td style="padding:4px"><input class="field-input" style="font-size:11px;padding:4px 6px" '+
@@ -579,15 +575,12 @@ function buildScanForm(res) {
     html += '</table></div>';
   }
 
-  // Account selection - clone the hidden server-rendered select
-  var hiddenSel = document.getElementById('all-accounts-select');
+  // Account selection - from server-rendered JS array
   var accHtml = '<div style="margin-bottom:12px"><div class="field-label">Post to Account *</div>'+
     '<select class="select-input" id="sr-account" style="width:100%">';
-  if (hiddenSel) {
-    for (var i=0; i<hiddenSel.options.length; i++) {
-      accHtml += '<option value="'+hiddenSel.options[i].value+'">'+hiddenSel.options[i].text+'</option>';
-    }
-  }
+  ACCOUNT_OPTIONS.forEach(function(a){
+    accHtml += '<option value="'+a.code+'">'+a.code+' — '+a.name+'</option>';
+  });
   accHtml += '</select></div>';
   html += accHtml;
 
