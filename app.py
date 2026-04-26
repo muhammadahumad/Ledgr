@@ -8703,16 +8703,16 @@ def invoice_detail(inv_id):
                 line_items = items
     except: pass
     
-    # If no line items stored, synthesize from totals so invoice shows something
+    # If no line items stored, synthesize from totals so invoice always shows content
     if not line_items and (float(result[7] or 0) > 0):
-        total = float(result[7] or 0)
-        tax   = float(result[6] or 0)
-        sub   = float(result[5] or 0) or (total - tax)
+        _total = float(result[7] or 0)
+        _tax   = float(result[6] or 0)
+        _sub   = float(result[5] or 0) or (_total - _tax)
         line_items = [{
-            "desc":  "Services rendered",
+            "desc":  "Services",
             "qty":   1,
-            "price": sub,
-            "total": sub
+            "price": _sub,
+            "total": _sub
         }]
     
     # WhatsApp message
