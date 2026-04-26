@@ -1702,12 +1702,16 @@ def extract_with_ai(file_b64, media_type, region='MV'):
                        'messages':[{'role':'user','content':[content,{'type':'text','text':prompt}]}]}).encode()
     req = urllib.request.Request('https://api.anthropic.com/v1/messages', data=body,
                                  headers={**{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01'}, **extra_headers})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        result = json.loads(resp.read())
-        text = result['content'][0]['text']
-        m = re.search(r'\{[\s\S]*\}', text)
-        if not m: raise ValueError('Could not parse AI response')
-        return json.loads(m.group())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            result = json.loads(resp.read())
+            text = result['content'][0]['text']
+            m = re.search(r'\{[\s\S]*\}', text)
+            if not m: raise ValueError('Could not parse AI response')
+            return json.loads(m.group())
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8', errors='replace')
+        raise Exception(f"HTTP {e.code}: {error_body[:500]}")
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -4887,11 +4891,15 @@ def report_gst_return():
                                        exclude_statuses=['VOID','DRAFT'])
     try:
         bill_rows_detail = db.session.execute(db.text(
-            "SELECT invoice_number, COALESCE(invoice_date, created_at::date), vendor_name, vendor_tax_id, "
-            "subtotal, tax_amount, total_amount, doc_type, currency "
-            "FROM documents WHERE business_id=:bid "
-            "AND doc_type IN ('BILL','EXPENSE','PURCHASE') "
-            "ORDER BY COALESCE(invoice_date, created_at::date) ASC"
+            "SELECT d.invoice_number, COALESCE(d.invoice_date, d.created_at::date), "
+            "COALESCE(s.name, d.vendor_name) as vendor_name, "
+            "COALESCE(d.vendor_tax_id, s.tax_id) as vendor_tax_id, "
+            "d.subtotal, d.tax_amount, d.total_amount, d.doc_type, d.currency "
+            "FROM documents d "
+            "LEFT JOIN suppliers s ON d.supplier_id = s.id "
+            "WHERE d.business_id=:bid "
+            "AND d.doc_type IN ('BILL','EXPENSE','PURCHASE') "
+            "ORDER BY COALESCE(d.invoice_date, d.created_at::date) ASC"
         ), {"bid":business.id}).fetchall()
         bill_rows_detail = [{
             "invoice_number": str(r[0] or ""),
