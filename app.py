@@ -5951,23 +5951,6 @@ def api_invoice_email(inv_id):
 # PURCHASE ORDERS — Full AP cycle
 # ════════════════════════════════════════════════════════════════════════════
 
-@app.route("/purchase-orders")
-@business_required
-def purchase_orders_list():
-    user = current_user(); business = current_business()
-    try:
-        pos = PurchaseOrder.query.filter_by(
-            business_id=business.id
-        ).order_by(PurchaseOrder.created_at.desc()).all()
-    except Exception:
-        pos = []
-    suppliers_list = Supplier.query.filter_by(business_id=business.id).all()
-    products_list = Product.query.filter_by(
-        business_id=business.id, is_active=True).order_by(Product.name).all()
-    return render_template("purchase_orders.html", user=user, business=business,
-                           purchase_orders=pos, suppliers=suppliers_list,
-                           products=products_list, tax=business.tax_rules(),
-                           today=date.today())
 
 
 @app.route("/api/purchase-order/create", methods=["POST"])
@@ -9064,110 +9047,6 @@ def api_export_full():
     filename = f"LEDGR_{business.display_name().replace(' ','_')}_{date.today()}.zip"
     return send_file(buf, mimetype='application/zip',
                     as_attachment=True, download_name=filename)
-
-
-# ════════════════════════════════════════════════════════════
-# BLOCK 2: ADMIN DASHBOARD
-# ════════════════════════════════════════════════════════════
-
-@app.route("/admin/dashboard")
-@login_required
-@admin_required
-def admin_dashboard():
-    """LEDGR admin — see all clients, usage, revenue"""
-    try:
-        businesses = db.session.execute(db.text("""
-            SELECT b.id, b.display_name, b.region, b.plan,
-                   COUNT(DISTINCT u.id) as users,
-                   COUNT(DISTINCT i.id) as invoices,
-                   COUNT(DISTINCT d.id) as documents,
-                   MAX(ul.created_at) as last_activity
-            FROM businesses b
-            LEFT JOIN user_businesses ub ON b.id=ub.business_id
-            LEFT JOIN users u ON ub.user_id=u.id
-            LEFT JOIN invoices i ON b.id=i.business_id
-            LEFT JOIN documents d ON b.id=d.business_id
-            LEFT JOIN audit_logs ul ON b.id=ul.business_id
-            GROUP BY b.id, b.display_name, b.region, b.plan
-            ORDER BY b.id DESC
-        """)).fetchall()
-    except:
-        db.session.rollback()
-        businesses = []
-
-    try:
-        stats = db.session.execute(db.text("""
-            SELECT COUNT(DISTINCT b.id) as total_businesses,
-                   COUNT(DISTINCT u.id) as total_users,
-                   SUM(CASE WHEN b.plan='pro' THEN 15
-                            WHEN b.plan='business' THEN 25
-                            WHEN b.plan='paid_client' THEN 25 ELSE 0 END) as mrr
-            FROM businesses b
-            LEFT JOIN user_businesses ub ON b.id=ub.business_id
-            LEFT JOIN users u ON ub.user_id=u.id
-        """)).fetchone()
-    except:
-        db.session.rollback()
-        stats = None
-
-    try:
-        tickets = SupportTicket.query.filter_by(status='open').order_by(
-            SupportTicket.created_at.desc()).limit(10).all()
-    except:
-        db.session.rollback()
-        tickets = []
-
-    return render_template("admin_dashboard.html",
-                          businesses=businesses, stats=stats, tickets=tickets)
-
-
-@app.route("/api/admin/impersonate/<int:biz_id>", methods=["POST"])
-@login_required
-@admin_required
-def api_admin_impersonate(biz_id):
-    """Admin: view app as a specific business"""
-    session['current_business_id'] = biz_id
-    log_action(biz_id, current_user().id, 'IMPERSONATE', 'Business', biz_id)
-    db.session.commit()
-    return jsonify({"ok": True, "redirect": "/dashboard"})
-
-
-# ════════════════════════════════════════════════════════════
-# BLOCK 3: ONBOARDING WIZARD
-# ════════════════════════════════════════════════════════════
-
-@app.route("/onboarding")
-@login_required
-def onboarding():
-    user = current_user(); business = current_business()
-    # Calculate completeness score
-    score = 0
-    checks = {
-        "Business name": bool(business.display_name()),
-        "Tax ID (TIN)":  bool(business.tax_registration_number),
-        "Address":       bool(business.address_line1),
-        "Logo":          bool(getattr(business, 'logo_data', None)),
-        "Bank account":  bool(business.bank_account_number),
-        "SMTP (email)":  bool(business.smtp_host),
-        "First invoice": True,  # check below
-        "First supplier":True,
-    }
-    try:
-        inv_count = db.session.execute(db.text(
-            "SELECT COUNT(*) FROM invoices WHERE business_id=:bid"
-        ), {"bid": business.id}).scalar() or 0
-        checks["First invoice"] = inv_count > 0
-    except: db.session.rollback()
-    try:
-        sup_count = db.session.execute(db.text(
-            "SELECT COUNT(*) FROM suppliers WHERE business_id=:bid"
-        ), {"bid": business.id}).scalar() or 0
-        checks["First supplier"] = sup_count > 0
-    except: db.session.rollback()
-
-    score = int(sum(checks.values()) / len(checks) * 100)
-    return render_template("onboarding.html", user=user, business=business,
-                          tax=business.tax_rules(), checks=checks, score=score)
 
 
 # ════════════════════════════════════════════════════════════
